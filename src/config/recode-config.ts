@@ -9,6 +9,7 @@ import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import type { ProviderKind } from "../providers/provider-kind.ts";
 import { isRecord } from "../shared/is-record.ts";
+import { isThemeName, type ThemeName } from "../tui/theme.ts";
 
 /**
  * One configured model entry.
@@ -37,6 +38,7 @@ export interface ConfiguredProvider {
 export interface RecodeConfigFile {
   readonly version: 1;
   readonly activeProviderId?: string;
+  readonly themeName?: ThemeName;
   readonly providers: readonly ConfiguredProvider[];
 }
 
@@ -104,6 +106,7 @@ export function upsertConfiguredProvider(
   return {
     version: CONFIG_VERSION,
     providers,
+    ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
     ...(makeActive ? { activeProviderId: provider.id } : (
       config.activeProviderId === undefined ? {} : { activeProviderId: config.activeProviderId }
     ))
@@ -134,7 +137,23 @@ export function selectConfiguredProviderModel(
   return {
     version: CONFIG_VERSION,
     activeProviderId: providerId,
+    ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
     providers
+  };
+}
+
+/**
+ * Update the configured TUI theme.
+ */
+export function selectConfiguredTheme(
+  config: RecodeConfigFile,
+  themeName: ThemeName
+): RecodeConfigFile {
+  return {
+    version: CONFIG_VERSION,
+    providers: config.providers,
+    themeName,
+    ...(config.activeProviderId === undefined ? {} : { activeProviderId: config.activeProviderId })
   };
 }
 
@@ -144,6 +163,7 @@ function parseRecodeConfigFile(value: unknown): RecodeConfigFile {
   }
 
   const activeProviderId = readOptionalNonEmptyString(value, "activeProviderId");
+  const themeName = readOptionalThemeName(value, "themeName");
   const providersValue = value["providers"];
   const providers = Array.isArray(providersValue)
     ? providersValue.map(parseConfiguredProvider).filter((provider) => provider !== undefined)
@@ -152,6 +172,7 @@ function parseRecodeConfigFile(value: unknown): RecodeConfigFile {
   return {
     version: CONFIG_VERSION,
     providers,
+    ...(themeName === undefined ? {} : { themeName }),
     ...(activeProviderId === undefined ? {} : { activeProviderId })
   };
 }
@@ -226,6 +247,11 @@ function readOptionalProviderKind(record: Record<string, unknown>, key: string):
     default:
       return undefined;
   }
+}
+
+function readOptionalThemeName(record: Record<string, unknown>, key: string): ThemeName | undefined {
+  const value = readOptionalNonEmptyString(record, key);
+  return value !== undefined && isThemeName(value) ? value : undefined;
 }
 
 function isMissingFileError(error: unknown): boolean {

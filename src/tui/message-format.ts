@@ -7,7 +7,8 @@
 /**
  * Built-in TUI command names.
  */
-export type BuiltinCommandName = "help" | "clear" | "status" | "models" | "exit" | "quit";
+export type BuiltinCommandName =
+  "help" | "clear" | "status" | "config" | "models" | "theme" | "history" | "new" | "exit" | "quit";
 
 /**
  * Built-in TUI command definition.
@@ -30,7 +31,11 @@ const BUILTIN_COMMANDS: readonly BuiltinCommandDefinition[] = [
   { name: "help", command: "/help", description: "Show built-in command help" },
   { name: "clear", command: "/clear", description: "Clear the current session" },
   { name: "status", command: "/status", description: "Show the current session status" },
+  { name: "config", command: "/config", description: "Show the current Recode configuration" },
   { name: "models", command: "/models", description: "Open the model selector" },
+  { name: "theme", command: "/theme", description: "Open the theme selector" },
+  { name: "history", command: "/history", description: "Open the conversation history" },
+  { name: "new", command: "/new", description: "Start a new conversation" },
   { name: "exit", command: "/exit", description: "Exit Recode" },
   { name: "quit", command: "/quit", description: "Exit Recode" }
 ] as const;
@@ -39,7 +44,11 @@ const BUILTIN_COMMAND_ALIASES: Readonly<Record<string, BuiltinCommandName>> = {
   "/help": "help",
   "/clear": "clear",
   "/status": "status",
+  "/config": "config",
   "/models": "models",
+  "/theme": "theme",
+  "/history": "history",
+  "/new": "new",
   "/exit": "exit",
   "/quit": "quit"
 };

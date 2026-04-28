@@ -26,7 +26,11 @@ describe("tui message format", () => {
   it("parses builtin commands", () => {
     expect(parseBuiltinCommand(" /help ")).toEqual({ name: "help", raw: "/help" });
     expect(parseBuiltinCommand("/status")).toEqual({ name: "status", raw: "/status" });
+    expect(parseBuiltinCommand("/config")).toEqual({ name: "config", raw: "/config" });
     expect(parseBuiltinCommand("/models")).toEqual({ name: "models", raw: "/models" });
+    expect(parseBuiltinCommand("/theme")).toEqual({ name: "theme", raw: "/theme" });
+    expect(parseBuiltinCommand("/history")).toEqual({ name: "history", raw: "/history" });
+    expect(parseBuiltinCommand("/new")).toEqual({ name: "new", raw: "/new" });
     expect(parseBuiltinCommand("hello")).toBeUndefined();
   });
 
@@ -35,7 +39,11 @@ describe("tui message format", () => {
       { name: "help", command: "/help", description: "Show built-in command help" },
       { name: "clear", command: "/clear", description: "Clear the current session" },
       { name: "status", command: "/status", description: "Show the current session status" },
+      { name: "config", command: "/config", description: "Show the current Recode configuration" },
       { name: "models", command: "/models", description: "Open the model selector" },
+      { name: "theme", command: "/theme", description: "Open the theme selector" },
+      { name: "history", command: "/history", description: "Open the conversation history" },
+      { name: "new", command: "/new", description: "Start a new conversation" },
       { name: "exit", command: "/exit", description: "Exit Recode" },
       { name: "quit", command: "/quit", description: "Exit Recode" }
     ]);
@@ -46,7 +54,11 @@ describe("tui message format", () => {
       "/help",
       "/clear",
       "/status",
+      "/config",
       "/models",
+      "/theme",
+      "/history",
+      "/new",
       "/exit",
       "/quit"
     ]);

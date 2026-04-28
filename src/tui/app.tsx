@@ -29,9 +29,20 @@ import { runAgentLoop } from "../agent/run-agent-loop.ts";
 import {
   loadRecodeConfigFile,
   saveRecodeConfigFile,
-  selectConfiguredProviderModel
+  selectConfiguredProviderModel,
+  selectConfiguredTheme
 } from "../config/recode-config.ts";
 import { OperationAbortedError } from "../errors/recode-error.ts";
+import {
+  createConversationRecord,
+  loadConversation,
+  loadHistoryIndex,
+  markConversationAsCurrent,
+  resolveHistoryRoot,
+  saveConversation,
+  type SavedConversationMeta,
+  type SavedConversationRecord
+} from "../history/recode-history.ts";
 import type { ConversationMessage, ToolCall } from "../messages/message.ts";
 import { createLanguageModel } from "../models/create-model-client.ts";
 import { listModelsForProvider, type ListedModelGroup } from "../models/list-models.ts";
@@ -52,7 +63,15 @@ import {
 import { Logo } from "./logo.tsx";
 import { createMarkdownSyntaxStyle } from "./markdown-style.ts";
 import { Spinner } from "./spinner.tsx";
-import { getTheme } from "./theme.ts";
+import {
+  DEFAULT_THEME_NAME,
+  getAvailableThemes,
+  getThemeDefinition,
+  getTheme,
+  type ThemeColors,
+  type ThemeDefinition,
+  type ThemeName
+} from "./theme.ts";
 
 interface UiEntry {
   readonly id: string;
@@ -71,6 +90,14 @@ interface ModelPickerOption {
   readonly custom: boolean;
 }
 
+interface HistoryPickerItem extends SavedConversationMeta {
+  readonly current: boolean;
+}
+
+interface ThemePickerItem extends ThemeDefinition {
+  readonly active: boolean;
+}
+
 export interface TuiAppProps {
   readonly systemPrompt: string;
   readonly runtimeConfig: RuntimeConfig;
@@ -80,15 +107,17 @@ export interface TuiAppProps {
 }
 
 export function TuiApp(props: TuiAppProps) {
-  const t = getTheme();
   const renderer = useRenderer();
   const terminal = useTerminalDimensions();
+  const initialConfig = loadRecodeConfigFile(props.runtimeConfig.configPath);
 
   const [sessionRuntimeConfig, setSessionRuntimeConfig] = createSignal(props.runtimeConfig);
+  const [themeName, setThemeName] = createSignal<ThemeName>(initialConfig.themeName ?? DEFAULT_THEME_NAME);
   const [entries, setEntries] = createSignal<readonly UiEntry[]>([]);
   const [busy, setBusy] = createSignal(false);
   const [draft, setDraft] = createSignal("");
   const [previousMessages, setPreviousMessages] = createSignal<readonly ConversationMessage[]>([]);
+  const [currentConversation, setCurrentConversation] = createSignal<SavedConversationRecord | undefined>(undefined);
   const [statusTick, setStatusTick] = createSignal(0);
   const [streamingEntryId, setStreamingEntryId] = createSignal<string | undefined>(undefined);
   const [streamingBody, setStreamingBody] = createSignal("");
@@ -98,15 +127,28 @@ export function TuiApp(props: TuiAppProps) {
   const [modelPickerQuery, setModelPickerQuery] = createSignal("");
   const [modelPickerGroups, setModelPickerGroups] = createSignal<readonly ListedModelGroup[]>([]);
   const [modelPickerSelectedIndex, setModelPickerSelectedIndex] = createSignal(0);
+  const [historyPickerOpen, setHistoryPickerOpen] = createSignal(false);
+  const [historyPickerBusy, setHistoryPickerBusy] = createSignal(false);
+  const [historyPickerQuery, setHistoryPickerQuery] = createSignal("");
+  const [historyPickerItems, setHistoryPickerItems] = createSignal<readonly HistoryPickerItem[]>([]);
+  const [historyPickerSelectedIndex, setHistoryPickerSelectedIndex] = createSignal(0);
+  const [themePickerOpen, setThemePickerOpen] = createSignal(false);
+  const [themePickerQuery, setThemePickerQuery] = createSignal("");
+  const [themePickerSelectedIndex, setThemePickerSelectedIndex] = createSignal(0);
   let inputRef: InputRenderable | undefined;
   let modelPickerInputRef: InputRenderable | undefined;
+  let historyPickerInputRef: InputRenderable | undefined;
+  let themePickerInputRef: InputRenderable | undefined;
   let activeAbortController: AbortController | undefined;
   let pendingStreamText = "";
   let pendingStreamEntryId: string | undefined;
   let streamFlushTimer: ReturnType<typeof setTimeout> | undefined;
+  let syncingVisibleDraft = false;
 
-  const markdownStyle = createMarkdownSyntaxStyle(t);
+  const t = createMemo<ThemeColors>(() => getTheme(themeName()));
+  const markdownStyle = createMemo(() => createMarkdownSyntaxStyle(t()));
   const sessionLanguageModel = createMemo(() => createLanguageModel(sessionRuntimeConfig()));
+  const historyRoot = createMemo(() => resolveHistoryRoot(sessionRuntimeConfig().configPath));
 
   const statusMarquee = createMemo(() => buildStatusMarquee(statusTick()));
   const commandSuggestions = createMemo(() => findBuiltinCommands(draft()));
@@ -116,12 +158,23 @@ export function TuiApp(props: TuiAppProps) {
     sessionRuntimeConfig()
   ));
   const modelPickerTotalOptionCount = createMemo(() => modelPickerOptions().length);
+  const filteredHistoryPickerItems = createMemo(() => buildHistoryPickerItems(historyPickerItems(), historyPickerQuery()));
+  const historyPickerTotalOptionCount = createMemo(() => filteredHistoryPickerItems().length);
+  const themePickerItems = createMemo(() => buildThemePickerItems(themeName(), themePickerQuery()));
+  const themePickerTotalOptionCount = createMemo(() => themePickerItems().length);
   const commandPanel = createMemo(() => buildCommandPanelState(
     draft(),
     commandSuggestions(),
-    busy() || modelPickerOpen(),
+    busy() || modelPickerOpen() || historyPickerOpen() || themePickerOpen(),
     commandSelectionIndex()
   ));
+  const conversationFlowWidth = createMemo(() => Math.max(24, terminal().width - 10));
+  const availableConversationHeight = createMemo(() => Math.max(8, terminal().height - 8));
+  const composerDocked = createMemo(() => estimateConversationFlowHeight(
+    entries(),
+    conversationFlowWidth(),
+    commandPanel()
+  ) >= availableConversationHeight());
   let lastCopiedSelectionText = "";
 
   const statusInterval = setInterval(() => {
@@ -186,10 +239,105 @@ export function TuiApp(props: TuiAppProps) {
 
   onMount(() => {
     inputRef?.focus();
-    applyInputCursorStyle(inputRef, t.brandShimmer);
+    applyInputCursorStyle(inputRef, t().brandShimmer);
+    void restoreOrCreateConversation({
+      historyRoot: historyRoot(),
+      runtimeConfig: sessionRuntimeConfig(),
+      setRuntimeConfig: setSessionRuntimeConfig,
+      setConversation: setCurrentConversation,
+      setEntries,
+      setPreviousMessages
+    });
   });
 
   useKeyboard((key) => {
+    if (themePickerOpen()) {
+      switch (key.name) {
+        case "escape":
+          key.preventDefault();
+          closeThemePicker(inputRef, setThemePickerOpen, setThemePickerQuery, setThemePickerSelectedIndex);
+          return;
+        case "up":
+          if (themePickerTotalOptionCount() <= 0) {
+            return;
+          }
+          key.preventDefault();
+          setThemePickerSelectedIndex((current) => moveBuiltinCommandSelectionIndex(current, themePickerTotalOptionCount(), -1));
+          return;
+        case "down":
+          if (themePickerTotalOptionCount() <= 0) {
+            return;
+          }
+          key.preventDefault();
+          setThemePickerSelectedIndex((current) => moveBuiltinCommandSelectionIndex(current, themePickerTotalOptionCount(), 1));
+          return;
+        case "return":
+        case "enter":
+          key.preventDefault();
+          void submitSelectedThemePickerItem({
+            configPath: sessionRuntimeConfig().configPath,
+            selectedIndex: themePickerSelectedIndex(),
+            items: themePickerItems(),
+            setThemeName,
+            appendEntry(entry) {
+              appendEntry(setEntries, entry);
+            },
+            close() {
+              closeThemePicker(inputRef, setThemePickerOpen, setThemePickerQuery, setThemePickerSelectedIndex);
+            }
+          });
+          return;
+        default:
+          return;
+      }
+    }
+
+    if (historyPickerOpen()) {
+      switch (key.name) {
+        case "escape":
+          key.preventDefault();
+          closeHistoryPicker(inputRef, setHistoryPickerOpen, setHistoryPickerQuery, setHistoryPickerSelectedIndex);
+          return;
+        case "up":
+          if (historyPickerTotalOptionCount() <= 0) {
+            return;
+          }
+          key.preventDefault();
+          setHistoryPickerSelectedIndex((current) => moveBuiltinCommandSelectionIndex(current, historyPickerTotalOptionCount(), -1));
+          return;
+        case "down":
+          if (historyPickerTotalOptionCount() <= 0) {
+            return;
+          }
+          key.preventDefault();
+          setHistoryPickerSelectedIndex((current) => moveBuiltinCommandSelectionIndex(current, historyPickerTotalOptionCount(), 1));
+          return;
+        case "return":
+        case "enter":
+          if (historyPickerBusy()) {
+            return;
+          }
+          key.preventDefault();
+          void submitSelectedHistoryPickerItem({
+            historyRoot: historyRoot(),
+            runtimeConfig: sessionRuntimeConfig(),
+            selectedIndex: historyPickerSelectedIndex(),
+            items: filteredHistoryPickerItems(),
+            setBusy: setHistoryPickerBusy,
+            setRuntimeConfig: setSessionRuntimeConfig,
+            setConversation: setCurrentConversation,
+            setEntries,
+            setPreviousMessages,
+            close() {
+              closeHistoryPicker(inputRef, setHistoryPickerOpen, setHistoryPickerQuery, setHistoryPickerSelectedIndex);
+            }
+          });
+          return;
+        default:
+          return;
+      }
+    }
+
     if (modelPickerOpen()) {
       switch (key.name) {
         case "escape":
@@ -217,11 +365,15 @@ export function TuiApp(props: TuiAppProps) {
           }
           key.preventDefault();
           void submitSelectedModelPickerOption({
+            historyRoot: historyRoot(),
             runtimeConfig: sessionRuntimeConfig(),
             selectedIndex: modelPickerSelectedIndex(),
             options: modelPickerOptions(),
             setBusy: setModelPickerBusy,
             setRuntimeConfig: setSessionRuntimeConfig,
+            currentConversation: currentConversation(),
+            transcript: previousMessages(),
+            setConversation: setCurrentConversation,
             appendEntry(entry) {
               appendEntry(setEntries, entry);
             },
@@ -322,7 +474,7 @@ export function TuiApp(props: TuiAppProps) {
     const prompt = value.trim();
     const builtinCommand = parseBuiltinCommand(prompt);
 
-    if (prompt === "") {
+    if (prompt === "" || prompt === "/") {
       return;
     }
 
@@ -357,19 +509,51 @@ export function TuiApp(props: TuiAppProps) {
         return;
       }
 
+      if (builtinCommand.name === "history") {
+        await openHistoryPicker({
+          historyRoot: historyRoot(),
+          currentConversationId: currentConversation()?.id,
+          setBusy: setHistoryPickerBusy,
+          setItems: setHistoryPickerItems,
+          setOpen: setHistoryPickerOpen,
+          setQuery: setHistoryPickerQuery,
+          setSelectedIndex: setHistoryPickerSelectedIndex,
+          appendEntry(entry) {
+            appendEntry(setEntries, entry);
+          }
+        });
+        queueMicrotask(() => {
+          historyPickerInputRef?.focus();
+        });
+        return;
+      }
+
+      if (builtinCommand.name === "theme") {
+        openThemePicker(setThemePickerOpen, setThemePickerQuery, setThemePickerSelectedIndex, themeName());
+        queueMicrotask(() => {
+          themePickerInputRef?.focus();
+        });
+        return;
+      }
+
+      if (builtinCommand.name === "new" || builtinCommand.name === "clear") {
+        const conversation = startNewConversation(historyRoot(), sessionRuntimeConfig());
+        setCurrentConversation(conversation);
+        setEntries([createEntry("status", "status", "Started a new conversation")]);
+        setPreviousMessages([]);
+        setStreamingBody("");
+        setStreamingEntryId(undefined);
+        return;
+      }
+
       await handleBuiltinCommand({
         commandName: builtinCommand.name,
         runtimeConfig: sessionRuntimeConfig(),
+        themeName: themeName(),
         entriesCount: entries().length,
         transcriptCount: previousMessages().length,
         appendEntry(entry) {
           appendEntry(setEntries, entry);
-        },
-        clearSession() {
-          setEntries([]);
-          setPreviousMessages([]);
-          setStreamingBody("");
-          setStreamingEntryId(undefined);
         }
       });
       return;
@@ -445,6 +629,13 @@ export function TuiApp(props: TuiAppProps) {
       });
 
       setPreviousMessages(result.transcript);
+      const persistedConversation = persistConversation(
+        historyRoot(),
+        sessionRuntimeConfig(),
+        result.transcript,
+        currentConversation()
+      );
+      setCurrentConversation(persistedConversation);
       appendEntry(
         setEntries,
         createEntry("status", "status", `✓ ${result.iterations} turns`)
@@ -471,121 +662,158 @@ export function TuiApp(props: TuiAppProps) {
     }
   };
 
-  return (
-    <box width="100%" height="100%" flexDirection="column" paddingX={1} paddingTop={1} paddingBottom={0}>
-      {/* ── Header: Logo + Info ── */}
-      <box flexDirection="column" alignItems="flex-start" flexShrink={0} paddingLeft={4}>
-        <Logo />
-      </box>
-
-      {/* ── Transcript + Composer (Scrollable) ── */}
-      <scrollbox flexGrow={1} scrollY stickyScroll stickyStart="bottom" paddingRight={1}>
-        <For each={entries()}>
-          {(entry) => renderEntry(entry, t, markdownStyle, streamingEntryId, streamingBody)}
-        </For>
-        <box flexDirection="column" paddingX={2} paddingBottom={1}>
-          <Show when={commandPanel() !== undefined}>
-            <>
-              <box
-                flexDirection="column"
-                border
-                borderColor={t.promptBorder}
-                marginBottom={1}
-                paddingLeft={1}
-                paddingRight={1}
-                flexShrink={0}
-              >
-                <Show
-                  when={commandPanel()!.commands.length > 0}
-                  fallback={<text fg={t.hintText}>No command found. Use /help to see available commands.</text>}
-                >
-                  <For each={commandPanel()!.commands}>
-                    {(command, index) => (
-                      <box flexDirection="row" gap={1}>
-                        <box width={12} flexShrink={0}>
-                          <text
-                            fg={index() === commandPanel()!.selectedIndex ? t.brandShimmer : t.text}
-                            attributes={index() === commandPanel()!.selectedIndex ? TextAttributes.BOLD : TextAttributes.NONE}
-                          >
-                            {`${index() === commandPanel()!.selectedIndex ? "›" : " "} ${command.command}`}
-                          </text>
-                        </box>
-                        <box flexGrow={1} flexShrink={1} minWidth={0}>
-                          <text fg={index() === commandPanel()!.selectedIndex ? t.brandShimmer : t.hintText}>{command.description}</text>
-                        </box>
-                      </box>
-                    )}
-                  </For>
-                  <Show when={commandPanel()!.hasMore}>
-                    <text fg={t.hintText} attributes={TextAttributes.DIM}>… more commands available</text>
-                  </Show>
-                </Show>
-              </box>
-            </>
-          </Show>
+  const renderComposer = () => (
+    <box flexDirection="column" paddingX={2} paddingBottom={1} flexShrink={0}>
+      <Show when={commandPanel() !== undefined}>
+        <>
           <box
-            flexDirection="row"
-            alignItems="center"
-            height={3}
+            flexDirection="column"
             border
-            borderColor={t.promptBorder}
+            borderColor={t().promptBorder}
+            marginBottom={1}
             paddingLeft={1}
             paddingRight={1}
             flexShrink={0}
           >
             <Show
-              when={busy()}
-              fallback={
-                <text fg={t.brandShimmer} attributes={TextAttributes.BOLD}>
-                  {isCommandDraft(draft()) ? "/ " : "◈ "}
-                </text>
-              }
+              when={commandPanel()!.commands.length > 0}
+              fallback={<text fg={t().hintText}>No command found. Use /help to see available commands.</text>}
             >
-              <text fg={t.statusText}>◇ </text>
-            </Show>
-            <input
-              ref={(value) => {
-                inputRef = value;
-                applyInputCursorStyle(value, t.brandShimmer);
-                if (!modelPickerOpen()) {
-                  value.focus();
-                }
-              }}
-              focused={!modelPickerOpen()}
-              value={toVisibleDraft(draft())}
-              flexGrow={1}
-              placeholder={busy() ? "Waiting..." : "Send a message to Recode..."}
-              onInput={(value) => {
-                setDraft(normalizeDraftInput(draft(), value));
-                setCommandSelectionIndex(0);
-              }}
-              onSubmit={() => {
-                void submitPrompt(draft());
-              }}
-            />
-          </box>
-          <box flexDirection="row" alignItems="center" gap={1} paddingLeft={0} paddingTop={0}>
-            <text fg={t.hintText} attributes={TextAttributes.DIM}>{`[${sessionRuntimeConfig().providerName}]`}</text>
-            <text fg={t.hintText} attributes={TextAttributes.DIM}>{`[${sessionRuntimeConfig().model}]`}</text>
-            <Show when={busy() || modelPickerBusy()}>
-              <box flexDirection="row" gap={1} marginLeft={1}>
-                <box flexDirection="row">
-                  <For each={statusMarquee()}>
-                    {(segment) => <text fg={segment.color}>{segment.text}</text>}
-                  </For>
-                </box>
-                <text fg={t.hintText}>{modelPickerOpen() ? "Press ESC to close" : "Press ESC to abort"}</text>
-              </box>
+              <For each={commandPanel()!.commands}>
+                {(command, index) => (
+                  <box flexDirection="row" gap={1}>
+                    <box width={12} flexShrink={0}>
+                      <text
+                        fg={index() === commandPanel()!.selectedIndex ? t().brandShimmer : t().text}
+                        attributes={index() === commandPanel()!.selectedIndex ? TextAttributes.BOLD : TextAttributes.NONE}
+                      >
+                        {`${index() === commandPanel()!.selectedIndex ? "›" : " "} ${command.command}`}
+                      </text>
+                    </box>
+                    <box flexGrow={1} flexShrink={1} minWidth={0}>
+                      <text fg={index() === commandPanel()!.selectedIndex ? t().brandShimmer : t().hintText}>{command.description}</text>
+                    </box>
+                  </box>
+                )}
+              </For>
+              <Show when={commandPanel()!.hasMore}>
+                <text fg={t().hintText} attributes={TextAttributes.DIM}>… more commands available</text>
+              </Show>
             </Show>
           </box>
+        </>
+      </Show>
+      <box
+        flexDirection="row"
+        alignItems="center"
+        height={3}
+        border
+        borderColor={t().promptBorder}
+        paddingLeft={1}
+        paddingRight={1}
+        flexShrink={0}
+      >
+        <Show
+          when={busy()}
+          fallback={
+            <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>
+              {isCommandDraft(draft()) ? "/ " : "◈ "}
+            </text>
+          }
+        >
+          <text fg={t().statusText}>◇ </text>
+        </Show>
+        <input
+          ref={(value) => {
+            inputRef = value;
+            applyInputCursorStyle(value, t().brandShimmer);
+            if (!modelPickerOpen() && !historyPickerOpen() && !themePickerOpen()) {
+              value.focus();
+            }
+          }}
+          focused={!modelPickerOpen() && !historyPickerOpen() && !themePickerOpen()}
+          value={toVisibleDraft(draft())}
+          flexGrow={1}
+          placeholder={busy() ? "Waiting..." : "Send a message to Recode..."}
+          onInput={(value) => {
+            if (syncingVisibleDraft) {
+              return;
+            }
+            const nextDraft = normalizeDraftInput(draft(), value);
+            setDraft(nextDraft);
+            if (inputRef !== undefined) {
+              const visibleValue = toVisibleDraft(nextDraft);
+              if (inputRef.value !== visibleValue) {
+                syncingVisibleDraft = true;
+                inputRef.value = visibleValue;
+                queueMicrotask(() => {
+                  syncingVisibleDraft = false;
+                });
+              }
+            }
+            setCommandSelectionIndex(0);
+          }}
+          onSubmit={() => {
+            void submitPrompt(draft());
+          }}
+        />
+      </box>
+      <box flexDirection="row" alignItems="center" gap={1} paddingLeft={0} paddingTop={0}>
+        <text fg={t().hintText} attributes={TextAttributes.DIM}>{`[${sessionRuntimeConfig().providerName}]`}</text>
+        <text fg={t().hintText} attributes={TextAttributes.DIM}>{`[${sessionRuntimeConfig().model}]`}</text>
+        <text fg={t().hintText} attributes={TextAttributes.DIM}>{`[${getThemeDefinition(themeName()).label}]`}</text>
+        <Show when={busy() || modelPickerBusy() || historyPickerBusy()}>
+          <box flexDirection="row" gap={1} marginLeft={1}>
+            <box flexDirection="row">
+              <For each={statusMarquee()}>
+                {(segment) => <text fg={segment.color}>{segment.text}</text>}
+              </For>
+            </box>
+            <text fg={t().hintText}>{modelPickerOpen() || historyPickerOpen() || themePickerOpen() ? "Press ESC to close" : "Press ESC to abort"}</text>
+          </box>
+        </Show>
+      </box>
+    </box>
+  );
+
+  return (
+    <box width="100%" height="100%" flexDirection="column" paddingX={1} paddingTop={1} paddingBottom={0}>
+      {/* ── Header: Logo + Info ── */}
+      <box flexDirection="column" alignItems="flex-start" flexShrink={0} paddingLeft={4}>
+        <Logo theme={t()} />
+      </box>
+
+      {/* ── Transcript + Composer ── */}
+      <Show
+        when={composerDocked()}
+        fallback={
+          <box flexDirection="column" flexGrow={1} paddingRight={1}>
+            <box flexDirection="column" flexShrink={0}>
+              <For each={entries()}>
+                {(entry) => renderEntry(entry, t(), markdownStyle(), streamingEntryId, streamingBody)}
+              </For>
+            </box>
+            {renderComposer()}
+          </box>
+        }
+      >
+        <box flexDirection="column" flexGrow={1} paddingRight={1}>
+          <scrollbox flexGrow={1} flexShrink={1} minHeight={0} scrollY stickyScroll>
+            <box flexDirection="column" flexShrink={0}>
+              <For each={entries()}>
+                {(entry) => renderEntry(entry, t(), markdownStyle(), streamingEntryId, streamingBody)}
+              </For>
+            </box>
+          </scrollbox>
+          {renderComposer()}
         </box>
-      </scrollbox>
+      </Show>
 
       <Show when={modelPickerOpen()}>
         <box
           flexDirection="column"
           border
-          borderColor={t.brandShimmer}
+          borderColor={t().brandShimmer}
           marginLeft={3}
           marginRight={3}
           marginBottom={1}
@@ -595,23 +823,23 @@ export function TuiApp(props: TuiAppProps) {
           paddingBottom={1}
           flexShrink={0}
         >
-          <text fg={t.brandShimmer} attributes={TextAttributes.BOLD}>Model Selector</text>
-          <text fg={t.hintText}>Type to filter. Use arrows to navigate. Press Enter to select. Press ESC to close.</text>
+          <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>Model Selector</text>
+          <text fg={t().hintText}>Type to filter. Use arrows to navigate. Press Enter to select. Press ESC to close.</text>
           <box
             flexDirection="row"
             alignItems="center"
             marginTop={1}
             marginBottom={1}
             border
-            borderColor={t.promptBorder}
+            borderColor={t().promptBorder}
             paddingLeft={1}
             paddingRight={1}
           >
-            <text fg={t.brandShimmer}>⌕ </text>
+            <text fg={t().brandShimmer}>⌕ </text>
             <input
               ref={(value) => {
                 modelPickerInputRef = value;
-                applyInputCursorStyle(value, t.brandShimmer);
+                applyInputCursorStyle(value, t().brandShimmer);
               }}
               focused={modelPickerOpen()}
               value={modelPickerQuery()}
@@ -625,11 +853,11 @@ export function TuiApp(props: TuiAppProps) {
           </box>
           <Show
             when={!modelPickerBusy()}
-            fallback={<box marginTop={1}><Spinner verb="loading models" /></box>}
+            fallback={<box marginTop={1}><Spinner verb="loading models" theme={t()} /></box>}
           >
             <Show
               when={modelPickerOptions().length > 0}
-              fallback={<text fg={t.hintText}>No models match the current filter. Type a custom ID for the active provider to add one.</text>}
+              fallback={<text fg={t().hintText}>No models match the current filter. Type a custom ID for the active provider to add one.</text>}
             >
               <scrollbox height={Math.max(8, Math.min(terminal().height - 18, 16))} scrollY>
                 <For each={renderModelPickerLines(
@@ -638,7 +866,7 @@ export function TuiApp(props: TuiAppProps) {
                 )}>
                   {(line) => (
                     <text
-                      fg={line.selected ? t.brandShimmer : line.kind === "group" ? t.text : t.assistantBody}
+                      fg={line.selected ? t().brandShimmer : line.kind === "group" ? t().text : t().assistantBody}
                       attributes={line.kind === "group"
                         ? TextAttributes.BOLD
                         : line.selected
@@ -651,6 +879,156 @@ export function TuiApp(props: TuiAppProps) {
                 </For>
               </scrollbox>
             </Show>
+          </Show>
+        </box>
+      </Show>
+
+      <Show when={historyPickerOpen()}>
+        <box
+          flexDirection="column"
+          border
+          borderColor={t().brandShimmer}
+          marginLeft={3}
+          marginRight={3}
+          marginBottom={1}
+          paddingLeft={1}
+          paddingRight={1}
+          paddingTop={1}
+          paddingBottom={1}
+          flexShrink={0}
+        >
+          <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>Conversation History</text>
+          <text fg={t().hintText}>Type to filter. Use arrows to navigate. Press Enter to restore. Press ESC to close.</text>
+          <box
+            flexDirection="row"
+            alignItems="center"
+            marginTop={1}
+            marginBottom={1}
+            border
+            borderColor={t().promptBorder}
+            paddingLeft={1}
+            paddingRight={1}
+          >
+            <text fg={t().brandShimmer}>⌕ </text>
+            <input
+              ref={(value) => {
+                historyPickerInputRef = value;
+                applyInputCursorStyle(value, t().brandShimmer);
+              }}
+              focused={historyPickerOpen()}
+              value={historyPickerQuery()}
+              flexGrow={1}
+              placeholder={historyPickerBusy() ? "Loading conversations..." : "Filter by title, preview, provider, or model..."}
+              onInput={(value) => {
+                setHistoryPickerQuery(value);
+                setHistoryPickerSelectedIndex(0);
+              }}
+            />
+          </box>
+          <Show
+            when={!historyPickerBusy()}
+            fallback={<box marginTop={1}><Spinner verb="loading history" theme={t()} /></box>}
+          >
+            <Show
+              when={filteredHistoryPickerItems().length > 0}
+              fallback={<text fg={t().hintText}>No saved conversations match the current filter.</text>}
+            >
+              <scrollbox height={Math.max(8, Math.min(terminal().height - 18, 16))} scrollY>
+                <For each={filteredHistoryPickerItems()}>
+                  {(item, index) => {
+                    const selected = () => index() === normalizeBuiltinCommandSelectionIndex(
+                      historyPickerSelectedIndex(),
+                      historyPickerTotalOptionCount()
+                    );
+
+                    return (
+                      <box flexDirection="column" marginBottom={1} paddingLeft={1} paddingRight={1}>
+                        <text
+                          fg={selected() ? t().brandShimmer : t().text}
+                          attributes={selected() ? TextAttributes.BOLD : TextAttributes.NONE}
+                        >
+                          {`${selected() ? "›" : " "} ${item.title}${item.current ? " (current)" : ""}`}
+                        </text>
+                        <text fg={t().hintText} attributes={TextAttributes.DIM}>{`${item.providerName} · ${item.model} · ${formatRelativeTimestamp(item.updatedAt)}`}</text>
+                        <text fg={t().assistantBody}>{item.preview}</text>
+                      </box>
+                    );
+                  }}
+                </For>
+              </scrollbox>
+            </Show>
+          </Show>
+        </box>
+      </Show>
+
+      <Show when={themePickerOpen()}>
+        <box
+          flexDirection="column"
+          border
+          borderColor={t().brandShimmer}
+          marginLeft={3}
+          marginRight={3}
+          marginBottom={1}
+          paddingLeft={1}
+          paddingRight={1}
+          paddingTop={1}
+          paddingBottom={1}
+          flexShrink={0}
+        >
+          <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>Theme Selector</text>
+          <text fg={t().hintText}>Type to filter. Use arrows to navigate. Press Enter to select. Press ESC to close.</text>
+          <box
+            flexDirection="row"
+            alignItems="center"
+            marginTop={1}
+            marginBottom={1}
+            border
+            borderColor={t().promptBorder}
+            paddingLeft={1}
+            paddingRight={1}
+          >
+            <text fg={t().brandShimmer}>⌕ </text>
+            <input
+              ref={(value) => {
+                themePickerInputRef = value;
+                applyInputCursorStyle(value, t().brandShimmer);
+              }}
+              focused={themePickerOpen()}
+              value={themePickerQuery()}
+              flexGrow={1}
+              placeholder="Filter themes..."
+              onInput={(value) => {
+                setThemePickerQuery(value);
+                setThemePickerSelectedIndex(0);
+              }}
+            />
+          </box>
+          <Show
+            when={themePickerItems().length > 0}
+            fallback={<text fg={t().hintText}>No themes match the current filter.</text>}
+          >
+            <scrollbox height={Math.max(6, Math.min(terminal().height - 18, 12))} scrollY>
+              <For each={themePickerItems()}>
+                {(item, index) => {
+                  const selected = () => index() === normalizeBuiltinCommandSelectionIndex(
+                    themePickerSelectedIndex(),
+                    themePickerTotalOptionCount()
+                  );
+
+                  return (
+                    <box flexDirection="column" marginBottom={1} paddingLeft={1} paddingRight={1}>
+                      <text
+                        fg={selected() ? t().brandShimmer : t().text}
+                        attributes={selected() ? TextAttributes.BOLD : TextAttributes.NONE}
+                      >
+                        {`${selected() ? "›" : " "} ${item.label}${item.active ? " (current)" : ""}`}
+                      </text>
+                      <text fg={t().hintText} attributes={TextAttributes.DIM}>{item.description}</text>
+                    </box>
+                  );
+                }}
+              </For>
+            </scrollbox>
           </Show>
         </box>
       </Show>
@@ -671,12 +1049,12 @@ function applyInputCursorStyle(input: InputRenderable | undefined, color: string
 }
 
 interface BuiltinCommandHandlerOptions {
-  readonly commandName: "help" | "clear" | "status";
+  readonly commandName: "help" | "status" | "config";
   readonly runtimeConfig: RuntimeConfig;
+  readonly themeName: ThemeName;
   readonly entriesCount: number;
   readonly transcriptCount: number;
   readonly appendEntry: (entry: UiEntry) => void;
-  readonly clearSession: () => void;
 }
 
 function clearDraft(
@@ -715,14 +1093,18 @@ async function handleBuiltinCommand(options: BuiltinCommandHandlerOptions): Prom
     case "help":
       options.appendEntry(createEntry("assistant", "Recode", buildBuiltinHelpBody()));
       return;
-    case "clear":
-      options.clearSession();
-      return;
     case "status":
       options.appendEntry(createEntry(
         "assistant",
         "Recode",
         buildBuiltinStatusBody(options.runtimeConfig, options.entriesCount, options.transcriptCount)
+      ));
+      return;
+    case "config":
+      options.appendEntry(createEntry(
+        "assistant",
+        "Recode",
+        buildBuiltinConfigBody(options.runtimeConfig, options.themeName)
       ));
       return;
   }
@@ -786,6 +1168,38 @@ function buildBuiltinStatusBody(
   ].join("\n");
 }
 
+function buildBuiltinConfigBody(runtimeConfig: RuntimeConfig, activeThemeName: ThemeName): string {
+  const config = loadRecodeConfigFile(runtimeConfig.configPath);
+  const lines = [
+    "## Recode Configuration",
+    "",
+    `- Config path: \`${runtimeConfig.configPath}\``,
+    `- Theme: ${getThemeDefinition(activeThemeName).label} (\`${activeThemeName}\`)`,
+    `- Active provider: ${runtimeConfig.providerName} (\`${runtimeConfig.providerId}\`)`,
+    `- Active model: \`${runtimeConfig.model}\``,
+    `- Base URL: \`${runtimeConfig.baseUrl}\``,
+    "",
+    "## Providers",
+    ""
+  ];
+
+  if (config.providers.length === 0) {
+    lines.push("- No saved providers yet. Run `recode setup`.");
+    return lines.join("\n");
+  }
+
+  for (const provider of config.providers) {
+    const activeMarker = provider.id === runtimeConfig.providerId ? " (active)" : "";
+    lines.push(`- ${provider.name} (\`${provider.id}\`)${activeMarker}`);
+    lines.push(`  - Kind: ${provider.kind}`);
+    lines.push(`  - Base URL: \`${provider.baseUrl}\``);
+    lines.push(`  - Default model: \`${provider.defaultModelId ?? provider.models[0]?.id ?? "unset"}\``);
+    lines.push(`  - Saved models: ${provider.models.length === 0 ? "none" : provider.models.map((model) => `\`${model.id}\``).join(", ")}`);
+  }
+
+  return lines.join("\n");
+}
+
 function isCommandDraft(value: string): boolean {
   return value.trimStart().startsWith("/");
 }
@@ -804,6 +1218,329 @@ function normalizeDraftInput(previousDraft: string, nextValue: string): string {
   }
 
   return nextValue;
+}
+
+interface RestoreConversationOptions {
+  readonly historyRoot: string;
+  readonly runtimeConfig: RuntimeConfig;
+  readonly setRuntimeConfig: (value: RuntimeConfig) => void;
+  readonly setConversation: (value: SavedConversationRecord) => void;
+  readonly setEntries: (value: readonly UiEntry[]) => void;
+  readonly setPreviousMessages: (value: readonly ConversationMessage[]) => void;
+}
+
+async function restoreOrCreateConversation(options: RestoreConversationOptions): Promise<void> {
+  const index = loadHistoryIndex(options.historyRoot);
+  const conversation = index.lastConversationId === undefined
+    ? undefined
+    : loadConversation(options.historyRoot, index.lastConversationId);
+
+  if (conversation === undefined) {
+    const nextConversation = startNewConversation(options.historyRoot, options.runtimeConfig);
+    options.setConversation(nextConversation);
+    options.setEntries([]);
+    options.setPreviousMessages([]);
+    return;
+  }
+
+  options.setRuntimeConfig(restoreConversationRuntime(options.runtimeConfig, conversation));
+  options.setConversation(conversation);
+  options.setEntries(rehydrateEntriesFromTranscript(conversation.transcript));
+  options.setPreviousMessages(conversation.transcript);
+}
+
+function startNewConversation(
+  historyRoot: string,
+  runtimeConfig: RuntimeConfig
+): SavedConversationRecord {
+  const conversation = createConversationRecord(runtimeConfig, []);
+  saveConversation(historyRoot, conversation, true);
+  return conversation;
+}
+
+function persistConversation(
+  historyRoot: string,
+  runtimeConfig: RuntimeConfig,
+  transcript: readonly ConversationMessage[],
+  currentConversation: SavedConversationRecord | undefined
+): SavedConversationRecord {
+  const conversation = createConversationRecord(
+    runtimeConfig,
+    transcript,
+    currentConversation === undefined
+      ? undefined
+      : { id: currentConversation.id, createdAt: currentConversation.createdAt }
+  );
+  saveConversation(historyRoot, conversation, true);
+  return conversation;
+}
+
+function restoreConversationRuntime(
+  runtimeConfig: RuntimeConfig,
+  conversation: Pick<SavedConversationRecord, "providerId" | "model">
+): RuntimeConfig {
+  const providerExists = runtimeConfig.providers.some((provider) => provider.id === conversation.providerId);
+  if (!providerExists) {
+    return runtimeConfig;
+  }
+
+  if (runtimeConfig.providerId === conversation.providerId && runtimeConfig.model === conversation.model) {
+    return runtimeConfig;
+  }
+
+  persistSelectedModel(runtimeConfig, conversation.providerId, conversation.model);
+  return selectRuntimeProviderModel(runtimeConfig, conversation.providerId, conversation.model);
+}
+
+function rehydrateEntriesFromTranscript(transcript: readonly ConversationMessage[]): readonly UiEntry[] {
+  const entries: UiEntry[] = [];
+
+  for (const message of transcript) {
+    switch (message.role) {
+      case "user":
+        entries.push(createEntry("user", "You", message.content));
+        break;
+      case "assistant":
+        if (message.content.trim() !== "") {
+          entries.push(createEntry("assistant", "Recode", message.content));
+        }
+        for (const toolCall of message.toolCalls) {
+          entries.push(createEntry("tool", "tool", formatToolCallEntry(toolCall)));
+        }
+        break;
+      case "tool":
+        if (message.isError) {
+          entries.push(createEntry("error", "error", `${message.toolName} failed: ${message.content}`));
+        }
+        break;
+    }
+  }
+
+  return entries;
+}
+
+interface OpenHistoryPickerOptions {
+  readonly historyRoot: string;
+  readonly currentConversationId: string | undefined;
+  readonly setBusy: (value: boolean) => void;
+  readonly setItems: (value: readonly HistoryPickerItem[]) => void;
+  readonly setOpen: (value: boolean) => void;
+  readonly setQuery: (value: string) => void;
+  readonly setSelectedIndex: (value: number) => void;
+  readonly appendEntry: (entry: UiEntry) => void;
+}
+
+async function openHistoryPicker(options: OpenHistoryPickerOptions): Promise<void> {
+  options.setOpen(true);
+  options.setBusy(true);
+  options.setQuery("");
+  options.setSelectedIndex(0);
+
+  try {
+    const index = loadHistoryIndex(options.historyRoot);
+    options.setItems(index.conversations.map((item) => ({
+      ...item,
+      current: item.id === options.currentConversationId
+    })));
+  } catch (error) {
+    options.appendEntry(createEntry("error", "error", toErrorMessage(error)));
+    options.setOpen(false);
+  } finally {
+    options.setBusy(false);
+  }
+}
+
+function closeHistoryPicker(
+  input: InputRenderable | undefined,
+  setOpen: (value: boolean) => void,
+  setQuery: (value: string) => void,
+  setSelectedIndex: (value: number) => void
+): void {
+  setOpen(false);
+  setQuery("");
+  setSelectedIndex(0);
+  input?.focus();
+}
+
+function buildHistoryPickerItems(
+  items: readonly HistoryPickerItem[],
+  query: string
+): readonly HistoryPickerItem[] {
+  const normalizedQuery = query.trim().toLowerCase();
+
+  if (normalizedQuery === "") {
+    return items;
+  }
+
+  return items.filter((item) => {
+    const haystack = `${item.title} ${item.preview} ${item.providerName} ${item.providerId} ${item.model}`.toLowerCase();
+    return haystack.includes(normalizedQuery);
+  });
+}
+
+interface SubmitHistoryPickerSelectionOptions {
+  readonly historyRoot: string;
+  readonly runtimeConfig: RuntimeConfig;
+  readonly selectedIndex: number;
+  readonly items: readonly HistoryPickerItem[];
+  readonly setBusy: (value: boolean) => void;
+  readonly setRuntimeConfig: (value: RuntimeConfig) => void;
+  readonly setConversation: (value: SavedConversationRecord) => void;
+  readonly setEntries: (value: readonly UiEntry[]) => void;
+  readonly setPreviousMessages: (value: readonly ConversationMessage[]) => void;
+  readonly close: () => void;
+}
+
+async function submitSelectedHistoryPickerItem(options: SubmitHistoryPickerSelectionOptions): Promise<void> {
+  const selectedItem = options.items[options.selectedIndex];
+  if (selectedItem === undefined) {
+    return;
+  }
+
+  options.setBusy(true);
+
+  try {
+    const conversation = loadConversation(options.historyRoot, selectedItem.id);
+    if (conversation === undefined) {
+      throw new Error("The selected conversation could not be loaded.");
+    }
+
+    markConversationAsCurrent(options.historyRoot, conversation.id);
+    options.setRuntimeConfig(restoreConversationRuntime(options.runtimeConfig, conversation));
+    options.setConversation(conversation);
+    options.setEntries(rehydrateEntriesFromTranscript(conversation.transcript));
+    options.setPreviousMessages(conversation.transcript);
+    options.close();
+  } finally {
+    options.setBusy(false);
+  }
+}
+
+function formatRelativeTimestamp(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) {
+    return value;
+  }
+
+  return date.toLocaleString();
+}
+
+function buildThemePickerItems(activeThemeName: ThemeName, query: string): readonly ThemePickerItem[] {
+  const normalizedQuery = query.trim().toLowerCase();
+
+  return getAvailableThemes()
+    .filter((theme) => {
+      if (normalizedQuery === "") {
+        return true;
+      }
+
+      const haystack = `${theme.label} ${theme.name} ${theme.description}`.toLowerCase();
+      return haystack.includes(normalizedQuery);
+    })
+    .map((theme) => ({
+      ...theme,
+      active: theme.name === activeThemeName
+    }));
+}
+
+function openThemePicker(
+  setOpen: (value: boolean) => void,
+  setQuery: (value: string) => void,
+  setSelectedIndex: (value: number) => void,
+  activeThemeName: ThemeName
+): void {
+  const activeIndex = getAvailableThemes().findIndex((theme) => theme.name === activeThemeName);
+  setOpen(true);
+  setQuery("");
+  setSelectedIndex(activeIndex === -1 ? 0 : activeIndex);
+}
+
+function closeThemePicker(
+  input: InputRenderable | undefined,
+  setOpen: (value: boolean) => void,
+  setQuery: (value: string) => void,
+  setSelectedIndex: (value: number) => void
+): void {
+  setOpen(false);
+  setQuery("");
+  setSelectedIndex(0);
+  input?.focus();
+}
+
+interface SubmitThemePickerSelectionOptions {
+  readonly configPath: string;
+  readonly selectedIndex: number;
+  readonly items: readonly ThemePickerItem[];
+  readonly setThemeName: (value: ThemeName) => void;
+  readonly appendEntry: (entry: UiEntry) => void;
+  readonly close: () => void;
+}
+
+async function submitSelectedThemePickerItem(options: SubmitThemePickerSelectionOptions): Promise<void> {
+  const selectedItem = options.items[options.selectedIndex];
+  if (selectedItem === undefined) {
+    return;
+  }
+
+  try {
+    persistSelectedTheme(options.configPath, selectedItem.name);
+    options.setThemeName(selectedItem.name);
+    options.appendEntry(createEntry("status", "status", `Selected theme ${selectedItem.label}`));
+    options.close();
+  } catch (error) {
+    options.appendEntry(createEntry("error", "error", toErrorMessage(error)));
+  }
+}
+
+function estimateConversationFlowHeight(
+  entries: readonly UiEntry[],
+  width: number,
+  commandPanel: CommandPanelState | undefined
+): number {
+  const transcriptHeight = entries.reduce((total, entry) => total + estimateEntryHeight(entry, width), 0);
+  return transcriptHeight + estimateComposerHeight(width, commandPanel);
+}
+
+function estimateEntryHeight(entry: UiEntry, width: number): number {
+  const contentWidth = Math.max(12, width - 6);
+
+  switch (entry.kind) {
+    case "user":
+      return estimateWrappedTextHeight(entry.body, contentWidth) + 2;
+    case "assistant":
+      return estimateWrappedTextHeight(entry.body, contentWidth) + 1;
+    case "tool":
+    case "status":
+      return estimateWrappedTextHeight(entry.body, contentWidth) + 1;
+    case "error":
+      return estimateWrappedTextHeight(entry.body, contentWidth) + 2;
+  }
+}
+
+function estimateComposerHeight(width: number, commandPanel: CommandPanelState | undefined): number {
+  const commandCount = commandPanel?.commands.length ?? 0;
+  const commandPanelHeight = commandPanel === undefined
+    ? 0
+    : commandCount + (commandPanel.hasMore ? 2 : 1);
+
+  return commandPanelHeight + 4 + estimateBadgeLineHeight(width);
+}
+
+function estimateBadgeLineHeight(width: number): number {
+  return width < 52 ? 2 : 1;
+}
+
+function estimateWrappedTextHeight(value: string, width: number): number {
+  const normalizedWidth = Math.max(1, width);
+  const lines = value.split("\n");
+  let total = 0;
+
+  for (const line of lines) {
+    const lineLength = Math.max(1, line.length);
+    total += Math.max(1, Math.ceil(lineLength / normalizedWidth));
+  }
+
+  return Math.max(1, total);
 }
 
 interface OpenModelPickerOptions {
@@ -921,11 +1658,15 @@ function findActiveModelPickerOptionIndex(
 }
 
 interface SubmitModelPickerSelectionOptions {
+  readonly historyRoot: string;
   readonly runtimeConfig: RuntimeConfig;
   readonly selectedIndex: number;
   readonly options: readonly ModelPickerOption[];
   readonly setBusy: (value: boolean) => void;
   readonly setRuntimeConfig: (value: RuntimeConfig) => void;
+  readonly currentConversation: SavedConversationRecord | undefined;
+  readonly transcript: readonly ConversationMessage[];
+  readonly setConversation: (value: SavedConversationRecord) => void;
   readonly appendEntry: (entry: UiEntry) => void;
   readonly close: () => void;
 }
@@ -946,6 +1687,13 @@ async function submitSelectedModelPickerOption(options: SubmitModelPickerSelecti
       selectedOption.modelId
     );
     options.setRuntimeConfig(nextRuntimeConfig);
+    const nextConversation = persistConversation(
+      options.historyRoot,
+      nextRuntimeConfig,
+      options.transcript,
+      options.currentConversation
+    );
+    options.setConversation(nextConversation);
     options.appendEntry(createEntry(
       "status",
       "status",
@@ -963,6 +1711,12 @@ function persistSelectedModel(runtimeConfig: RuntimeConfig, providerId: string, 
   const config = loadRecodeConfigFile(runtimeConfig.configPath);
   const nextConfig = selectConfiguredProviderModel(config, providerId, modelId);
   saveRecodeConfigFile(runtimeConfig.configPath, nextConfig);
+}
+
+function persistSelectedTheme(configPath: string, themeName: ThemeName): void {
+  const config = loadRecodeConfigFile(configPath);
+  const nextConfig = selectConfiguredTheme(config, themeName);
+  saveRecodeConfigFile(configPath, nextConfig);
 }
 
 interface ModelPickerRenderedLine {

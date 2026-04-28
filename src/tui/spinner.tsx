@@ -8,7 +8,7 @@
 
 import type { JSX } from "@opentui/solid";
 import { createSignal, onCleanup } from "solid-js";
-import { getTheme } from "./theme.ts";
+import { getTheme, type ThemeColors, type ThemeName } from "./theme.ts";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 const FRAME_INTERVAL = 120;
@@ -16,6 +16,10 @@ const FRAME_INTERVAL = 120;
 export interface SpinnerProps {
   /** Optional verb text such as "thinking". */
   readonly verb?: string;
+  /** Explicit theme colors for live theme switching. */
+  readonly theme?: ThemeColors;
+  /** Theme name fallback if colors are not passed. */
+  readonly themeName?: ThemeName;
 }
 
 /**
@@ -25,7 +29,7 @@ export interface SpinnerProps {
  * @returns Spinner component
  */
 export function Spinner(props: SpinnerProps): JSX.Element {
-  const t = getTheme();
+  const t = props.theme ?? getTheme(props.themeName);
   const [frame, setFrame] = createSignal(0);
   const interval = setInterval(() => {
     setFrame((f) => (f + 1) % SPINNER_FRAMES.length);

@@ -14,6 +14,7 @@ import {
   resolveConfigPath,
   saveRecodeConfigFile,
   selectConfiguredProviderModel,
+  selectConfiguredTheme,
   upsertConfiguredProvider
 } from "./recode-config.ts";
 
@@ -47,13 +48,15 @@ describe("recode config", () => {
       },
       true
     );
+    const themedConfig = selectConfiguredTheme(nextConfig, "matcha-night");
 
-    saveRecodeConfigFile(configPath, nextConfig);
+    saveRecodeConfigFile(configPath, themedConfig);
 
     const rawText = readFileSync(configPath, "utf8");
     expect(rawText).toContain("\"openai-main\"");
+    expect(rawText).toContain("\"matcha-night\"");
 
-    expect(loadRecodeConfigFile(configPath)).toEqual(nextConfig);
+    expect(loadRecodeConfigFile(configPath)).toEqual(themedConfig);
   });
 
   it("updates the active provider and selected model", () => {
@@ -78,5 +81,10 @@ describe("recode config", () => {
     expect(config.activeProviderId).toBe("openai");
     expect(config.providers[0]?.defaultModelId).toBe("gpt-4.1-mini");
     expect(config.providers[0]?.models).toContainEqual({ id: "gpt-4.1-mini" });
+  });
+
+  it("updates the configured theme", () => {
+    const config = selectConfiguredTheme(createEmptyConfig(), "paper-lantern");
+    expect(config.themeName).toBe("paper-lantern");
   });
 });

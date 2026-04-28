@@ -8,7 +8,7 @@ import { TextAttributes } from "@opentui/core";
 import type { JSX } from "@opentui/solid";
 import { For, createSignal, onCleanup } from "solid-js";
 import { getRandomStartupQuote } from "./startup-quotes.ts";
-import { getTheme } from "./theme.ts";
+import { getTheme, type ThemeColors, type ThemeName } from "./theme.ts";
 
 const VERSION = "v0.1.0";
 
@@ -57,10 +57,12 @@ function charColorAt(i: number, tick: number): string {
 export interface LogoProps {
   readonly variant?: "compact" | "splash";
   readonly paused?: boolean;
+  readonly theme?: ThemeColors;
+  readonly themeName?: ThemeName;
 }
 
 export function Logo(props: LogoProps): JSX.Element {
-  const t = getTheme();
+  const t = props.theme ?? getTheme(props.themeName);
   const [tick, setTick] = createSignal(0);
   const quote = getRandomStartupQuote();
 
