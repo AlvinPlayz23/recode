@@ -5,6 +5,7 @@
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import type { ProviderKind } from "../providers/provider-kind.ts";
 import { isRecord } from "../shared/is-record.ts";
@@ -52,14 +53,14 @@ export function createEmptyConfig(): BankaConfigFile {
 }
 
 /**
- * Resolve the config path for the current workspace.
+ * Resolve the config path for the current user.
  */
 export function resolveConfigPath(workspaceRoot: string, overridePath?: string): string {
   if (overridePath !== undefined && overridePath.trim() !== "") {
-    return resolve(workspaceRoot, overridePath);
+    return resolve(workspaceRoot, expandHomePath(overridePath.trim()));
   }
 
-  return resolve(workspaceRoot, ".recode", "config.json");
+  return resolve(homedir(), ".recode", "config.json");
 }
 
 /**
@@ -231,4 +232,16 @@ function isMissingFileError(error: unknown): boolean {
   return error instanceof Error
     && "code" in error
     && error.code === "ENOENT";
+}
+
+function expandHomePath(path: string): string {
+  if (path === "~") {
+    return homedir();
+  }
+
+  if (path.startsWith("~/") || path.startsWith("~\\")) {
+    return resolve(homedir(), path.slice(2));
+  }
+
+  return path;
 }

@@ -7,7 +7,7 @@
 import { describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import {
   createEmptyConfig,
   loadBankaConfigFile,
@@ -18,8 +18,12 @@ import {
 } from "./banka-config.ts";
 
 describe("banka config", () => {
-  it("uses a workspace-local default config path", () => {
-    expect(resolveConfigPath("/workspace")).toBe(resolve("/workspace", ".recode", "config.json"));
+  it("uses a user-home default config path", () => {
+    expect(resolveConfigPath("/workspace")).toBe(resolve(homedir(), ".recode", "config.json"));
+  });
+
+  it("expands a tilde-prefixed override path", () => {
+    expect(resolveConfigPath("/workspace", "~/.recode/custom.json")).toBe(resolve(homedir(), ".recode", "custom.json"));
   });
 
   it("returns an empty config when the file is missing", () => {
@@ -29,7 +33,7 @@ describe("banka config", () => {
 
   it("saves and reloads configured providers", () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "banka-config-"));
-    const configPath = resolveConfigPath(workspaceRoot);
+    const configPath = resolveConfigPath(workspaceRoot, ".recode/config.json");
     const nextConfig = upsertConfiguredProvider(
       createEmptyConfig(),
       {

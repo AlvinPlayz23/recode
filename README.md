@@ -26,7 +26,7 @@ bun install
 cp .env.example .env
 # Edit .env if you want runtime overrides
 
-# Create or update providers in .recode/config.json
+# Create or update providers in ~/.recode/config.json
 bun run src/index.ts setup
 
 # Start the TUI
@@ -59,10 +59,10 @@ banka -v, --version Show version
 
 ## Config File
 
-Banka stores provider definitions in a project-local config file:
+Banka stores provider definitions in a user-global config file:
 
 ```text
-.recode/config.json
+~/.recode/config.json
 ```
 
 Use `banka setup` to create providers, set base URLs, store model IDs, and choose the active provider.
@@ -78,10 +78,10 @@ Each configured provider can define:
 
 ## Environment Variables
 
-Banka uses Bun's native `.env` loading. No extra `dotenv` dependency is required. Environment variables are optional runtime overrides on top of `.recode/config.json`.
+Banka uses Bun's native `.env` loading. No extra `dotenv` dependency is required. Environment variables are optional runtime overrides on top of `~/.recode/config.json`.
 
 ```bash
-BANKA_CONFIG_PATH=.recode/config.json
+BANKA_CONFIG_PATH=~/.recode/config.json
 BANKA_ACTIVE_PROVIDER=my-provider
 BANKA_PROVIDER=openai
 BANKA_API_KEY=your-api-key
@@ -154,7 +154,7 @@ banka-code/
 ├── scripts/
 │   └── build.ts     # Native build script
 ├── .env.example
-├── .recode/        # Local provider and model config
+├── ~/.recode/      # Global provider and model config
 ├── AGENTS.md
 ├── bunfig.toml
 ├── package.json

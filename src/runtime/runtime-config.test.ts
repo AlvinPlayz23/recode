@@ -48,7 +48,7 @@ describe("loadRuntimeConfig", () => {
       ]
     });
 
-    withEnv({}, () => {
+    withEnv({ BANKA_CONFIG_PATH: ".recode/config.json" }, () => {
       const config = loadRuntimeConfig(workspaceRoot);
 
       expect(config.provider).toBe("openai-chat");

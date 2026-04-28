@@ -172,7 +172,7 @@ async function selectProviderChoice(
       {
         label: "Create a new provider",
         value: createNewProviderValue,
-        hint: "Add another provider definition to .recode/config.json"
+        hint: "Add another provider definition to your global .recode/config.json"
       },
       ...config.providers.map((provider) => ({
         label: provider.name,
