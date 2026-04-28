@@ -20,8 +20,14 @@
  * @author dev
  */
 
-import { TextAttributes, type InputRenderable, type SyntaxStyle } from "@opentui/core";
-import { useKeyboard, useRenderer, useSelectionHandler, useTerminalDimensions } from "@opentui/solid";
+import {
+  decodePasteBytes,
+  stripAnsiSequences,
+  TextAttributes,
+  type InputRenderable,
+  type SyntaxStyle
+} from "@opentui/core";
+import { useKeyboard, usePaste, useRenderer, useSelectionHandler, useTerminalDimensions } from "@opentui/solid";
 import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type { AiModel } from "../ai/types.ts";
 import type { AgentRunResult, TextDeltaObserver } from "../agent/run-agent-loop.ts";
@@ -29,10 +35,13 @@ import { runAgentLoop } from "../agent/run-agent-loop.ts";
 import {
   loadRecodeConfigFile,
   saveRecodeConfigFile,
+  selectConfiguredApprovalAllowlist,
+  selectConfiguredApprovalMode,
   selectConfiguredProviderModel,
   selectConfiguredTheme
 } from "../config/recode-config.ts";
 import { OperationAbortedError } from "../errors/recode-error.ts";
+import { exportConversationToHtml } from "../history/export-html.ts";
 import {
   createConversationRecord,
   loadConversation,
@@ -50,7 +59,13 @@ import {
   selectRuntimeProviderModel,
   type RuntimeConfig
 } from "../runtime/runtime-config.ts";
-import type { ToolExecutionContext } from "../tools/tool.ts";
+import type {
+  ApprovalMode,
+  ToolApprovalDecision,
+  ToolApprovalRequest,
+  ToolApprovalScope,
+  ToolExecutionContext
+} from "../tools/tool.ts";
 import { ToolRegistry } from "../tools/tool-registry.ts";
 import {
   findBuiltinCommands,
@@ -98,6 +113,23 @@ interface ThemePickerItem extends ThemeDefinition {
   readonly active: boolean;
 }
 
+interface ApprovalModePickerItem {
+  readonly mode: ApprovalMode;
+  readonly label: string;
+  readonly description: string;
+  readonly active: boolean;
+}
+
+interface PendingPaste {
+  readonly token: string;
+  readonly text: string;
+}
+
+interface ActiveApprovalRequest extends ToolApprovalRequest {
+  readonly selectedIndex: number;
+  readonly resolve: (decision: ToolApprovalDecision) => void;
+}
+
 export interface TuiAppProps {
   readonly systemPrompt: string;
   readonly runtimeConfig: RuntimeConfig;
@@ -116,6 +148,7 @@ export function TuiApp(props: TuiAppProps) {
   const [entries, setEntries] = createSignal<readonly UiEntry[]>([]);
   const [busy, setBusy] = createSignal(false);
   const [draft, setDraft] = createSignal("");
+  const [pendingPastes, setPendingPastes] = createSignal<readonly PendingPaste[]>([]);
   const [previousMessages, setPreviousMessages] = createSignal<readonly ConversationMessage[]>([]);
   const [currentConversation, setCurrentConversation] = createSignal<SavedConversationRecord | undefined>(undefined);
   const [statusTick, setStatusTick] = createSignal(0);
@@ -135,6 +168,11 @@ export function TuiApp(props: TuiAppProps) {
   const [themePickerOpen, setThemePickerOpen] = createSignal(false);
   const [themePickerQuery, setThemePickerQuery] = createSignal("");
   const [themePickerSelectedIndex, setThemePickerSelectedIndex] = createSignal(0);
+  const [approvalMode, setApprovalMode] = createSignal<ApprovalMode>(props.runtimeConfig.approvalMode);
+  const [approvalAllowlist, setApprovalAllowlist] = createSignal<readonly ToolApprovalScope[]>(props.runtimeConfig.approvalAllowlist);
+  const [approvalModePickerOpen, setApprovalModePickerOpen] = createSignal(false);
+  const [approvalModePickerSelectedIndex, setApprovalModePickerSelectedIndex] = createSignal(0);
+  const [activeApprovalRequest, setActiveApprovalRequest] = createSignal<ActiveApprovalRequest | undefined>(undefined);
   let inputRef: InputRenderable | undefined;
   let modelPickerInputRef: InputRenderable | undefined;
   let historyPickerInputRef: InputRenderable | undefined;
@@ -144,11 +182,25 @@ export function TuiApp(props: TuiAppProps) {
   let pendingStreamEntryId: string | undefined;
   let streamFlushTimer: ReturnType<typeof setTimeout> | undefined;
   let syncingVisibleDraft = false;
+  let pasteCounter = 0;
 
   const t = createMemo<ThemeColors>(() => getTheme(themeName()));
   const markdownStyle = createMemo(() => createMarkdownSyntaxStyle(t()));
   const sessionLanguageModel = createMemo(() => createLanguageModel(sessionRuntimeConfig()));
   const historyRoot = createMemo(() => resolveHistoryRoot(sessionRuntimeConfig().configPath));
+  const modalOpen = createMemo(() =>
+    modelPickerOpen()
+    || historyPickerOpen()
+    || themePickerOpen()
+    || approvalModePickerOpen()
+    || activeApprovalRequest() !== undefined
+  );
+  const sessionToolContext = createMemo<ToolExecutionContext>(() => ({
+    ...props.toolContext,
+    approvalMode: approvalMode(),
+    approvalAllowlist: approvalAllowlist(),
+    requestToolApproval
+  }));
 
   const statusMarquee = createMemo(() => buildStatusMarquee(statusTick()));
   const commandSuggestions = createMemo(() => findBuiltinCommands(draft()));
@@ -162,10 +214,12 @@ export function TuiApp(props: TuiAppProps) {
   const historyPickerTotalOptionCount = createMemo(() => filteredHistoryPickerItems().length);
   const themePickerItems = createMemo(() => buildThemePickerItems(themeName(), themePickerQuery()));
   const themePickerTotalOptionCount = createMemo(() => themePickerItems().length);
+  const approvalModePickerItems = createMemo(() => buildApprovalModePickerItems(approvalMode()));
+  const approvalModePickerTotalOptionCount = createMemo(() => approvalModePickerItems().length);
   const commandPanel = createMemo(() => buildCommandPanelState(
     draft(),
     commandSuggestions(),
-    busy() || modelPickerOpen() || historyPickerOpen() || themePickerOpen(),
+    busy() || modalOpen(),
     commandSelectionIndex()
   ));
   const conversationFlowWidth = createMemo(() => Math.max(24, terminal().width - 10));
@@ -237,6 +291,49 @@ export function TuiApp(props: TuiAppProps) {
     }, 33);
   };
 
+  const syncDraftValue = (nextDraft: string) => {
+    setDraft(nextDraft);
+    setPendingPastes((current) => current.filter((item) => nextDraft.includes(item.token)));
+
+    if (inputRef === undefined) {
+      return;
+    }
+
+    const visibleValue = toVisibleDraft(nextDraft);
+    if (inputRef.value === visibleValue) {
+      return;
+    }
+
+    syncingVisibleDraft = true;
+    inputRef.value = visibleValue;
+    queueMicrotask(() => {
+      syncingVisibleDraft = false;
+    });
+  };
+
+  const updateApprovalSettings = (
+    nextApprovalMode: ApprovalMode,
+    nextApprovalAllowlist: readonly ToolApprovalScope[]
+  ) => {
+    setApprovalMode(nextApprovalMode);
+    setApprovalAllowlist(nextApprovalAllowlist);
+    setSessionRuntimeConfig((current) => ({
+      ...current,
+      approvalMode: nextApprovalMode,
+      approvalAllowlist: nextApprovalAllowlist
+    }));
+  };
+
+  function requestToolApproval(request: ToolApprovalRequest): Promise<ToolApprovalDecision> {
+    return new Promise((resolve) => {
+      setActiveApprovalRequest({
+        ...request,
+        selectedIndex: 0,
+        resolve
+      });
+    });
+  }
+
   onMount(() => {
     inputRef?.focus();
     applyInputCursorStyle(inputRef, t().brandShimmer);
@@ -250,7 +347,110 @@ export function TuiApp(props: TuiAppProps) {
     });
   });
 
+  usePaste((event) => {
+    if (busy() || modalOpen() || isCommandDraft(draft())) {
+      return;
+    }
+
+    const text = stripAnsiSequences(decodePasteBytes(event.bytes));
+    const lineCount = countPastedLines(text);
+    if (lineCount <= 1) {
+      return;
+    }
+
+    event.preventDefault();
+    pasteCounter += 1;
+    const token = `{Paste ${lineCount} lines #${pasteCounter}}`;
+    setPendingPastes((current) => [...current, { token, text }]);
+    syncDraftValue(`${draft()}${token}`);
+    setCommandSelectionIndex(0);
+    inputRef?.focus();
+  });
+
   useKeyboard((key) => {
+    if (activeApprovalRequest() !== undefined) {
+      const optionCount = APPROVAL_DECISIONS.length;
+      switch (key.name) {
+        case "escape":
+          key.preventDefault();
+          resolveApprovalRequest("deny");
+          return;
+        case "up":
+          key.preventDefault();
+          setActiveApprovalRequest((current) => current === undefined
+            ? current
+            : {
+                ...current,
+                selectedIndex: moveBuiltinCommandSelectionIndex(current.selectedIndex, optionCount, -1)
+              });
+          return;
+        case "down":
+          key.preventDefault();
+          setActiveApprovalRequest((current) => current === undefined
+            ? current
+            : {
+                ...current,
+                selectedIndex: moveBuiltinCommandSelectionIndex(current.selectedIndex, optionCount, 1)
+              });
+          return;
+        case "return":
+        case "enter": {
+          key.preventDefault();
+          const request = activeApprovalRequest();
+          if (request === undefined) {
+            return;
+          }
+          const decision = APPROVAL_DECISIONS[
+            normalizeBuiltinCommandSelectionIndex(request.selectedIndex, optionCount)
+          ]?.decision;
+          resolveApprovalRequest(decision ?? "deny");
+          return;
+        }
+        default:
+          return;
+      }
+    }
+
+    if (approvalModePickerOpen()) {
+      switch (key.name) {
+        case "escape":
+          key.preventDefault();
+          closeApprovalModePicker(inputRef, setApprovalModePickerOpen, setApprovalModePickerSelectedIndex);
+          return;
+        case "up":
+          key.preventDefault();
+          setApprovalModePickerSelectedIndex((current) =>
+            moveBuiltinCommandSelectionIndex(current, approvalModePickerTotalOptionCount(), -1)
+          );
+          return;
+        case "down":
+          key.preventDefault();
+          setApprovalModePickerSelectedIndex((current) =>
+            moveBuiltinCommandSelectionIndex(current, approvalModePickerTotalOptionCount(), 1)
+          );
+          return;
+        case "return":
+        case "enter":
+          key.preventDefault();
+          submitSelectedApprovalModePickerItem({
+            configPath: sessionRuntimeConfig().configPath,
+            selectedIndex: approvalModePickerSelectedIndex(),
+            items: approvalModePickerItems(),
+            approvalAllowlist: approvalAllowlist(),
+            updateApprovalSettings,
+            appendEntry(entry) {
+              appendEntry(setEntries, entry);
+            },
+            close() {
+              closeApprovalModePicker(inputRef, setApprovalModePickerOpen, setApprovalModePickerSelectedIndex);
+            }
+          });
+          return;
+        default:
+          return;
+      }
+    }
+
     if (themePickerOpen()) {
       switch (key.name) {
         case "escape":
@@ -400,6 +600,7 @@ export function TuiApp(props: TuiAppProps) {
       key.preventDefault();
       key.stopPropagation();
       clearDraft(inputRef, setDraft);
+      setPendingPastes([]);
       setCommandSelectionIndex(0);
       inputRef?.focus();
       return;
@@ -470,6 +671,37 @@ export function TuiApp(props: TuiAppProps) {
     lastCopiedSelectionText = selectedText;
   });
 
+  const resolveApprovalRequest = (decision: ToolApprovalDecision) => {
+    const request = activeApprovalRequest();
+    if (request === undefined) {
+      return;
+    }
+
+    if (decision === "allow-always") {
+      const nextAllowlist = request.scope === "read" || approvalAllowlist().includes(request.scope)
+        ? approvalAllowlist()
+        : [...approvalAllowlist(), request.scope];
+
+      if (nextAllowlist !== approvalAllowlist()) {
+        try {
+          persistSelectedApprovalAllowlist(sessionRuntimeConfig().configPath, nextAllowlist);
+          updateApprovalSettings(approvalMode(), nextAllowlist);
+          appendEntry(
+            setEntries,
+            createEntry("status", "status", `Always allowing ${request.scope} tools from now on`)
+          );
+        } catch (error) {
+          appendEntry(setEntries, createEntry("error", "error", toErrorMessage(error)));
+          decision = "deny";
+        }
+      }
+    }
+
+    setActiveApprovalRequest(undefined);
+    request.resolve(decision);
+    inputRef?.focus();
+  };
+
   const submitPrompt = async (value: string) => {
     const prompt = value.trim();
     const builtinCommand = parseBuiltinCommand(prompt);
@@ -480,6 +712,7 @@ export function TuiApp(props: TuiAppProps) {
 
     if (builtinCommand?.name === "exit" || builtinCommand?.name === "quit") {
       clearDraft(inputRef, setDraft);
+      setPendingPastes([]);
       renderer.destroy();
       return;
     }
@@ -490,6 +723,7 @@ export function TuiApp(props: TuiAppProps) {
 
     if (builtinCommand !== undefined) {
       clearDraft(inputRef, setDraft);
+      setPendingPastes([]);
 
       if (builtinCommand.name === "models") {
         await openModelPicker({
@@ -536,6 +770,31 @@ export function TuiApp(props: TuiAppProps) {
         return;
       }
 
+      if (builtinCommand.name === "approval-mode") {
+        openApprovalModePicker(setApprovalModePickerOpen, setApprovalModePickerSelectedIndex, approvalMode());
+        return;
+      }
+
+      if (builtinCommand.name === "export") {
+        const conversation = currentConversation();
+        if (conversation === undefined) {
+          appendEntry(setEntries, createEntry("error", "error", "There is no active conversation to export."));
+          return;
+        }
+
+        try {
+          const outputPath = exportConversationToHtml({
+            workspaceRoot: sessionRuntimeConfig().workspaceRoot,
+            conversation,
+            themeName: themeName()
+          });
+          appendEntry(setEntries, createEntry("status", "status", `Exported conversation to ${outputPath}`));
+        } catch (error) {
+          appendEntry(setEntries, createEntry("error", "error", toErrorMessage(error)));
+        }
+        return;
+      }
+
       if (builtinCommand.name === "new" || builtinCommand.name === "clear") {
         const conversation = startNewConversation(historyRoot(), sessionRuntimeConfig());
         setCurrentConversation(conversation);
@@ -543,6 +802,7 @@ export function TuiApp(props: TuiAppProps) {
         setPreviousMessages([]);
         setStreamingBody("");
         setStreamingEntryId(undefined);
+        setPendingPastes([]);
         return;
       }
 
@@ -559,7 +819,9 @@ export function TuiApp(props: TuiAppProps) {
       return;
     }
 
+    const expandedPrompt = expandDraftPastes(prompt, pendingPastes());
     clearDraft(inputRef, setDraft);
+    setPendingPastes([]);
     setBusy(true);
     appendEntry(setEntries, createEntry("user", "You", prompt));
 
@@ -575,11 +837,11 @@ export function TuiApp(props: TuiAppProps) {
     try {
       const result = await runSingleTurn({
         systemPrompt: props.systemPrompt,
-        prompt,
+        prompt: expandedPrompt,
         previousMessages: previousMessages(),
         languageModel: sessionLanguageModel(),
         toolRegistry: props.toolRegistry,
-        toolContext: props.toolContext,
+        toolContext: sessionToolContext(),
         abortSignal: abortController.signal,
         onToolCall(toolCall) {
           flushAndResetPendingStreamText();
@@ -727,11 +989,11 @@ export function TuiApp(props: TuiAppProps) {
           ref={(value) => {
             inputRef = value;
             applyInputCursorStyle(value, t().brandShimmer);
-            if (!modelPickerOpen() && !historyPickerOpen() && !themePickerOpen()) {
+            if (!modalOpen()) {
               value.focus();
             }
           }}
-          focused={!modelPickerOpen() && !historyPickerOpen() && !themePickerOpen()}
+          focused={!modalOpen()}
           value={toVisibleDraft(draft())}
           flexGrow={1}
           placeholder={busy() ? "Waiting..." : "Send a message to Recode..."}
@@ -740,17 +1002,7 @@ export function TuiApp(props: TuiAppProps) {
               return;
             }
             const nextDraft = normalizeDraftInput(draft(), value);
-            setDraft(nextDraft);
-            if (inputRef !== undefined) {
-              const visibleValue = toVisibleDraft(nextDraft);
-              if (inputRef.value !== visibleValue) {
-                syncingVisibleDraft = true;
-                inputRef.value = visibleValue;
-                queueMicrotask(() => {
-                  syncingVisibleDraft = false;
-                });
-              }
-            }
+            syncDraftValue(nextDraft);
             setCommandSelectionIndex(0);
           }}
           onSubmit={() => {
@@ -769,7 +1021,7 @@ export function TuiApp(props: TuiAppProps) {
                 {(segment) => <text fg={segment.color}>{segment.text}</text>}
               </For>
             </box>
-            <text fg={t().hintText}>{modelPickerOpen() || historyPickerOpen() || themePickerOpen() ? "Press ESC to close" : "Press ESC to abort"}</text>
+            <text fg={t().hintText}>{modalOpen() ? "Press ESC to close" : "Press ESC to abort"}</text>
           </box>
         </Show>
       </box>
@@ -1032,6 +1284,105 @@ export function TuiApp(props: TuiAppProps) {
           </Show>
         </box>
       </Show>
+
+      <Show when={approvalModePickerOpen()}>
+        <box
+          flexDirection="column"
+          border
+          borderColor={t().brandShimmer}
+          marginLeft={3}
+          marginRight={3}
+          marginBottom={1}
+          paddingLeft={1}
+          paddingRight={1}
+          paddingTop={1}
+          paddingBottom={1}
+          flexShrink={0}
+        >
+          <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>Approval Mode</text>
+          <text fg={t().hintText}>Use arrows to navigate. Press Enter to select. Press ESC to close.</text>
+          <scrollbox height={Math.max(5, Math.min(terminal().height - 18, 10))} scrollY marginTop={1}>
+            <For each={approvalModePickerItems()}>
+              {(item, index) => {
+                const selected = () => index() === normalizeBuiltinCommandSelectionIndex(
+                  approvalModePickerSelectedIndex(),
+                  approvalModePickerTotalOptionCount()
+                );
+
+                return (
+                  <box flexDirection="column" marginBottom={1} paddingLeft={1} paddingRight={1}>
+                    <text
+                      fg={selected() ? t().brandShimmer : t().text}
+                      attributes={selected() ? TextAttributes.BOLD : TextAttributes.NONE}
+                    >
+                      {`${selected() ? "›" : " "} ${item.label}${item.active ? " (current)" : ""}`}
+                    </text>
+                    <text fg={t().hintText} attributes={TextAttributes.DIM}>{item.description}</text>
+                  </box>
+                );
+              }}
+            </For>
+          </scrollbox>
+        </box>
+      </Show>
+
+      <Show when={activeApprovalRequest() !== undefined}>
+        <box
+          flexDirection="column"
+          border
+          borderColor={t().brandShimmer}
+          marginLeft={3}
+          marginRight={3}
+          marginBottom={1}
+          paddingLeft={1}
+          paddingRight={1}
+          paddingTop={1}
+          paddingBottom={1}
+          flexShrink={0}
+        >
+          <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>Approve Tool Action</text>
+          <Show when={activeApprovalRequest()}>
+            {(request: () => ActiveApprovalRequest) => (
+              <>
+                <text fg={t().text}>{formatApprovalRequestTitle(request())}</text>
+                <text fg={t().hintText} attributes={TextAttributes.DIM}>
+                  {formatApprovalRequestDescription(request())}
+                </text>
+                <box
+                  flexDirection="column"
+                  border
+                  borderColor={t().promptBorder}
+                  marginTop={1}
+                  paddingLeft={1}
+                  paddingRight={1}
+                >
+                  <For each={APPROVAL_DECISIONS}>
+                    {(decision, index) => {
+                      const selected = () => index() === normalizeBuiltinCommandSelectionIndex(
+                        request().selectedIndex,
+                        APPROVAL_DECISIONS.length
+                      );
+
+                      return (
+                        <box flexDirection="column" marginBottom={1}>
+                          <text
+                            fg={selected() ? t().brandShimmer : t().text}
+                            attributes={selected() ? TextAttributes.BOLD : TextAttributes.NONE}
+                          >
+                            {`${selected() ? "›" : " "} ${decision.label}`}
+                          </text>
+                          <text fg={t().hintText} attributes={TextAttributes.DIM}>{decision.description}</text>
+                        </box>
+                      );
+                    }}
+                  </For>
+                </box>
+                <text fg={t().hintText} marginTop={1}>Press Enter to confirm or ESC to deny.</text>
+              </>
+            )}
+          </Show>
+        </box>
+      </Show>
     </box>
   );
 }
@@ -1162,6 +1513,8 @@ function buildBuiltinStatusBody(
     `- Provider kind: ${runtimeConfig.provider}`,
     `- Model: ${runtimeConfig.model}`,
     `- Base URL: \`${runtimeConfig.baseUrl}\``,
+    `- Approval mode: \`${runtimeConfig.approvalMode}\``,
+    `- Always-allowed scopes: ${runtimeConfig.approvalAllowlist.length === 0 ? "none" : runtimeConfig.approvalAllowlist.map((scope) => `\`${scope}\``).join(", ")}`,
     `- Config path: \`${runtimeConfig.configPath}\``,
     `- Visible UI entries: ${entriesCount}`,
     `- Conversation messages: ${transcriptCount}`
@@ -1178,6 +1531,8 @@ function buildBuiltinConfigBody(runtimeConfig: RuntimeConfig, activeThemeName: T
     `- Active provider: ${runtimeConfig.providerName} (\`${runtimeConfig.providerId}\`)`,
     `- Active model: \`${runtimeConfig.model}\``,
     `- Base URL: \`${runtimeConfig.baseUrl}\``,
+    `- Approval mode: \`${runtimeConfig.approvalMode}\``,
+    `- Always-allowed scopes: ${runtimeConfig.approvalAllowlist.length === 0 ? "none" : runtimeConfig.approvalAllowlist.map((scope) => `\`${scope}\``).join(", ")}`,
     "",
     "## Providers",
     ""
@@ -1490,6 +1845,145 @@ async function submitSelectedThemePickerItem(options: SubmitThemePickerSelection
   } catch (error) {
     options.appendEntry(createEntry("error", "error", toErrorMessage(error)));
   }
+}
+
+const APPROVAL_DECISIONS = [
+  {
+    decision: "allow-once",
+    label: "Allow once",
+    description: "Run this tool call now and ask again next time."
+  },
+  {
+    decision: "allow-always",
+    label: "Always allow this scope",
+    description: "Persist this tool scope in the config allowlist."
+  },
+  {
+    decision: "deny",
+    label: "Deny",
+    description: "Reject this tool call."
+  }
+] as const satisfies readonly {
+  readonly decision: ToolApprovalDecision;
+  readonly label: string;
+  readonly description: string;
+}[];
+
+function buildApprovalModePickerItems(activeMode: ApprovalMode): readonly ApprovalModePickerItem[] {
+  return [
+    {
+      mode: "approval",
+      label: "Approval",
+      description: "Read tools run directly. Edit and Bash tools ask first.",
+      active: activeMode === "approval"
+    },
+    {
+      mode: "auto-edits",
+      label: "Auto-Edits",
+      description: "Read and edit tools run directly. Bash tools still ask first.",
+      active: activeMode === "auto-edits"
+    },
+    {
+      mode: "yolo",
+      label: "YOLO",
+      description: "Run read, edit, and Bash tools without asking.",
+      active: activeMode === "yolo"
+    }
+  ];
+}
+
+function openApprovalModePicker(
+  setOpen: (value: boolean) => void,
+  setSelectedIndex: (value: number) => void,
+  currentMode: ApprovalMode
+): void {
+  const items = buildApprovalModePickerItems(currentMode);
+  const activeIndex = items.findIndex((item) => item.mode === currentMode);
+  setOpen(true);
+  setSelectedIndex(activeIndex === -1 ? 0 : activeIndex);
+}
+
+function closeApprovalModePicker(
+  input: InputRenderable | undefined,
+  setOpen: (value: boolean) => void,
+  setSelectedIndex: (value: number) => void
+): void {
+  setOpen(false);
+  setSelectedIndex(0);
+  input?.focus();
+}
+
+interface SubmitApprovalModePickerSelectionOptions {
+  readonly configPath: string;
+  readonly selectedIndex: number;
+  readonly items: readonly ApprovalModePickerItem[];
+  readonly approvalAllowlist: readonly ToolApprovalScope[];
+  readonly updateApprovalSettings: (
+    approvalMode: ApprovalMode,
+    approvalAllowlist: readonly ToolApprovalScope[]
+  ) => void;
+  readonly appendEntry: (entry: UiEntry) => void;
+  readonly close: () => void;
+}
+
+function submitSelectedApprovalModePickerItem(options: SubmitApprovalModePickerSelectionOptions): void {
+  const selectedItem = options.items[options.selectedIndex];
+  if (selectedItem === undefined) {
+    return;
+  }
+
+  try {
+    persistSelectedApprovalMode(options.configPath, selectedItem.mode);
+    options.updateApprovalSettings(selectedItem.mode, options.approvalAllowlist);
+    options.appendEntry(createEntry("status", "status", `Selected approval mode ${selectedItem.label}`));
+    options.close();
+  } catch (error) {
+    options.appendEntry(createEntry("error", "error", toErrorMessage(error)));
+  }
+}
+
+function persistSelectedApprovalMode(configPath: string, approvalMode: ApprovalMode): void {
+  const config = loadRecodeConfigFile(configPath);
+  const nextConfig = selectConfiguredApprovalMode(config, approvalMode);
+  saveRecodeConfigFile(configPath, nextConfig);
+}
+
+function persistSelectedApprovalAllowlist(
+  configPath: string,
+  approvalAllowlist: readonly ToolApprovalScope[]
+): void {
+  const config = loadRecodeConfigFile(configPath);
+  const nextConfig = selectConfiguredApprovalAllowlist(config, approvalAllowlist);
+  saveRecodeConfigFile(configPath, nextConfig);
+}
+
+function formatApprovalRequestTitle(request: ToolApprovalRequest): string {
+  return `${request.toolName} wants ${request.scope} access.`;
+}
+
+function formatApprovalRequestDescription(request: ToolApprovalRequest): string {
+  const summary = summarizeToolArguments(request.toolName, JSON.stringify(request.arguments));
+  return summary === ""
+    ? "Choose how Recode should handle this tool call."
+    : `Details: ${summary}`;
+}
+
+function countPastedLines(value: string): number {
+  if (value === "") {
+    return 0;
+  }
+
+  return value.replace(/\r\n/g, "\n").split("\n").length;
+}
+
+function expandDraftPastes(value: string, pastes: readonly PendingPaste[]): string {
+  let expanded = value;
+
+  for (const paste of pastes) {
+    expanded = expanded.replaceAll(paste.token, paste.text);
+  }
+
+  return expanded;
 }
 
 function estimateConversationFlowHeight(

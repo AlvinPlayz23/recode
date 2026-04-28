@@ -17,6 +17,8 @@ describe("createLanguageModel", () => {
       providerName: "OpenAI",
       model: "gpt-4.1",
       providers: [],
+      approvalMode: "approval",
+      approvalAllowlist: [],
       apiKey: "sk-test",
       baseUrl: "https://api.openai.com/v1"
     });
@@ -34,6 +36,8 @@ describe("createLanguageModel", () => {
       providerName: "Local Ollama",
       model: "qwen",
       providers: [],
+      approvalMode: "approval",
+      approvalAllowlist: [],
       baseUrl: "http://127.0.0.1:11434/v1",
       apiKey: "sk-test"
     });
@@ -50,6 +54,8 @@ describe("createLanguageModel", () => {
       providerName: "Anthropic",
       model: "claude-sonnet-4-20250514",
       providers: [],
+      approvalMode: "approval",
+      approvalAllowlist: [],
       baseUrl: "https://api.anthropic.com/v1",
       apiKey: "sk-ant-test"
     });

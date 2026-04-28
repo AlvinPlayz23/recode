@@ -78,7 +78,7 @@ describe("runAgentLoop", () => {
       initialUserPrompt: "Say hello",
       languageModel: {} as never,
       toolRegistry: registry,
-      toolContext: { workspaceRoot: "/tmp/recode" },
+      toolContext: { workspaceRoot: "/tmp/recode", approvalMode: "yolo" },
     });
 
     expect(result.finalText).toBe("done");
@@ -116,7 +116,7 @@ describe("runAgentLoop", () => {
       ],
       languageModel: {} as never,
       toolRegistry: registry,
-      toolContext: { workspaceRoot: "/tmp/recode" }
+      toolContext: { workspaceRoot: "/tmp/recode", approvalMode: "yolo" }
     });
 
     expect(capturedRequests[0]?.messages).toEqual([
@@ -145,7 +145,7 @@ describe("runAgentLoop", () => {
       initialUserPrompt: "Say world",
       languageModel: {} as never,
       toolRegistry: registry,
-      toolContext: { workspaceRoot: "/tmp/recode" },
+      toolContext: { workspaceRoot: "/tmp/recode", approvalMode: "yolo" },
       onToolCall(toolCall) {
         events.push({ type: "tool", value: `${toolCall.name}:${toolCall.id}` });
       },
@@ -176,7 +176,7 @@ describe("runAgentLoop", () => {
       initialUserPrompt: "greet",
       languageModel: {} as never,
       toolRegistry: registry,
-      toolContext: { workspaceRoot: "/tmp/recode" },
+      toolContext: { workspaceRoot: "/tmp/recode", approvalMode: "yolo" },
       onTextDelta(delta) {
         deltas.push(delta);
       }
@@ -198,7 +198,7 @@ describe("runAgentLoop", () => {
       initialUserPrompt: "greet",
       languageModel: {} as never,
       toolRegistry: registry,
-      toolContext: { workspaceRoot: "/tmp/recode" }
+      toolContext: { workspaceRoot: "/tmp/recode", approvalMode: "yolo" }
     })).rejects.toThrow("boom");
   });
 
@@ -215,7 +215,7 @@ describe("runAgentLoop", () => {
       initialUserPrompt: "greet",
       languageModel: {} as never,
       toolRegistry: registry,
-      toolContext: { workspaceRoot: "/tmp/recode" }
+      toolContext: { workspaceRoot: "/tmp/recode", approvalMode: "yolo" }
     })).rejects.toThrow("Request aborted");
   });
 });

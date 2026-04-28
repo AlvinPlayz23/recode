@@ -29,11 +29,35 @@ export interface ToolArguments {
   readonly [key: string]: unknown;
 }
 
+/** Approval mode for tool execution. */
+export type ApprovalMode = "approval" | "auto-edits" | "yolo";
+
+/** Tool approval scope bucket. */
+export type ToolApprovalScope = "read" | "edit" | "bash";
+
+/** User decision for a tool approval prompt. */
+export type ToolApprovalDecision = "allow-once" | "allow-always" | "deny";
+
+/** Metadata for one tool approval request. */
+export interface ToolApprovalRequest {
+  readonly toolName: string;
+  readonly scope: ToolApprovalScope;
+  readonly arguments: ToolArguments;
+}
+
+/** Async approval handler for interactive sessions. */
+export interface ToolApprovalHandler {
+  (request: ToolApprovalRequest): Promise<ToolApprovalDecision>;
+}
+
 /**
  * Tool execution context.
  */
 export interface ToolExecutionContext {
   readonly workspaceRoot: string;
+  readonly approvalMode?: ApprovalMode;
+  readonly approvalAllowlist?: readonly ToolApprovalScope[];
+  readonly requestToolApproval?: ToolApprovalHandler;
 }
 
 /**

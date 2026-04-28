@@ -7,7 +7,7 @@
 import { ToolExecutionError } from "../errors/recode-error.ts";
 import type { ToolCall, ToolResultMessage } from "../messages/message.ts";
 import { isRecord } from "../shared/is-record.ts";
-import type { ToolArguments, ToolExecutionContext } from "./tool.ts";
+import type { ToolArguments, ToolApprovalRequest, ToolApprovalScope, ToolExecutionContext } from "./tool.ts";
 import { ToolRegistry } from "./tool-registry.ts";
 
 /**
@@ -26,6 +26,10 @@ export async function executeToolCall(
 
   try {
     const parsedArguments = parseToolArguments(toolCall.argumentsJson);
+    const approvalResult = await checkToolApproval(toolCall.name, parsedArguments, context);
+    if (approvalResult !== undefined) {
+      return createErrorResult(toolCall, approvalResult);
+    }
     const result = await tool.execute(parsedArguments, context);
 
     return {
@@ -37,6 +41,67 @@ export async function executeToolCall(
     };
   } catch (error) {
     return createErrorResult(toolCall, errorToMessage(error));
+  }
+}
+
+async function checkToolApproval(
+  toolName: string,
+  arguments_: ToolArguments,
+  context: ToolExecutionContext
+): Promise<string | undefined> {
+  const approvalMode = context.approvalMode ?? "approval";
+  const scope = getToolApprovalScope(toolName);
+  if (!requiresApproval(approvalMode, scope, context.approvalAllowlist ?? [])) {
+    return undefined;
+  }
+
+  if (context.requestToolApproval === undefined) {
+    return `Approval required for ${toolName}, but no interactive approval handler is available.`;
+  }
+
+  const request: ToolApprovalRequest = {
+    toolName,
+    scope,
+    arguments: arguments_
+  };
+
+  const decision = await context.requestToolApproval(request);
+  return decision === "deny" ? "Tool execution denied by user." : undefined;
+}
+
+function getToolApprovalScope(toolName: string): ToolApprovalScope {
+  switch (toolName) {
+    case "Read":
+    case "Glob":
+    case "Grep":
+      return "read";
+    case "Write":
+    case "Edit":
+      return "edit";
+    case "Bash":
+      return "bash";
+    default:
+      return "edit";
+  }
+}
+
+function requiresApproval(
+  approvalMode: ToolExecutionContext["approvalMode"],
+  scope: ToolApprovalScope,
+  allowlist: readonly ToolApprovalScope[]
+): boolean {
+  if (allowlist.includes(scope)) {
+    return false;
+  }
+
+  switch (approvalMode) {
+    case "yolo":
+      return false;
+    case "auto-edits":
+      return scope === "bash";
+    case "approval":
+    default:
+      return scope === "edit" || scope === "bash";
   }
 }
 

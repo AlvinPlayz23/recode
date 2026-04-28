@@ -13,6 +13,8 @@ import {
   loadRecodeConfigFile,
   resolveConfigPath,
   saveRecodeConfigFile,
+  selectConfiguredApprovalAllowlist,
+  selectConfiguredApprovalMode,
   selectConfiguredProviderModel,
   selectConfiguredTheme,
   upsertConfiguredProvider
@@ -49,14 +51,19 @@ describe("recode config", () => {
       true
     );
     const themedConfig = selectConfiguredTheme(nextConfig, "matcha-night");
+    const approvalConfig = selectConfiguredApprovalAllowlist(
+      selectConfiguredApprovalMode(themedConfig, "auto-edits"),
+      ["edit"]
+    );
 
-    saveRecodeConfigFile(configPath, themedConfig);
+    saveRecodeConfigFile(configPath, approvalConfig);
 
     const rawText = readFileSync(configPath, "utf8");
     expect(rawText).toContain("\"openai-main\"");
     expect(rawText).toContain("\"matcha-night\"");
+    expect(rawText).toContain("\"auto-edits\"");
 
-    expect(loadRecodeConfigFile(configPath)).toEqual(themedConfig);
+    expect(loadRecodeConfigFile(configPath)).toEqual(approvalConfig);
   });
 
   it("updates the active provider and selected model", () => {
@@ -86,5 +93,13 @@ describe("recode config", () => {
   it("updates the configured theme", () => {
     const config = selectConfiguredTheme(createEmptyConfig(), "paper-lantern");
     expect(config.themeName).toBe("paper-lantern");
+  });
+
+  it("updates approval settings", () => {
+    const modeConfig = selectConfiguredApprovalMode(createEmptyConfig(), "yolo");
+    const allowlistConfig = selectConfiguredApprovalAllowlist(modeConfig, ["bash"]);
+
+    expect(allowlistConfig.approvalMode).toBe("yolo");
+    expect(allowlistConfig.approvalAllowlist).toEqual(["bash"]);
   });
 });

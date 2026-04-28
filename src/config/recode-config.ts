@@ -10,6 +10,7 @@ import { dirname, resolve } from "node:path";
 import type { ProviderKind } from "../providers/provider-kind.ts";
 import { isRecord } from "../shared/is-record.ts";
 import { isThemeName, type ThemeName } from "../tui/theme.ts";
+import type { ApprovalMode, ToolApprovalScope } from "../tools/tool.ts";
 
 /**
  * One configured model entry.
@@ -39,6 +40,8 @@ export interface RecodeConfigFile {
   readonly version: 1;
   readonly activeProviderId?: string;
   readonly themeName?: ThemeName;
+  readonly approvalMode?: ApprovalMode;
+  readonly approvalAllowlist?: readonly ToolApprovalScope[];
   readonly providers: readonly ConfiguredProvider[];
 }
 
@@ -107,6 +110,8 @@ export function upsertConfiguredProvider(
     version: CONFIG_VERSION,
     providers,
     ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
+    ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
+    ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
     ...(makeActive ? { activeProviderId: provider.id } : (
       config.activeProviderId === undefined ? {} : { activeProviderId: config.activeProviderId }
     ))
@@ -138,6 +143,8 @@ export function selectConfiguredProviderModel(
     version: CONFIG_VERSION,
     activeProviderId: providerId,
     ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
+    ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
+    ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
     providers
   };
 }
@@ -153,6 +160,42 @@ export function selectConfiguredTheme(
     version: CONFIG_VERSION,
     providers: config.providers,
     themeName,
+    ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
+    ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
+    ...(config.activeProviderId === undefined ? {} : { activeProviderId: config.activeProviderId })
+  };
+}
+
+/**
+ * Update the configured approval mode.
+ */
+export function selectConfiguredApprovalMode(
+  config: RecodeConfigFile,
+  approvalMode: ApprovalMode
+): RecodeConfigFile {
+  return {
+    version: CONFIG_VERSION,
+    providers: config.providers,
+    approvalMode,
+    ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
+    ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
+    ...(config.activeProviderId === undefined ? {} : { activeProviderId: config.activeProviderId })
+  };
+}
+
+/**
+ * Update the persistent approval allowlist.
+ */
+export function selectConfiguredApprovalAllowlist(
+  config: RecodeConfigFile,
+  approvalAllowlist: readonly ToolApprovalScope[]
+): RecodeConfigFile {
+  return {
+    version: CONFIG_VERSION,
+    providers: config.providers,
+    ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
+    ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
+    approvalAllowlist,
     ...(config.activeProviderId === undefined ? {} : { activeProviderId: config.activeProviderId })
   };
 }
@@ -164,6 +207,8 @@ function parseRecodeConfigFile(value: unknown): RecodeConfigFile {
 
   const activeProviderId = readOptionalNonEmptyString(value, "activeProviderId");
   const themeName = readOptionalThemeName(value, "themeName");
+  const approvalMode = readOptionalApprovalMode(value, "approvalMode");
+  const approvalAllowlist = readOptionalApprovalAllowlist(value, "approvalAllowlist");
   const providersValue = value["providers"];
   const providers = Array.isArray(providersValue)
     ? providersValue.map(parseConfiguredProvider).filter((provider) => provider !== undefined)
@@ -173,6 +218,8 @@ function parseRecodeConfigFile(value: unknown): RecodeConfigFile {
     version: CONFIG_VERSION,
     providers,
     ...(themeName === undefined ? {} : { themeName }),
+    ...(approvalMode === undefined ? {} : { approvalMode }),
+    ...(approvalAllowlist === undefined ? {} : { approvalAllowlist }),
     ...(activeProviderId === undefined ? {} : { activeProviderId })
   };
 }
@@ -252,6 +299,33 @@ function readOptionalProviderKind(record: Record<string, unknown>, key: string):
 function readOptionalThemeName(record: Record<string, unknown>, key: string): ThemeName | undefined {
   const value = readOptionalNonEmptyString(record, key);
   return value !== undefined && isThemeName(value) ? value : undefined;
+}
+
+function readOptionalApprovalMode(record: Record<string, unknown>, key: string): ApprovalMode | undefined {
+  const value = readOptionalNonEmptyString(record, key);
+
+  switch (value) {
+    case "approval":
+    case "auto-edits":
+    case "yolo":
+      return value;
+    default:
+      return undefined;
+  }
+}
+
+function readOptionalApprovalAllowlist(
+  record: Record<string, unknown>,
+  key: string
+): readonly ToolApprovalScope[] | undefined {
+  const value = record[key];
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value.filter((item): item is ToolApprovalScope =>
+    item === "read" || item === "edit" || item === "bash"
+  );
 }
 
 function isMissingFileError(error: unknown): boolean {

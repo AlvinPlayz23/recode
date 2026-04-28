@@ -68,7 +68,9 @@ try {
       languageModel,
       toolRegistry,
       toolContext: {
-        workspaceRoot: runtimeConfig.workspaceRoot
+        workspaceRoot: runtimeConfig.workspaceRoot,
+        approvalMode: runtimeConfig.approvalMode,
+        approvalAllowlist: runtimeConfig.approvalAllowlist
       }
     });
   } else {
@@ -78,7 +80,9 @@ try {
       languageModel,
       toolRegistry,
       toolContext: {
-        workspaceRoot: runtimeConfig.workspaceRoot
+        workspaceRoot: runtimeConfig.workspaceRoot,
+        approvalMode: runtimeConfig.approvalMode,
+        approvalAllowlist: runtimeConfig.approvalAllowlist
       }
     });
 

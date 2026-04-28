@@ -10,6 +10,7 @@ import {
   type ConfiguredProvider
 } from "../config/recode-config.ts";
 import type { ProviderKind } from "../providers/provider-kind.ts";
+import type { ApprovalMode, ToolApprovalScope } from "../tools/tool.ts";
 
 /**
  * Runtime provider metadata.
@@ -29,6 +30,8 @@ export interface RuntimeConfig {
   readonly providerName: string;
   readonly model: string;
   readonly providers: readonly RuntimeProviderConfig[];
+  readonly approvalMode: ApprovalMode;
+  readonly approvalAllowlist: readonly ToolApprovalScope[];
   readonly apiKey?: string;
   readonly baseUrl: string;
 }
@@ -62,6 +65,8 @@ export function selectRuntimeProviderModel(
     providerName: selectedProvider.name,
     model: modelId,
     providers,
+    approvalMode: runtimeConfig.approvalMode,
+    approvalAllowlist: runtimeConfig.approvalAllowlist,
     workspaceRoot: runtimeConfig.workspaceRoot,
     configPath: runtimeConfig.configPath,
     baseUrl: selectedProvider.baseUrl,
@@ -116,6 +121,8 @@ export function loadRuntimeConfig(workspaceRoot: string): RuntimeConfig {
     model,
     baseUrl,
     providers,
+    approvalMode: config.approvalMode ?? "approval",
+    approvalAllowlist: config.approvalAllowlist ?? [],
     ...(apiKey === undefined ? {} : { apiKey })
   };
 }
