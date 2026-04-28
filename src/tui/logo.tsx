@@ -80,8 +80,8 @@ export function Logo(props: LogoProps): JSX.Element {
   };
 
   return (
-    <box flexDirection="column" alignItems="center">
-      <box flexDirection="row" justifyContent="center">
+    <box flexDirection="column" alignItems="flex-start">
+      <box flexDirection="row" justifyContent="flex-start">
         <text fg={t.text} attributes={TextAttributes.BOLD} selectable={false}>Recode</text>
         <text fg={t.inactive} selectable={false}> {VERSION} </text>
         <text fg="#e8a0b0" selectable={false}>🌸 </text>
@@ -90,7 +90,7 @@ export function Logo(props: LogoProps): JSX.Element {
         </For>
       </box>
       <box flexDirection="column" alignItems="stretch">
-        <box flexDirection="row" justifyContent="center">
+        <box flexDirection="row" justifyContent="flex-start">
           <text fg={t.inactive} selectable={false}>“{quote.text}”</text>
         </box>
       </box>

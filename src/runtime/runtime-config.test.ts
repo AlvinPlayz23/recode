@@ -156,6 +156,13 @@ function withEnv(overrides: EnvOverrides, fn: () => void): void {
       delete Bun.env[key];
     }
 
+    if (overrides.RECODE_CONFIG_PATH === undefined) {
+      Bun.env.RECODE_CONFIG_PATH = join(
+        tmpdir(),
+        `recode-runtime-config-${Math.random().toString(36).slice(2)}.json`
+      );
+    }
+
     for (const [key, value] of Object.entries(overrides)) {
       Bun.env[key] = value;
     }

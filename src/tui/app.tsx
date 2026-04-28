@@ -47,7 +47,6 @@ import {
   moveBuiltinCommandSelectionIndex,
   normalizeBuiltinCommandSelectionIndex,
   parseBuiltinCommand,
-  titledRule,
   toDisplayLines
 } from "./message-format.ts";
 import { Logo } from "./logo.tsx";
@@ -108,8 +107,6 @@ export function TuiApp(props: TuiAppProps) {
 
   const markdownStyle = createMarkdownSyntaxStyle(t);
   const sessionLanguageModel = createMemo(() => createLanguageModel(sessionRuntimeConfig()));
-
-  const dividerWidth = createMemo(() => Math.max(24, terminal().width - 4));
 
   const statusMarquee = createMemo(() => buildStatusMarquee(statusTick()));
   const commandSuggestions = createMemo(() => findBuiltinCommands(draft()));
@@ -246,6 +243,15 @@ export function TuiApp(props: TuiAppProps) {
     }
 
     const panel = commandPanel();
+
+    if (key.name === "escape" && panel !== undefined) {
+      key.preventDefault();
+      key.stopPropagation();
+      clearDraft(inputRef, setDraft);
+      setCommandSelectionIndex(0);
+      inputRef?.focus();
+      return;
+    }
 
     if (busy() || panel === undefined) {
       return;
@@ -468,20 +474,111 @@ export function TuiApp(props: TuiAppProps) {
   return (
     <box width="100%" height="100%" flexDirection="column" paddingX={1} paddingTop={1} paddingBottom={0}>
       {/* ── Header: Logo + Info ── */}
-      <box flexDirection="column" alignItems="center" flexShrink={0}>
+      <box flexDirection="column" alignItems="flex-start" flexShrink={0} paddingLeft={4}>
         <Logo />
       </box>
 
-      <box flexShrink={0}>
-        <text fg={t.divider}> {titledRule(dividerWidth(), "")}</text>
-      </box>
-
-      {/* ── Message List (Scrollable) ── */}
+      {/* ── Transcript + Composer (Scrollable) ── */}
       <scrollbox flexGrow={1} scrollY stickyScroll stickyStart="bottom" paddingRight={1}>
         <For each={entries()}>
           {(entry) => renderEntry(entry, t, markdownStyle, streamingEntryId, streamingBody)}
         </For>
-
+        <box flexDirection="column" paddingX={2} paddingBottom={1}>
+          <Show when={commandPanel() !== undefined}>
+            <>
+              <box
+                flexDirection="column"
+                border
+                borderColor={t.promptBorder}
+                marginBottom={1}
+                paddingLeft={1}
+                paddingRight={1}
+                flexShrink={0}
+              >
+                <Show
+                  when={commandPanel()!.commands.length > 0}
+                  fallback={<text fg={t.hintText}>No command found. Use /help to see available commands.</text>}
+                >
+                  <For each={commandPanel()!.commands}>
+                    {(command, index) => (
+                      <box flexDirection="row" gap={1}>
+                        <box width={12} flexShrink={0}>
+                          <text
+                            fg={index() === commandPanel()!.selectedIndex ? t.brandShimmer : t.text}
+                            attributes={index() === commandPanel()!.selectedIndex ? TextAttributes.BOLD : TextAttributes.NONE}
+                          >
+                            {`${index() === commandPanel()!.selectedIndex ? "›" : " "} ${command.command}`}
+                          </text>
+                        </box>
+                        <box flexGrow={1} flexShrink={1} minWidth={0}>
+                          <text fg={index() === commandPanel()!.selectedIndex ? t.brandShimmer : t.hintText}>{command.description}</text>
+                        </box>
+                      </box>
+                    )}
+                  </For>
+                  <Show when={commandPanel()!.hasMore}>
+                    <text fg={t.hintText} attributes={TextAttributes.DIM}>… more commands available</text>
+                  </Show>
+                </Show>
+              </box>
+            </>
+          </Show>
+          <box
+            flexDirection="row"
+            alignItems="center"
+            height={3}
+            border
+            borderColor={t.promptBorder}
+            paddingLeft={1}
+            paddingRight={1}
+            flexShrink={0}
+          >
+            <Show
+              when={busy()}
+              fallback={
+                <text fg={t.brandShimmer} attributes={TextAttributes.BOLD}>
+                  {isCommandDraft(draft()) ? "/ " : "◈ "}
+                </text>
+              }
+            >
+              <text fg={t.statusText}>◇ </text>
+            </Show>
+            <input
+              ref={(value) => {
+                inputRef = value;
+                applyInputCursorStyle(value, t.brandShimmer);
+                if (!modelPickerOpen()) {
+                  value.focus();
+                }
+              }}
+              focused={!modelPickerOpen()}
+              value={toVisibleDraft(draft())}
+              flexGrow={1}
+              placeholder={busy() ? "Waiting..." : "Send a message to Recode..."}
+              onInput={(value) => {
+                setDraft(normalizeDraftInput(draft(), value));
+                setCommandSelectionIndex(0);
+              }}
+              onSubmit={() => {
+                void submitPrompt(draft());
+              }}
+            />
+          </box>
+          <box flexDirection="row" alignItems="center" gap={1} paddingLeft={0} paddingTop={0}>
+            <text fg={t.hintText} attributes={TextAttributes.DIM}>{`[${sessionRuntimeConfig().providerName}]`}</text>
+            <text fg={t.hintText} attributes={TextAttributes.DIM}>{`[${sessionRuntimeConfig().model}]`}</text>
+            <Show when={busy() || modelPickerBusy()}>
+              <box flexDirection="row" gap={1} marginLeft={1}>
+                <box flexDirection="row">
+                  <For each={statusMarquee()}>
+                    {(segment) => <text fg={segment.color}>{segment.text}</text>}
+                  </For>
+                </box>
+                <text fg={t.hintText}>{modelPickerOpen() ? "Press ESC to close" : "Press ESC to abort"}</text>
+              </box>
+            </Show>
+          </box>
+        </box>
       </scrollbox>
 
       <Show when={modelPickerOpen()}>
@@ -557,102 +654,6 @@ export function TuiApp(props: TuiAppProps) {
           </Show>
         </box>
       </Show>
-
-      {/* ── Footer: Input Area ── */}
-      <box flexDirection="column" paddingX={2} flexShrink={0}>
-        <Show when={commandPanel() !== undefined}>
-          <>
-            <box
-              flexDirection="column"
-              border
-              borderColor={t.promptBorder}
-              marginBottom={1}
-              paddingLeft={1}
-              paddingRight={1}
-              flexShrink={0}
-            >
-              <Show
-                when={commandPanel()!.commands.length > 0}
-                fallback={<text fg={t.hintText}>No command found. Use /help to see available commands.</text>}
-              >
-                <For each={commandPanel()!.commands}>
-                  {(command, index) => (
-                    <box flexDirection="row" gap={1}>
-                      <box width={12} flexShrink={0}>
-                        <text
-                          fg={index() === commandPanel()!.selectedIndex ? t.brandShimmer : t.text}
-                          attributes={index() === commandPanel()!.selectedIndex ? TextAttributes.BOLD : TextAttributes.NONE}
-                        >
-                          {`${index() === commandPanel()!.selectedIndex ? "›" : " "} ${command.command}`}
-                        </text>
-                      </box>
-                      <box flexGrow={1} flexShrink={1} minWidth={0}>
-                        <text fg={index() === commandPanel()!.selectedIndex ? t.brandShimmer : t.hintText}>{command.description}</text>
-                      </box>
-                    </box>
-                  )}
-                </For>
-                <Show when={commandPanel()!.hasMore}>
-                  <text fg={t.hintText} attributes={TextAttributes.DIM}>… more commands available</text>
-                </Show>
-              </Show>
-            </box>
-          </>
-        </Show>
-        <box
-          flexDirection="row"
-          alignItems="center"
-          height={3}
-          border
-          borderColor={t.promptBorder}
-          paddingLeft={1}
-          paddingRight={1}
-          flexShrink={0}
-        >
-          <Show
-            when={busy()}
-            fallback={<text fg={t.brandShimmer} attributes={TextAttributes.BOLD}>◈ </text>}
-          >
-            <text fg={t.statusText}>◇ </text>
-          </Show>
-          <input
-            ref={(value) => {
-              inputRef = value;
-              applyInputCursorStyle(value, t.brandShimmer);
-              if (!modelPickerOpen()) {
-                value.focus();
-              }
-            }}
-            focused={!modelPickerOpen()}
-            value={draft()}
-            flexGrow={1}
-            placeholder={busy() ? "Waiting..." : "Send a message to Recode..."}
-            onInput={(value) => {
-              setDraft(value);
-              setCommandSelectionIndex(0);
-            }}
-            onSubmit={() => {
-              void submitPrompt(inputRef?.plainText ?? draft());
-            }}
-          />
-        </box>
-        <box flexDirection="row" justifyContent="space-between" paddingLeft={2} paddingRight={1}>
-          <Show
-            when={busy() || modelPickerBusy()}
-            fallback={<text fg={t.hintText}> </text>}
-          >
-            <box flexDirection="row" gap={1}>
-              <box flexDirection="row">
-                <For each={statusMarquee()}>
-                  {(segment) => <text fg={segment.color}>{segment.text}</text>}
-                </For>
-              </box>
-              <text fg={t.hintText}>{modelPickerOpen() ? "Press ESC to close" : "Press ESC to abort"}</text>
-            </box>
-          </Show>
-          <text fg={t.hintText} attributes={TextAttributes.DIM}>{formatRuntimeBadge(sessionRuntimeConfig())}</text>
-        </box>
-      </box>
     </box>
   );
 }
@@ -696,7 +697,7 @@ function applyCommandDraft(
   command: string
 ): void {
   if (input !== undefined) {
-    input.value = command;
+    input.value = toVisibleDraft(command);
     input.focus();
   }
 
@@ -785,8 +786,24 @@ function buildBuiltinStatusBody(
   ].join("\n");
 }
 
-function formatRuntimeBadge(runtimeConfig: RuntimeConfig): string {
-  return `${runtimeConfig.providerName} · ${runtimeConfig.model}`;
+function isCommandDraft(value: string): boolean {
+  return value.trimStart().startsWith("/");
+}
+
+function toVisibleDraft(value: string): string {
+  return isCommandDraft(value) ? value.replace(/^\s*\/?/, "") : value;
+}
+
+function normalizeDraftInput(previousDraft: string, nextValue: string): string {
+  if (nextValue.startsWith("/")) {
+    return nextValue;
+  }
+
+  if (isCommandDraft(previousDraft)) {
+    return nextValue === "" ? "" : `/${nextValue}`;
+  }
+
+  return nextValue;
 }
 
 interface OpenModelPickerOptions {
