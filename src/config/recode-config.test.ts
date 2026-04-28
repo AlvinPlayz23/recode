@@ -1,5 +1,5 @@
 /**
- * Tests for persistent Banka config helpers.
+ * Tests for persistent Recode config helpers.
  *
  * @author dev
  */
@@ -10,14 +10,14 @@ import { join, resolve } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import {
   createEmptyConfig,
-  loadBankaConfigFile,
+  loadRecodeConfigFile,
   resolveConfigPath,
-  saveBankaConfigFile,
+  saveRecodeConfigFile,
   selectConfiguredProviderModel,
   upsertConfiguredProvider
-} from "./banka-config.ts";
+} from "./recode-config.ts";
 
-describe("banka config", () => {
+describe("recode config", () => {
   it("uses a user-home default config path", () => {
     expect(resolveConfigPath("/workspace")).toBe(resolve(homedir(), ".recode", "config.json"));
   });
@@ -27,12 +27,12 @@ describe("banka config", () => {
   });
 
   it("returns an empty config when the file is missing", () => {
-    const config = loadBankaConfigFile(join(tmpdir(), "definitely-missing-banka-config.json"));
+    const config = loadRecodeConfigFile(join(tmpdir(), "definitely-missing-recode-config.json"));
     expect(config).toEqual(createEmptyConfig());
   });
 
   it("saves and reloads configured providers", () => {
-    const workspaceRoot = mkdtempSync(join(tmpdir(), "banka-config-"));
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "recode-config-"));
     const configPath = resolveConfigPath(workspaceRoot, ".recode/config.json");
     const nextConfig = upsertConfiguredProvider(
       createEmptyConfig(),
@@ -48,12 +48,12 @@ describe("banka config", () => {
       true
     );
 
-    saveBankaConfigFile(configPath, nextConfig);
+    saveRecodeConfigFile(configPath, nextConfig);
 
     const rawText = readFileSync(configPath, "utf8");
     expect(rawText).toContain("\"openai-main\"");
 
-    expect(loadBankaConfigFile(configPath)).toEqual(nextConfig);
+    expect(loadRecodeConfigFile(configPath)).toEqual(nextConfig);
   });
 
   it("updates the active provider and selected model", () => {

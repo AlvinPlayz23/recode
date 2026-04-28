@@ -5,7 +5,7 @@
  */
 
 import { isAbsolute, relative, resolve } from "node:path";
-import { PathSecurityError } from "../errors/banka-error.ts";
+import { PathSecurityError } from "../errors/recode-error.ts";
 
 /**
  * Resolve and validate a target path within the workspace.

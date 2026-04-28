@@ -1,5 +1,5 @@
 /**
- * Banka Code logo with the animated Ciallo greeting.
+ * Recode logo with the animated Ciallo greeting.
  *
  * @author dev
  */
@@ -82,7 +82,7 @@ export function Logo(props: LogoProps): JSX.Element {
   return (
     <box flexDirection="column" alignItems="center">
       <box flexDirection="row" justifyContent="center">
-        <text fg={t.text} attributes={TextAttributes.BOLD} selectable={false}>Banka Code</text>
+        <text fg={t.text} attributes={TextAttributes.BOLD} selectable={false}>Recode</text>
         <text fg={t.inactive} selectable={false}> {VERSION} </text>
         <text fg="#e8a0b0" selectable={false}>🌸 </text>
         <For each={chars()}>

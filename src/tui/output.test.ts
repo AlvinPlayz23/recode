@@ -17,7 +17,7 @@ describe("tui output", () => {
   it("formats banner with provider and model", () => {
     const banner = formatBanner("openai", "gpt-4");
 
-    expect(banner).toContain("Banka Code");
+    expect(banner).toContain("Recode");
     expect(banner).toContain("Provider: openai | Model: gpt-4");
     expect(banner).toContain("/help");
   });

@@ -1,5 +1,5 @@
 /**
- * Types for Banka Code's internal AI transport layer.
+ * Types for Recode's internal AI transport layer.
  */
 
 import type { RuntimeConfig } from "../runtime/runtime-config.ts";

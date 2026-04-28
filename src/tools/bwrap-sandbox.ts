@@ -79,7 +79,7 @@ export function spawnDirect(
  * - the workspace is mounted read-write
  * - `/tmp` uses sandbox-local tmpfs
  * - `/proc` and `/dev` are mounted for common command support
- * - only a minimal environment plus `BANKA_*` variables is forwarded
+ * - only a minimal environment plus `RECODE_*` variables is forwarded
  */
 export function spawnSandboxed(
   command: string,
@@ -144,7 +144,7 @@ function collectMinimalEnv(): Record<string, string> {
   }
 
   for (const [key, value] of Object.entries(process.env)) {
-    if (key.startsWith("BANKA_") && value !== undefined && value !== "") {
+    if (key.startsWith("RECODE_") && value !== undefined && value !== "") {
       env[key] = value;
     }
   }

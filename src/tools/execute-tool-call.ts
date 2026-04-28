@@ -4,7 +4,7 @@
  * @author dev
  */
 
-import { ToolExecutionError } from "../errors/banka-error.ts";
+import { ToolExecutionError } from "../errors/recode-error.ts";
 import type { ToolCall, ToolResultMessage } from "../messages/message.ts";
 import { isRecord } from "../shared/is-record.ts";
 import type { ToolArguments, ToolExecutionContext } from "./tool.ts";

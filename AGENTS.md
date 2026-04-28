@@ -1,8 +1,8 @@
-# Banka Code Development Guide
+# Recode Development Guide
 
 ## Project Overview
 
-**Banka Code** is a coding agent built with TypeScript and Bun, with a Senren*Banka-inspired TUI terminal interface.
+**Recode** is a coding agent built with TypeScript and Bun, with a Senren-inspired TUI terminal interface.
 
 After receiving a user instruction, the agent enters an iterative loop: call the LLM -> parse tool calls -> execute tools -> send results back to the LLM -> repeat until the model stops requesting tools or the maximum iteration count is reached. Streaming output and multi-turn conversation are both supported.
 
@@ -20,7 +20,7 @@ After receiving a user instruction, the agent enters an iterative loop: call the
 
 ## Project Naming
 
-The project name **banka** comes from [Senren＊Banka](https://www.yuzu-soft.com/products/senren/) (Senren\*Banka).
+The project name **recode** should be used consistently across the codebase and product surface.
 
 Related imagery is welcome: sacred blades, Hoori, hot spring town atmosphere, shrine maiden motifs, cherry pinks, and warm oranges. Keep it lively, but restrained.
 
@@ -74,7 +74,7 @@ User input
 | --- | --- | --- |
 | `agent/` | Main agent loop (multi-turn conversation) | `run-agent-loop.ts` |
 | `ai/` | Internal AI transport layer | `stream-assistant-response.ts`, `providers/*` |
-| `errors/` | Custom error hierarchy | `banka-error.ts` |
+| `errors/` | Custom error hierarchy | `recode-error.ts` |
 | `messages/` | Conversation message model | `message.ts` |
 | `models/` | Runtime model factory | `create-model-client.ts` |
 | `prompt/` | System prompt | `system-prompt.md` |
@@ -91,12 +91,12 @@ The runtime model factory creates an internal `AiModel` descriptor:
 - `openai-chat` -> OpenAI Chat Completions API
 - `anthropic` -> Anthropic Messages API
 
-The agent loop streams one assistant turn through the internal AI layer and converts between Banka's internal message model and provider-specific payloads.
+The agent loop streams one assistant turn through the internal AI layer and converts between Recode's internal message model and provider-specific payloads.
 
 ### Error Hierarchy
 
 ```text
-BankaError (base)
+RecodeError (base)
 ├── ConfigurationError    — runtime configuration error
 ├── ModelResponseError    — malformed or failed model response
 ├── ToolExecutionError    — tool execution error
@@ -105,13 +105,13 @@ BankaError (base)
 
 ## Provider Support
 
-| Provider | `BANKA_PROVIDER` value | Requires API key |
+| Provider | `RECODE_PROVIDER` value | Requires API key |
 | --- | --- | --- |
 | OpenAI Responses API | `openai` (default) | Yes |
 | OpenAI Chat Completions API | `openai-chat` | Yes |
 | Anthropic Messages API | `anthropic` | Yes |
 
-The `openai` and `openai-chat` providers can target OpenAI-compatible backends by changing `BANKA_BASE_URL` and `BANKA_API_KEY`.
+The `openai` and `openai-chat` providers can target OpenAI-compatible backends by changing `RECODE_BASE_URL` and `RECODE_API_KEY`.
 
 ## Tool System
 
@@ -169,7 +169,7 @@ The Bash tool has two layers of sandboxing:
 
 - One file, one responsibility
 - Public APIs should be re-exported through `index.ts` where appropriate
-- Use `BankaError` subclasses for error handling instead of throwing raw strings
+- Use `RecodeError` subclasses for error handling instead of throwing raw strings
 - Use `async/await`, not `.then()` chains
 
 ### Comments
@@ -180,7 +180,7 @@ The Bash tool has two layers of sandboxing:
 
 ### TUI / Visual Direction
 
-- Use the Senren*Banka-inspired palette defined in `src/tui/theme.ts`
+- Use the Senren-inspired palette defined in `src/tui/theme.ts`
 - The logo component includes the animated Ciallo shimmer effect
 - The startup screen fetches a quote from the Hitokoto API
 - Tool calls should be displayed in a human-readable form with a concise argument summary, such as `Bash · ls -la` or `Read · src/tui/app.tsx`
@@ -245,7 +245,7 @@ bun run build      # Build a native binary for the current platform into dist/
 bun run build:all  # Build native binaries for Linux/macOS/Windows
 ```
 
-The build script in `scripts/build.ts` uses `Bun.build()` with `compile` enabled to produce self-contained binaries. It injects `BANKA_CODE_VERSION` through `define` during the build.
+The build script in `scripts/build.ts` uses `Bun.build()` with `compile` enabled to produce self-contained binaries. It injects `RECODE_VERSION` through `define` during the build.
 
 ## Git Commits
 

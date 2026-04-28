@@ -42,6 +42,6 @@ export interface ToolResultMessage {
 }
 
 /**
- * Union of all internal conversation message types used by Banka.
+ * Union of all internal conversation message types used by Recode.
  */
 export type ConversationMessage = UserMessage | AssistantMessage | ToolResultMessage;

@@ -1,8 +1,8 @@
-# Banka Code
+# Recode
 
-**Banka Code** is a coding agent built with TypeScript and [Bun](https://bun.sh), with a Senren*Banka-inspired TUI terminal interface.
+**Recode** is a coding agent built with TypeScript and [Bun](https://bun.sh), with a Senren-inspired TUI terminal interface.
 
-The name comes from [Senren＊Banka](https://www.yuzu-soft.com/products/senren/). The project keeps some of that aesthetic in the UI, but the focus is still a practical local coding agent CLI.
+The project keeps a light Senren-inspired aesthetic in the UI, but the focus is still a practical local coding agent CLI.
 
 > Warning: this project is still in an early stage. Do not use it in production. The shell sandbox is useful, but it should not be treated as a complete security boundary.
 
@@ -39,11 +39,11 @@ bun run src/index.ts "show me the project structure"
 ## CLI Usage
 
 ```text
-banka               Start the interactive TUI
-banka setup         Open the provider and model setup wizard
-banka <prompt>      Run one prompt and print the final answer
-banka -h, --help    Show help
-banka -v, --version Show version
+recode               Start the interactive TUI
+recode setup         Open the provider and model setup wizard
+recode <prompt>      Run one prompt and print the final answer
+recode -h, --help    Show help
+recode -v, --version Show version
 ```
 
 ### Built-in TUI Commands
@@ -54,18 +54,18 @@ banka -v, --version Show version
 | `/clear` | Clear the current session |
 | `/status` | Show current session status |
 | `/models` | Open the model selector |
-| `/exit` | Exit Banka Code |
-| `/quit` | Exit Banka Code |
+| `/exit` | Exit Recode |
+| `/quit` | Exit Recode |
 
 ## Config File
 
-Banka stores provider definitions in a user-global config file:
+Recode stores provider definitions in a user-global config file:
 
 ```text
 ~/.recode/config.json
 ```
 
-Use `banka setup` to create providers, set base URLs, store model IDs, and choose the active provider.
+Use `recode setup` to create providers, set base URLs, store model IDs, and choose the active provider.
 
 Each configured provider can define:
 - provider ID
@@ -78,20 +78,20 @@ Each configured provider can define:
 
 ## Environment Variables
 
-Banka uses Bun's native `.env` loading. No extra `dotenv` dependency is required. Environment variables are optional runtime overrides on top of `~/.recode/config.json`.
+Recode uses Bun's native `.env` loading. No extra `dotenv` dependency is required. Environment variables are optional runtime overrides on top of `~/.recode/config.json`.
 
 ```bash
-BANKA_CONFIG_PATH=~/.recode/config.json
-BANKA_ACTIVE_PROVIDER=my-provider
-BANKA_PROVIDER=openai
-BANKA_API_KEY=your-api-key
-BANKA_BASE_URL=https://api.openai.com/v1
-BANKA_MODEL=your-model-id
+RECODE_CONFIG_PATH=~/.recode/config.json
+RECODE_ACTIVE_PROVIDER=my-provider
+RECODE_PROVIDER=openai
+RECODE_API_KEY=your-api-key
+RECODE_BASE_URL=https://api.openai.com/v1
+RECODE_MODEL=your-model-id
 ```
 
 ### Providers
 
-Supported values for `BANKA_PROVIDER`:
+Supported values for `RECODE_PROVIDER`:
 
 - `openai` -> OpenAI Responses API
 - `openai-chat` -> OpenAI Chat Completions API
@@ -99,27 +99,27 @@ Supported values for `BANKA_PROVIDER`:
 
 ### OpenAI-Compatible Backends
 
-For OpenAI-compatible services, use `openai` or `openai-chat` depending on which API shape the backend supports, then point `BANKA_BASE_URL` at that service.
+For OpenAI-compatible services, use `openai` or `openai-chat` depending on which API shape the backend supports, then point `RECODE_BASE_URL` at that service.
 
 Examples:
 
 ```bash
 # OpenAI Responses
-BANKA_PROVIDER=openai
-BANKA_API_KEY=sk-...
-BANKA_BASE_URL=https://api.openai.com/v1
-BANKA_MODEL=gpt-4.1
+RECODE_PROVIDER=openai
+RECODE_API_KEY=sk-...
+RECODE_BASE_URL=https://api.openai.com/v1
+RECODE_MODEL=gpt-4.1
 
 # OpenAI-compatible chat backend
-BANKA_PROVIDER=openai-chat
-BANKA_BASE_URL=http://127.0.0.1:11434/v1
-BANKA_MODEL=qwen3:8b
+RECODE_PROVIDER=openai-chat
+RECODE_BASE_URL=http://127.0.0.1:11434/v1
+RECODE_MODEL=qwen3:8b
 
 # Anthropic
-BANKA_PROVIDER=anthropic
-BANKA_API_KEY=sk-ant-...
-BANKA_BASE_URL=https://api.anthropic.com/v1
-BANKA_MODEL=claude-sonnet-4-20250514
+RECODE_PROVIDER=anthropic
+RECODE_API_KEY=sk-ant-...
+RECODE_BASE_URL=https://api.anthropic.com/v1
+RECODE_MODEL=claude-sonnet-4-20250514
 ```
 
 ## Tool System
@@ -138,7 +138,7 @@ All file operations are constrained to the workspace root through safe path reso
 ## Project Layout
 
 ```text
-banka-code/
+recode/
 ├── src/
 │   ├── agent/       # Agent loop
 │   ├── ai/          # Internal AI transport layer

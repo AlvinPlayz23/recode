@@ -1,5 +1,5 @@
 /**
- * Persistent configuration for Banka providers and models.
+ * Persistent configuration for Recode providers and models.
  *
  * @author dev
  */
@@ -32,9 +32,9 @@ export interface ConfiguredProvider {
 }
 
 /**
- * Persistent Banka config file.
+ * Persistent Recode config file.
  */
-export interface BankaConfigFile {
+export interface RecodeConfigFile {
   readonly version: 1;
   readonly activeProviderId?: string;
   readonly providers: readonly ConfiguredProvider[];
@@ -45,7 +45,7 @@ const CONFIG_VERSION = 1;
 /**
  * Create an empty config object.
  */
-export function createEmptyConfig(): BankaConfigFile {
+export function createEmptyConfig(): RecodeConfigFile {
   return {
     version: CONFIG_VERSION,
     providers: []
@@ -66,11 +66,11 @@ export function resolveConfigPath(workspaceRoot: string, overridePath?: string):
 /**
  * Load a config file. Missing files return an empty config.
  */
-export function loadBankaConfigFile(configPath: string): BankaConfigFile {
+export function loadRecodeConfigFile(configPath: string): RecodeConfigFile {
   try {
     const rawText = readFileSync(configPath, "utf8");
     const parsedValue: unknown = JSON.parse(rawText);
-    return parseBankaConfigFile(parsedValue);
+    return parseRecodeConfigFile(parsedValue);
   } catch (error) {
     if (isMissingFileError(error)) {
       return createEmptyConfig();
@@ -83,7 +83,7 @@ export function loadBankaConfigFile(configPath: string): BankaConfigFile {
 /**
  * Save a config file to disk.
  */
-export function saveBankaConfigFile(configPath: string, config: BankaConfigFile): void {
+export function saveRecodeConfigFile(configPath: string, config: RecodeConfigFile): void {
   mkdirSync(dirname(configPath), { recursive: true });
   writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 }
@@ -92,10 +92,10 @@ export function saveBankaConfigFile(configPath: string, config: BankaConfigFile)
  * Add or replace one provider entry in the config file.
  */
 export function upsertConfiguredProvider(
-  config: BankaConfigFile,
+  config: RecodeConfigFile,
   provider: ConfiguredProvider,
   makeActive: boolean
-): BankaConfigFile {
+): RecodeConfigFile {
   const providers = [
     ...config.providers.filter((item) => item.id !== provider.id),
     provider
@@ -114,10 +114,10 @@ export function upsertConfiguredProvider(
  * Mark a provider as active and update its default model.
  */
 export function selectConfiguredProviderModel(
-  config: BankaConfigFile,
+  config: RecodeConfigFile,
   providerId: string,
   modelId: string
-): BankaConfigFile {
+): RecodeConfigFile {
   const providers = config.providers.map((provider) => {
     if (provider.id !== providerId) {
       return provider;
@@ -138,7 +138,7 @@ export function selectConfiguredProviderModel(
   };
 }
 
-function parseBankaConfigFile(value: unknown): BankaConfigFile {
+function parseRecodeConfigFile(value: unknown): RecodeConfigFile {
   if (!isRecord(value)) {
     return createEmptyConfig();
   }

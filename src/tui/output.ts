@@ -17,9 +17,9 @@ const ANSI_GRAY = "\u001B[90m";
  */
 export function formatBanner(provider: ProviderKind, model: string): string {
   return [
-    `${ANSI_CYAN}Banka Code — draw the blade, cut through the code.${ANSI_RESET}`,
+    `${ANSI_CYAN}Recode — draw the blade, cut through the code.${ANSI_RESET}`,
     `${ANSI_GRAY}Provider: ${provider} | Model: ${model}${ANSI_RESET}`,
-    `${ANSI_GRAY}Use /help for commands, /exit or /quit to leave Banka Code.${ANSI_RESET}`
+    `${ANSI_GRAY}Use /help for commands, /exit or /quit to leave Recode.${ANSI_RESET}`
   ].join("\n");
 }
 
@@ -27,7 +27,7 @@ export function formatBanner(provider: ProviderKind, model: string): string {
  * Format an assistant reply.
  */
 export function formatAssistantReply(content: string): string {
-  return `${ANSI_CYAN}[Banka Code]${ANSI_RESET} ${content}`;
+  return `${ANSI_CYAN}[Recode]${ANSI_RESET} ${content}`;
 }
 
 /**

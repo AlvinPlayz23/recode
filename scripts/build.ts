@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 /**
- * Banka Code native binary build script.
+ * Recode native binary build script.
  *
  * @author Zhenxin
  */
@@ -52,7 +52,7 @@ const localWorkerPath = path.resolve(dir, "node_modules/@opentui/core/parser.wor
 const rootWorkerPath = path.resolve(dir, "../../node_modules/@opentui/core/parser.worker.js")
 const parserWorker = fs.realpathSync(fs.existsSync(localWorkerPath) ? localWorkerPath : rootWorkerPath)
 
-const binaryName = "banka"
+const binaryName = "recode"
 
 for (const item of targets) {
   const targetName = [
@@ -90,12 +90,12 @@ for (const item of targets) {
       autoloadPackageJson: true,
       target: bunTarget as never,
       outfile: `dist/${targetName}/bin/${binaryName}${ext}`,
-      execArgv: [`--user-agent=banka-code/${pkg.version}`, "--"],
+      execArgv: [`--user-agent=recode/${pkg.version}`, "--"],
       windows: {},
     },
     entrypoints: ["./src/index.ts", parserWorker],
     define: {
-      BANKA_CODE_VERSION: `'${pkg.version}'`,
+      RECODE_VERSION: `'${pkg.version}'`,
       OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + workerRelativePath,
     },
   })

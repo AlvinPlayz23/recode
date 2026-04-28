@@ -33,7 +33,7 @@ describe("isBubblewrapAvailable", () => {
 
 describe.if(process.platform !== "win32")("spawnDirect", () => {
   it("executes a command and captures stdout", async () => {
-    const workspaceRoot = await mkdtemp(join(tmpdir(), "banka-direct-test-"));
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "recode-direct-test-"));
     try {
       const proc = spawnDirect("echo hello", workspaceRoot, SPAWN_OPTIONS);
       const [stdout, exitCode] = await Promise.all([
@@ -48,7 +48,7 @@ describe.if(process.platform !== "win32")("spawnDirect", () => {
   });
 
   it("captures stderr on failure", async () => {
-    const workspaceRoot = await mkdtemp(join(tmpdir(), "banka-direct-err-"));
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "recode-direct-err-"));
     try {
       const proc = spawnDirect("ls /nonexistent_dir_xyz", workspaceRoot, SPAWN_OPTIONS);
       const [stderr, exitCode] = await Promise.all([
@@ -65,7 +65,7 @@ describe.if(process.platform !== "win32")("spawnDirect", () => {
 
 describe.if(hasBwrap)("spawnSandboxed (bwrap available)", () => {
   it("executes a simple echo command inside the sandbox", async () => {
-    const workspaceRoot = await mkdtemp(join(tmpdir(), "banka-sandbox-echo-"));
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "recode-sandbox-echo-"));
     try {
       const proc = spawnSandboxed("echo sandbox_hello", workspaceRoot, SPAWN_OPTIONS);
       const [stdout, exitCode] = await Promise.all([
@@ -80,7 +80,7 @@ describe.if(hasBwrap)("spawnSandboxed (bwrap available)", () => {
   });
 
   it("can read files inside the workspace", async () => {
-    const workspaceRoot = await mkdtemp(join(tmpdir(), "banka-sandbox-read-"));
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "recode-sandbox-read-"));
     try {
       const testFile = join(workspaceRoot, "test.txt");
       await writeFile(testFile, "workspace content\n");
@@ -97,8 +97,8 @@ describe.if(hasBwrap)("spawnSandboxed (bwrap available)", () => {
   });
 
   it("cannot access files outside the mounted paths", async () => {
-    const workspaceRoot = await mkdtemp(join(tmpdir(), "banka-sandbox-isolate-"));
-    const outsideDir = await mkdtemp(join(tmpdir(), "banka-outside-"));
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "recode-sandbox-isolate-"));
+    const outsideDir = await mkdtemp(join(tmpdir(), "recode-outside-"));
     try {
       const secretFile = join(outsideDir, "secret.txt");
       await writeFile(secretFile, "top secret\n");
@@ -121,10 +121,10 @@ describe.if(hasBwrap)("spawnSandboxed (bwrap available)", () => {
   });
 
   it("cannot write to read-only system directories", async () => {
-    const workspaceRoot = await mkdtemp(join(tmpdir(), "banka-sandbox-ro-"));
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "recode-sandbox-ro-"));
     try {
       const proc = spawnSandboxed(
-        "touch /usr/banka-test-write-should-fail",
+        "touch /usr/recode-test-write-should-fail",
         workspaceRoot,
         SPAWN_OPTIONS
       );

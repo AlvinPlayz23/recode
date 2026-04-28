@@ -4,7 +4,7 @@
  * @author dev
  */
 
-import type { ConfiguredModel, ConfiguredProvider } from "../config/banka-config.ts";
+import type { ConfiguredModel, ConfiguredProvider } from "../config/recode-config.ts";
 import { readErrorMessage } from "../ai/http.ts";
 import { isRecord } from "../shared/is-record.ts";
 

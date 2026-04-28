@@ -6,7 +6,7 @@
 
 import type { AiModel } from "../ai/types.ts";
 import { streamAssistantResponse } from "../ai/stream-assistant-response.ts";
-import { ModelResponseError, OperationAbortedError } from "../errors/banka-error.ts";
+import { ModelResponseError, OperationAbortedError } from "../errors/recode-error.ts";
 import type { ConversationMessage, ToolCall } from "../messages/message.ts";
 import { executeToolCall } from "../tools/execute-tool-call.ts";
 import type { ToolExecutionContext } from "../tools/tool.ts";
@@ -48,7 +48,7 @@ export interface AgentRunResult {
 }
 
 /**
- * Run the main Banka loop until the model stops requesting tools.
+ * Run the main Recode loop until the model stops requesting tools.
  */
 export async function runAgentLoop(options: AgentRunOptions): Promise<AgentRunResult> {
   if (options.abortSignal?.aborted ?? false) {

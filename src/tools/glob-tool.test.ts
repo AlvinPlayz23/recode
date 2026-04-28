@@ -12,13 +12,13 @@ import { createGlobTool } from "./glob-tool.ts";
 
 describe("Glob tool", () => {
   it("finds matching files under the workspace", async () => {
-    const workspaceRoot = await mkdtemp(join(tmpdir(), "banka-glob-"));
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "recode-glob-"));
 
     try {
       await mkdir(join(workspaceRoot, "src"), { recursive: true });
       await Bun.write(join(workspaceRoot, "src", "app.ts"), "export const app = true;\n");
       await Bun.write(join(workspaceRoot, "src", "theme.ts"), "export const theme = true;\n");
-      await Bun.write(join(workspaceRoot, "README.md"), "# banka\n");
+      await Bun.write(join(workspaceRoot, "README.md"), "# recode\n");
 
       const tool = createGlobTool();
       const result = await tool.execute({ pattern: "src/**/*.ts" }, { workspaceRoot });
@@ -33,7 +33,7 @@ describe("Glob tool", () => {
   });
 
   it("scopes matches to the provided path", async () => {
-    const workspaceRoot = await mkdtemp(join(tmpdir(), "banka-glob-scope-"));
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "recode-glob-scope-"));
 
     try {
       await mkdir(join(workspaceRoot, "src"), { recursive: true });

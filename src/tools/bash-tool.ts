@@ -4,7 +4,7 @@
  * @author dev
  */
 
-import { ToolExecutionError } from "../errors/banka-error.ts";
+import { ToolExecutionError } from "../errors/recode-error.ts";
 import type { ToolArguments, ToolDefinition, ToolExecutionContext, ToolResult } from "./tool.ts";
 import { validateCommand } from "./bash-sandbox.ts";
 import { isBubblewrapAvailable, spawnDirect, spawnSandboxed } from "./bwrap-sandbox.ts";

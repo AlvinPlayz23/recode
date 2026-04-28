@@ -12,7 +12,7 @@ import { createEditFileTool } from "./file-tools.ts";
 
 describe("Edit tool", () => {
   it("writes replacement text literally even when it contains dollar patterns", async () => {
-    const workspaceRoot = await mkdtemp(join(tmpdir(), "banka-edit-file-"));
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "recode-edit-file-"));
     const filePath = join(workspaceRoot, "sample.txt");
 
     try {

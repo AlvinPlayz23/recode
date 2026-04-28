@@ -11,7 +11,7 @@ import { createGrepTool } from "./grep-tool.ts";
 import type { ToolDefinition } from "./tool.ts";
 
 /**
- * Create the initial core tool set for Banka.
+ * Create the initial core tool set for Recode.
  */
 export function createTools(): readonly ToolDefinition[] {
   return [

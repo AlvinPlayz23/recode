@@ -1,13 +1,13 @@
 /**
- * Error type definitions for Banka.
+ * Error type definitions for Recode.
  *
  * @author dev
  */
 
 /**
- * Base error type for Banka.
+ * Base error type for Recode.
  */
-export class BankaError extends Error {
+export class RecodeError extends Error {
   public constructor(message: string, options?: ErrorOptions) {
     super(message, options);
     this.name = new.target.name;
@@ -17,24 +17,24 @@ export class BankaError extends Error {
 /**
  * Runtime configuration error.
  */
-export class ConfigurationError extends BankaError {}
+export class ConfigurationError extends RecodeError {}
 
 /**
  * Model response format error.
  */
-export class ModelResponseError extends BankaError {}
+export class ModelResponseError extends RecodeError {}
 
 /**
  * Raised when the current request is aborted intentionally.
  */
-export class OperationAbortedError extends BankaError {}
+export class OperationAbortedError extends RecodeError {}
 
 /**
  * Tool execution error.
  */
-export class ToolExecutionError extends BankaError {}
+export class ToolExecutionError extends RecodeError {}
 
 /**
  * Workspace path escape error.
  */
-export class PathSecurityError extends BankaError {}
+export class PathSecurityError extends RecodeError {}

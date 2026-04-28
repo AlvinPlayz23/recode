@@ -1,11 +1,11 @@
 {
-  "name": "banka-code",
+  "name": "recode",
   "version": "0.1.0",
-  "description": "Banka Code is a coding agent built with TypeScript + Bun, featuring a Senren*Banka themed TUI.",
+  "description": "Recode is a coding agent built with TypeScript + Bun, featuring a Senren-inspired TUI.",
   "private": true,
   "type": "module",
   "bin": {
-    "banka": "./src/index.ts"
+    "recode": "./src/index.ts"
   },
   "scripts": {
     "start": "bun run src/index.ts",

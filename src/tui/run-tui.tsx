@@ -23,7 +23,7 @@ export interface TuiRunOptions {
 }
 
 /**
- * Launch the OpenTUI terminal interface for Banka.
+ * Launch the OpenTUI terminal interface for Recode.
  */
 export async function runTui(options: TuiRunOptions): Promise<void> {
   await render(

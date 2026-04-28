@@ -1,10 +1,10 @@
 /**
- * Banka Code CLI entrypoint.
+ * Recode CLI entrypoint.
  *
  * @author dev
  */
 
-declare const BANKA_CODE_VERSION: string;
+declare const RECODE_VERSION: string;
 
 import { runAgentLoop } from "./agent/run-agent-loop.ts";
 import { runSetupWizard } from "./cli/setup.ts";
@@ -17,20 +17,20 @@ import { runTui } from "./tui/run-tui.tsx";
 
 const argv = Bun.argv.slice(2);
 
-const version = typeof BANKA_CODE_VERSION !== "undefined" ? BANKA_CODE_VERSION : "0.1.0";
+const version = typeof RECODE_VERSION !== "undefined" ? RECODE_VERSION : "0.1.0";
 
 if (argv.includes("--version") || argv.includes("-v")) {
-  console.log(`Banka Code v${version}`);
+  console.log(`Recode v${version}`);
   process.exit(0);
 }
 
 if (argv.includes("--help") || argv.includes("-h")) {
-  console.log(`Banka Code v${version}
+  console.log(`Recode v${version}
 
 Usage:
-  banka              Start the TUI
-  banka setup        Open the provider and model setup wizard
-  banka <prompt>     Run one-shot mode
+  recode             Start the TUI
+  recode setup       Open the provider and model setup wizard
+  recode <prompt>    Run one-shot mode
 
 Options:
   -h, --help         Show help

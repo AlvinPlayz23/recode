@@ -1,7 +1,7 @@
 /**
- * Color theme system for the Banka TUI.
+ * Color theme system for the Recode TUI.
  *
- * Inspired by cc-haha's `theme.ts`, adapted to Banka's brand palette. All
+ * Inspired by cc-haha's `theme.ts`, adapted to Recode's brand palette. All
  * colors use hex values and are directly compatible with OpenTUI `fg` and `bg`
  * props.
  *

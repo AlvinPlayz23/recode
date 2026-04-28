@@ -7,7 +7,7 @@
 import { describe, expect, it } from "bun:test";
 import { validateCommand } from "./bash-sandbox.ts";
 
-const WORKSPACE = "/tmp/banka-sandbox-test";
+const WORKSPACE = "/tmp/recode-sandbox-test";
 
 describe("validateCommand — allowed commands", () => {
   it("allows echo hello", () => {

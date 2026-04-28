@@ -1,5 +1,5 @@
 /**
- * Markdown syntax styling based on the Senren Banka theme palette.
+ * Markdown syntax styling based on the Senren-inspired theme palette.
  *
  * Provides a `SyntaxStyle` for OpenTUI Markdown rendering, covering inline
  * elements such as bold text, italics, code, and links.

@@ -12,30 +12,30 @@ import { createGrepTool } from "./grep-tool.ts";
 
 describe("Grep tool", () => {
   it("returns matching content lines with line numbers", async () => {
-    const workspaceRoot = await mkdtemp(join(tmpdir(), "banka-grep-"));
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "recode-grep-"));
 
     try {
       await mkdir(join(workspaceRoot, "src"), { recursive: true });
       await Bun.write(
         join(workspaceRoot, "src", "app.ts"),
-        "const title = 'Banka';\nconst theme = 'Senren';\n"
+        "const title = 'Recode';\nconst theme = 'Senren';\n"
       );
 
       const tool = createGrepTool();
       const result = await tool.execute(
-        { pattern: "Banka", include: "src/**/*.ts" },
+        { pattern: "Recode", include: "src/**/*.ts" },
         { workspaceRoot }
       );
 
       expect(result.isError).toBe(false);
-      expect(result.content).toContain("src/app.ts:1: const title = 'Banka';");
+      expect(result.content).toContain("src/app.ts:1: const title = 'Recode';");
     } finally {
       await rm(workspaceRoot, { recursive: true, force: true });
     }
   });
 
   it("supports files_with_matches output mode", async () => {
-    const workspaceRoot = await mkdtemp(join(tmpdir(), "banka-grep-files-"));
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "recode-grep-files-"));
 
     try {
       await mkdir(join(workspaceRoot, "src"), { recursive: true });

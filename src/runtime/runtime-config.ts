@@ -5,10 +5,10 @@
  */
 
 import {
-  loadBankaConfigFile,
+  loadRecodeConfigFile,
   resolveConfigPath,
   type ConfiguredProvider
-} from "../config/banka-config.ts";
+} from "../config/recode-config.ts";
 import type { ProviderKind } from "../providers/provider-kind.ts";
 
 /**
@@ -19,7 +19,7 @@ export interface RuntimeProviderConfig extends ConfiguredProvider {
 }
 
 /**
- * Banka Code runtime config.
+ * Recode runtime config.
  */
 export interface RuntimeConfig {
   readonly workspaceRoot: string;
@@ -73,13 +73,13 @@ export function selectRuntimeProviderModel(
  * Load runtime config from config file and environment variables.
  */
 export function loadRuntimeConfig(workspaceRoot: string): RuntimeConfig {
-  const configPath = resolveConfigPath(workspaceRoot, readOptionalEnv("BANKA_CONFIG_PATH"));
-  const config = loadBankaConfigFile(configPath);
-  const envProviderKind = parseProviderKind(readOptionalEnv("BANKA_PROVIDER"));
-  const envActiveProviderId = readOptionalEnv("BANKA_ACTIVE_PROVIDER");
-  const envApiKey = readOptionalEnv("BANKA_API_KEY");
-  const envBaseUrl = readOptionalEnv("BANKA_BASE_URL");
-  const envModel = readOptionalEnv("BANKA_MODEL");
+  const configPath = resolveConfigPath(workspaceRoot, readOptionalEnv("RECODE_CONFIG_PATH"));
+  const config = loadRecodeConfigFile(configPath);
+  const envProviderKind = parseProviderKind(readOptionalEnv("RECODE_PROVIDER"));
+  const envActiveProviderId = readOptionalEnv("RECODE_ACTIVE_PROVIDER");
+  const envApiKey = readOptionalEnv("RECODE_API_KEY");
+  const envBaseUrl = readOptionalEnv("RECODE_BASE_URL");
+  const envModel = readOptionalEnv("RECODE_MODEL");
 
   const selectedConfiguredProvider = resolveSelectedConfiguredProvider(config.providers, envActiveProviderId ?? config.activeProviderId);
   const fallbackProviderKind = selectedConfiguredProvider?.kind ?? "openai";
@@ -98,11 +98,11 @@ export function loadRuntimeConfig(workspaceRoot: string): RuntimeConfig {
     ?? selectedConfiguredProvider?.apiKey;
 
   if (baseUrl === undefined || baseUrl === "") {
-    throw new Error("Missing provider base URL. Run `banka setup` or set BANKA_BASE_URL.");
+    throw new Error("Missing provider base URL. Run `recode setup` or set RECODE_BASE_URL.");
   }
 
   if (model === undefined || model === "") {
-    throw new Error("Missing model ID. Run `banka setup` or set BANKA_MODEL.");
+    throw new Error("Missing model ID. Run `recode setup` or set RECODE_MODEL.");
   }
 
   const providers = buildRuntimeProviders(config.providers, envProviderKind, envBaseUrl, envApiKey, envModel, providerId, providerName);

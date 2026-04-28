@@ -31,8 +31,8 @@ const BUILTIN_COMMANDS: readonly BuiltinCommandDefinition[] = [
   { name: "clear", command: "/clear", description: "Clear the current session" },
   { name: "status", command: "/status", description: "Show the current session status" },
   { name: "models", command: "/models", description: "Open the model selector" },
-  { name: "exit", command: "/exit", description: "Exit Banka Code" },
-  { name: "quit", command: "/quit", description: "Exit Banka Code" }
+  { name: "exit", command: "/exit", description: "Exit Recode" },
+  { name: "quit", command: "/quit", description: "Exit Recode" }
 ] as const;
 
 const BUILTIN_COMMAND_ALIASES: Readonly<Record<string, BuiltinCommandName>> = {

@@ -6,7 +6,7 @@
 
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
-import { ToolExecutionError } from "../errors/banka-error.ts";
+import { ToolExecutionError } from "../errors/recode-error.ts";
 import { resolveSafePath } from "./safe-path.ts";
 import type { ToolArguments, ToolDefinition, ToolExecutionContext, ToolResult } from "./tool.ts";
 

@@ -7,14 +7,14 @@
 import { createInterface, emitKeypressEvents, type Interface } from "node:readline";
 import { stdin, stdout } from "node:process";
 import {
-  loadBankaConfigFile,
+  loadRecodeConfigFile,
   resolveConfigPath,
-  saveBankaConfigFile,
+  saveRecodeConfigFile,
   upsertConfiguredProvider,
-  type BankaConfigFile,
+  type RecodeConfigFile,
   type ConfiguredModel,
   type ConfiguredProvider
-} from "../config/banka-config.ts";
+} from "../config/recode-config.ts";
 import { fetchOpenAiCompatibleModels } from "../models/list-models.ts";
 import type { ProviderKind } from "../providers/provider-kind.ts";
 
@@ -37,12 +37,12 @@ interface SelectOption<TValue> {
  * Run the interactive setup flow.
  */
 export async function runSetupWizard(workspaceRoot: string): Promise<void> {
-  const configPath = resolveConfigPath(workspaceRoot, Bun.env.BANKA_CONFIG_PATH?.trim());
-  const existingConfig = loadBankaConfigFile(configPath);
+  const configPath = resolveConfigPath(workspaceRoot, Bun.env.RECODE_CONFIG_PATH?.trim());
+  const existingConfig = loadRecodeConfigFile(configPath);
   const rl = createInterface({ input: stdin, output: stdout });
   let nextConfig = existingConfig;
 
-  console.log("Banka setup");
+  console.log("Recode setup");
   console.log("");
   console.log(`Config path: ${configPath}`);
   console.log("");
@@ -69,13 +69,13 @@ export async function runSetupWizard(workspaceRoot: string): Promise<void> {
     rl.close();
   }
 
-  saveBankaConfigFile(configPath, nextConfig);
+  saveRecodeConfigFile(configPath, nextConfig);
   console.log(`Saved provider config to ${configPath}`);
 }
 
 async function promptForProvider(
   rl: Interface,
-  config: BankaConfigFile
+  config: RecodeConfigFile
 ): Promise<ProviderSetupResult> {
   const selectedProvider = await selectProviderChoice(rl, config);
   const existingProvider = selectedProvider?.existingProvider;
@@ -158,7 +158,7 @@ async function promptForProvider(
 
 async function selectProviderChoice(
   rl: Interface,
-  config: BankaConfigFile
+  config: RecodeConfigFile
 ): Promise<ProviderChoice | undefined> {
   if (config.providers.length === 0) {
     return undefined;
@@ -279,7 +279,7 @@ function defaultProviderName(providerId: string): string {
     .join(" ");
 }
 
-function suggestNewProviderId(config: BankaConfigFile): string {
+function suggestNewProviderId(config: RecodeConfigFile): string {
   const baseId = `provider-${config.providers.length + 1}`;
   if (!config.providers.some((provider) => provider.id === baseId)) {
     return baseId;

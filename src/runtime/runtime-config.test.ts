@@ -14,10 +14,10 @@ describe("loadRuntimeConfig", () => {
   it("loads config from environment variables", () => {
     withEnv(
       {
-        BANKA_PROVIDER: "openai",
-        BANKA_API_KEY: "sk-test",
-        BANKA_BASE_URL: "https://api.openai.com/v1",
-        BANKA_MODEL: "gpt-4"
+        RECODE_PROVIDER: "openai",
+        RECODE_API_KEY: "sk-test",
+        RECODE_BASE_URL: "https://api.openai.com/v1",
+        RECODE_MODEL: "gpt-4"
       },
       () => {
         const config = loadRuntimeConfig("/workspace");
@@ -48,7 +48,7 @@ describe("loadRuntimeConfig", () => {
       ]
     });
 
-    withEnv({ BANKA_CONFIG_PATH: ".recode/config.json" }, () => {
+    withEnv({ RECODE_CONFIG_PATH: ".recode/config.json" }, () => {
       const config = loadRuntimeConfig(workspaceRoot);
 
       expect(config.provider).toBe("openai-chat");
@@ -78,10 +78,10 @@ describe("loadRuntimeConfig", () => {
 
     withEnv(
       {
-        BANKA_CONFIG_PATH: ".recode/config.json",
-        BANKA_PROVIDER: "openai",
-        BANKA_BASE_URL: "https://api.openai.com/v1",
-        BANKA_MODEL: "gpt-4.1"
+        RECODE_CONFIG_PATH: ".recode/config.json",
+        RECODE_PROVIDER: "openai",
+        RECODE_BASE_URL: "https://api.openai.com/v1",
+        RECODE_MODEL: "gpt-4.1"
       },
       () => {
         const config = loadRuntimeConfig(workspaceRoot);
@@ -97,9 +97,9 @@ describe("loadRuntimeConfig", () => {
   it("allows missing API keys for endpoints that do not require them", () => {
     withEnv(
       {
-        BANKA_PROVIDER: "openai-chat",
-        BANKA_BASE_URL: "http://127.0.0.1:11434/v1",
-        BANKA_MODEL: "qwen3:8b"
+        RECODE_PROVIDER: "openai-chat",
+        RECODE_BASE_URL: "http://127.0.0.1:11434/v1",
+        RECODE_MODEL: "qwen3:8b"
       },
       () => {
         const config = loadRuntimeConfig("/workspace");
@@ -110,7 +110,7 @@ describe("loadRuntimeConfig", () => {
 
   it("throws when no model can be resolved", () => {
     withEnv(
-      { BANKA_PROVIDER: "openai", BANKA_BASE_URL: "https://api.openai.com/v1" },
+      { RECODE_PROVIDER: "openai", RECODE_BASE_URL: "https://api.openai.com/v1" },
       () => {
         expect(() => loadRuntimeConfig("/workspace")).toThrow("Missing model ID");
       }
@@ -119,7 +119,7 @@ describe("loadRuntimeConfig", () => {
 
   it("throws when no base URL can be resolved", () => {
     withEnv(
-      { BANKA_PROVIDER: "openai", BANKA_MODEL: "gpt-4.1" },
+      { RECODE_PROVIDER: "openai", RECODE_MODEL: "gpt-4.1" },
       () => {
         expect(() => loadRuntimeConfig("/workspace")).toThrow("Missing provider base URL");
       }
@@ -128,22 +128,22 @@ describe("loadRuntimeConfig", () => {
 });
 
 interface EnvOverrides {
-  readonly BANKA_CONFIG_PATH?: string;
-  readonly BANKA_ACTIVE_PROVIDER?: string;
-  readonly BANKA_PROVIDER?: string;
-  readonly BANKA_API_KEY?: string;
-  readonly BANKA_BASE_URL?: string;
-  readonly BANKA_MODEL?: string;
+  readonly RECODE_CONFIG_PATH?: string;
+  readonly RECODE_ACTIVE_PROVIDER?: string;
+  readonly RECODE_PROVIDER?: string;
+  readonly RECODE_API_KEY?: string;
+  readonly RECODE_BASE_URL?: string;
+  readonly RECODE_MODEL?: string;
 }
 
 function withEnv(overrides: EnvOverrides, fn: () => void): void {
   const keys = [
-    "BANKA_CONFIG_PATH",
-    "BANKA_ACTIVE_PROVIDER",
-    "BANKA_PROVIDER",
-    "BANKA_API_KEY",
-    "BANKA_BASE_URL",
-    "BANKA_MODEL"
+    "RECODE_CONFIG_PATH",
+    "RECODE_ACTIVE_PROVIDER",
+    "RECODE_PROVIDER",
+    "RECODE_API_KEY",
+    "RECODE_BASE_URL",
+    "RECODE_MODEL"
   ] as const;
   const originals = new Map<string, string | undefined>();
 
@@ -174,7 +174,7 @@ function withEnv(overrides: EnvOverrides, fn: () => void): void {
 }
 
 function createWorkspaceWithConfig(config: Record<string, unknown>): string {
-  const workspaceRoot = mkdtempSync(join(tmpdir(), "banka-runtime-config-"));
+  const workspaceRoot = mkdtempSync(join(tmpdir(), "recode-runtime-config-"));
   const configDir = join(workspaceRoot, ".recode");
   mkdirSync(configDir, { recursive: true });
   writeFileSync(join(configDir, "config.json"), `${JSON.stringify({ version: 1, ...config }, null, 2)}\n`, "utf8");

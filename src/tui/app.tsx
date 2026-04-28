@@ -1,5 +1,5 @@
 /**
- * Main Banka TUI screen, closely modeled after cc-haha FullscreenLayout.
+ * Main Recode TUI screen, closely modeled after cc-haha FullscreenLayout.
  *
  * Layout:
  * ┌──────────────────────────────────────────────┐
@@ -27,11 +27,11 @@ import type { AiModel } from "../ai/types.ts";
 import type { AgentRunResult, TextDeltaObserver } from "../agent/run-agent-loop.ts";
 import { runAgentLoop } from "../agent/run-agent-loop.ts";
 import {
-  loadBankaConfigFile,
-  saveBankaConfigFile,
+  loadRecodeConfigFile,
+  saveRecodeConfigFile,
   selectConfiguredProviderModel
-} from "../config/banka-config.ts";
-import { OperationAbortedError } from "../errors/banka-error.ts";
+} from "../config/recode-config.ts";
+import { OperationAbortedError } from "../errors/recode-error.ts";
 import type { ConversationMessage, ToolCall } from "../messages/message.ts";
 import { createLanguageModel } from "../models/create-model-client.ts";
 import { listModelsForProvider, type ListedModelGroup } from "../models/list-models.ts";
@@ -376,7 +376,7 @@ export function TuiApp(props: TuiAppProps) {
     const abortController = new AbortController();
     activeAbortController = abortController;
 
-    const streamingEntry = createEntry("assistant", "Banka Code", "");
+    const streamingEntry = createEntry("assistant", "Recode", "");
     let currentStreamingId = streamingEntry.id;
     setStreamingBody("");
     setStreamingEntryId(currentStreamingId);
@@ -409,7 +409,7 @@ export function TuiApp(props: TuiAppProps) {
             return [...prev, createEntry("tool", "tool", formatToolCallEntry(toolCall))];
           });
 
-          const nextEntry = createEntry("assistant", "Banka Code", "");
+          const nextEntry = createEntry("assistant", "Recode", "");
           currentStreamingId = nextEntry.id;
           setStreamingBody("");
           setStreamingEntryId(currentStreamingId);
@@ -626,7 +626,7 @@ export function TuiApp(props: TuiAppProps) {
             focused={!modelPickerOpen()}
             value={draft()}
             flexGrow={1}
-            placeholder={busy() ? "Waiting..." : "Send a message to Banka Code..."}
+            placeholder={busy() ? "Waiting..." : "Send a message to Recode..."}
             onInput={(value) => {
               setDraft(value);
               setCommandSelectionIndex(0);
@@ -712,7 +712,7 @@ function writeClipboardText(text: string): void {
 async function handleBuiltinCommand(options: BuiltinCommandHandlerOptions): Promise<void> {
   switch (options.commandName) {
     case "help":
-      options.appendEntry(createEntry("assistant", "Banka Code", buildBuiltinHelpBody()));
+      options.appendEntry(createEntry("assistant", "Recode", buildBuiltinHelpBody()));
       return;
     case "clear":
       options.clearSession();
@@ -720,7 +720,7 @@ async function handleBuiltinCommand(options: BuiltinCommandHandlerOptions): Prom
     case "status":
       options.appendEntry(createEntry(
         "assistant",
-        "Banka Code",
+        "Recode",
         buildBuiltinStatusBody(options.runtimeConfig, options.entriesCount, options.transcriptCount)
       ));
       return;
@@ -804,7 +804,7 @@ async function openModelPicker(options: OpenModelPickerOptions): Promise<void> {
     options.appendEntry(createEntry(
       "error",
       "error",
-      "No providers are configured yet. Run `banka setup` first."
+      "No providers are configured yet. Run `recode setup` first."
     ));
     return;
   }
@@ -943,9 +943,9 @@ async function submitSelectedModelPickerOption(options: SubmitModelPickerSelecti
 }
 
 function persistSelectedModel(runtimeConfig: RuntimeConfig, providerId: string, modelId: string): void {
-  const config = loadBankaConfigFile(runtimeConfig.configPath);
+  const config = loadRecodeConfigFile(runtimeConfig.configPath);
   const nextConfig = selectConfiguredProviderModel(config, providerId, modelId);
-  saveBankaConfigFile(runtimeConfig.configPath, nextConfig);
+  saveRecodeConfigFile(runtimeConfig.configPath, nextConfig);
 }
 
 interface ModelPickerRenderedLine {
