@@ -366,15 +366,27 @@ export function TuiApp(props: TuiAppProps) {
     draft()
   ) >= availableConversationHeight());
   const footerTipText = createMemo(() => getFooterTip(footerTipIndex()).text);
-  const footerMetaText = createMemo(() => `${sessionRuntimeConfig().providerName} • ${sessionRuntimeConfig().model}`);
+  const composerTitle = createMemo(() =>
+    isCommandDraft(draft())
+      ? "Run a built-in command"
+      : `${sessionRuntimeConfig().model} (${sessionRuntimeConfig().providerName})`
+  );
+  const composerHelpText = createMemo(() =>
+    isCommandDraft(draft())
+      ? "↵ run      Ctrl+↵ newline         @ autocomplete"
+      : "↵ send      Ctrl+↵ newline         @ autocomplete"
+  );
+  const composerRailWidth = createMemo(() => Math.max(24, terminal().width - 8));
+  const composerTopRail = createMemo(() => buildComposerRail(composerRailWidth(), composerTitle(), "end"));
+  const composerBottomRail = createMemo(() => buildComposerRail(composerRailWidth(), composerHelpText(), "start"));
   const promptPlaceholder = createMemo(() => {
     if (busy()) {
       return "Waiting...";
     }
 
-    return draft().includes("\n")
-      ? "↵ send · Ctrl+↵ newline"
-      : "↵ send · Ctrl+↵ newline";
+    return isCommandDraft(draft())
+      ? "Type a built-in command..."
+      : "Type a prompt, /command, or @file";
   });
   let lastCopiedSelectionText = "";
 
@@ -1677,98 +1689,83 @@ export function TuiApp(props: TuiAppProps) {
           </Show>
         </box>
       </Show>
-      <box
-        flexDirection="row"
-        alignItems="flex-start"
-        border
-        borderColor={t().promptBorder}
-        paddingLeft={1}
-        paddingRight={1}
-        paddingTop={0}
-        paddingBottom={0}
-        flexShrink={0}
-      >
-        <Show
-          when={busy()}
-          fallback={
-            <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>
-              {isCommandDraft(draft()) ? "/ " : `${themeDefinition().promptMarker} `}
-            </text>
-          }
-        >
-          <text fg={t().statusText}>◇ </text>
-        </Show>
-        <textarea
-          ref={(value: TextareaRenderable) => {
-            inputRef = value;
-            applyInputCursorStyle(value, t().brandShimmer);
-            if (!modalOpen()) {
-              value.focus();
-            }
-          }}
-          initialValue={toVisibleDraft(draft())}
-          flexGrow={1}
-          minHeight={1}
-          maxHeight={4}
-          wrapMode="word"
-          placeholder={promptPlaceholder()}
-          keyBindings={PROMPT_TEXTAREA_KEY_BINDINGS}
-          onPaste={(event) => {
-            void handlePromptPaste(event, decodePasteBytes(event.bytes));
-          }}
-          onContentChange={() => {
-            if (syncingVisibleDraft) {
-              return;
-            }
-            const nextDraft = normalizeDraftInput(draft(), inputRef?.plainText ?? "");
-            syncDraftValue(nextDraft);
-            setCommandSelectionIndex(0);
-            setFileSuggestionSelectionIndex(0);
-          }}
-          onSubmit={() => {
-            void submitPrompt(draft());
-          }}
-        />
-      </box>
-      <Show
-        when={!showSplashLogo()}
-        fallback={
-          <box flexDirection="row" alignItems="center" gap={1} paddingTop={0}>
-            <Show
-              when={busy() || modelPickerBusy() || historyPickerBusy()}
-              fallback={<text fg={t().hintText} attributes={TextAttributes.DIM}>{footerTipText()}</text>}
-            >
-              <box flexDirection="row">
-                <For each={statusMarquee()}>
-                  {(segment) => <text fg={segment.color}>{segment.text}</text>}
-                </For>
-              </box>
-              <text fg={t().hintText}>{modalOpen() ? "Press ESC to close" : "Press ESC to abort"}</text>
-            </Show>
-          </box>
-        }
-      >
-        <box flexDirection="row" alignItems="center" gap={1} paddingLeft={0} paddingTop={0}>
-          <text fg={t().hintText} attributes={TextAttributes.DIM}>{footerMetaText()}</text>
-          <box flexGrow={1} flexShrink={1} minWidth={0} justifyContent="center">
-            <text fg={t().hintText} attributes={TextAttributes.DIM}>{footerTipText()}</text>
-          </box>
+      <box flexDirection="column" flexShrink={0}>
+        <box flexDirection="row" justifyContent="flex-end" alignItems="center" flexShrink={0}>
           <text
             fg={sessionMode() === "plan" ? t().brandShimmer : t().success}
             attributes={TextAttributes.BOLD}
           >
             {getSessionModeLabel(sessionMode())}
           </text>
-          <Show when={busy() || modelPickerBusy() || historyPickerBusy()}>
-            <box flexDirection="row" gap={1} marginLeft={1}>
-              <box flexDirection="row">
-                <For each={statusMarquee()}>
-                  {(segment) => <text fg={segment.color}>{segment.text}</text>}
-                </For>
-              </box>
-              <text fg={t().hintText}>{modalOpen() ? "Press ESC to close" : "Press ESC to abort"}</text>
-            </box>
+        </box>
+        <box flexDirection="row" flexShrink={0}>
+          <text fg={t().promptBorder}>{composerTopRail().left}</text>
+          <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>{composerTopRail().label}</text>
+          <text fg={t().promptBorder}>{composerTopRail().right}</text>
+        </box>
+        <box
+          flexDirection="row"
+          alignItems="flex-start"
+          paddingLeft={1}
+          paddingRight={1}
+          flexShrink={0}
+        >
+          <Show
+            when={busy()}
+            fallback={
+              <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>
+                {isCommandDraft(draft()) ? "/ " : `${themeDefinition().promptMarker} `}
+              </text>
+            }
+          >
+            <text fg={t().statusText}>◇ </text>
           </Show>
+          <textarea
+            ref={(value: TextareaRenderable) => {
+              inputRef = value;
+              applyInputCursorStyle(value, t().brandShimmer);
+              if (!modalOpen()) {
+                value.focus();
+              }
+            }}
+            initialValue={toVisibleDraft(draft())}
+            flexGrow={1}
+            minHeight={1}
+            maxHeight={4}
+            wrapMode="word"
+            placeholder={promptPlaceholder()}
+            keyBindings={PROMPT_TEXTAREA_KEY_BINDINGS}
+            onPaste={(event) => {
+              void handlePromptPaste(event, decodePasteBytes(event.bytes));
+            }}
+            onContentChange={() => {
+              if (syncingVisibleDraft) {
+                return;
+              }
+              const nextDraft = normalizeDraftInput(draft(), inputRef?.plainText ?? "");
+              syncDraftValue(nextDraft);
+              setCommandSelectionIndex(0);
+              setFileSuggestionSelectionIndex(0);
+            }}
+            onSubmit={() => {
+              void submitPrompt(draft());
+            }}
+          />
+        </box>
+        <box flexDirection="row" flexShrink={0}>
+          <text fg={t().promptBorder}>{composerBottomRail().left}</text>
+          <text fg={t().hintText} attributes={TextAttributes.DIM}>{composerBottomRail().label}</text>
+          <text fg={t().promptBorder}>{composerBottomRail().right}</text>
+        </box>
+      </box>
+      <Show when={busy() || modelPickerBusy() || historyPickerBusy()}>
+        <box flexDirection="row" justifyContent="flex-end" alignItems="center" gap={1} paddingTop={0} flexShrink={0}>
+          <box flexDirection="row">
+            <For each={buildBusyIndicator(themeName(), statusTick(), t(), busyPhase())}>
+              {(segment) => <text fg={segment.color}>{segment.text}</text>}
+            </For>
+          </box>
+          <text fg={t().hintText}>{modalOpen() ? "Press ESC to close" : "Press ESC to abort"}</text>
         </box>
       </Show>
       <Show when={exitHintVisible()}>
@@ -1783,7 +1780,12 @@ export function TuiApp(props: TuiAppProps) {
     <box width="100%" height="100%" flexDirection="column" paddingX={1} paddingTop={minimalMode() ? 0 : 1} paddingBottom={0}>
       {/* ── Header: Logo + Info ── */}
       <Show when={!minimalMode() && headerVisible()}>
-        <box flexDirection="column" alignItems="flex-start" flexShrink={0} paddingLeft={4}>
+        <box
+          flexDirection="column"
+          alignItems="flex-start"
+          flexShrink={0}
+          paddingLeft={4}
+        >
           <Logo
             themeName={themeName()}
             variant={showSplashLogo() ? "splash" : "header"}
@@ -3898,6 +3900,19 @@ function buildStatusMarquee(
   ];
 }
 
+function buildBusyIndicator(
+  themeName: ThemeName,
+  tick: number,
+  theme: ThemeColors,
+  phase: SpinnerPhase
+): readonly MarqueeSegment[] {
+  return [
+    getSpinnerPhaseGlyph(phase, theme),
+    { text: " ", color: theme.divider },
+    ...getSpinnerSegments(themeName, tick, theme)
+  ];
+}
+
 function getSpinnerPhaseLabel(phase: SpinnerPhase): string {
   switch (phase) {
     case "tool":
@@ -3908,6 +3923,51 @@ function getSpinnerPhaseLabel(phase: SpinnerPhase): string {
     default:
       return "thinking";
   }
+}
+
+interface ComposerRail {
+  readonly left: string;
+  readonly label: string;
+  readonly right: string;
+}
+
+function buildComposerRail(
+  width: number,
+  label: string,
+  align: "start" | "end"
+): ComposerRail {
+  const shortFill = "───";
+  const availableLabelWidth = Math.max(0, width - shortFill.length - 2);
+  const normalizedLabel = truncateInlineText(label, availableLabelWidth);
+  const longFillCount = Math.max(1, width - shortFill.length - normalizedLabel.length);
+  const longFill = "─".repeat(longFillCount);
+
+  if (align === "end") {
+    return {
+      left: longFill,
+      label: normalizedLabel,
+      right: shortFill
+    };
+  }
+
+  return {
+    left: shortFill,
+    label: normalizedLabel,
+    right: longFill
+  };
+}
+
+function truncateInlineText(value: string, maxLength: number): string {
+  const normalized = value.trim().replace(/\s+/g, " ");
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  if (maxLength <= 1) {
+    return "…";
+  }
+
+  return `${normalized.slice(0, maxLength - 1)}…`;
 }
 
 // ── Layout Picker ──

@@ -59,6 +59,8 @@ const HEADER_FILL_ROWS: LogoIconRows = [
   ]),
 ];
 
+const SPLASH_PANEL_WIDTH = 72;
+
 interface InfoRow {
   readonly label: string;
   readonly value: string;
@@ -137,30 +139,33 @@ function renderSplashLogo(
         </box>
       </box>
 
-      <box flexDirection="column" width={52} marginTop={1}>
-        <Rule theme={theme} />
+      <box flexDirection="column" width={SPLASH_PANEL_WIDTH} marginTop={1}>
+        <Rule theme={theme} width={SPLASH_PANEL_WIDTH} />
         {showSplashDetails
           ? (
-            <For each={infoRows}>
-              {(row) => (
-                <box flexDirection="row" marginTop={1}>
-                  <text fg={theme.inactive}>{padLabel(row.label)}</text>
-                  <text fg={resolveRowColor(theme, row.tone)} attributes={TextAttributes.BOLD}>
-                    {row.value}
-                  </text>
-                </box>
-              )}
-            </For>
+            <>
+              <For each={infoRows}>
+                {(row) => (
+                  <box flexDirection="row">
+                    <text fg={theme.inactive}>{padLabel(row.label)}</text>
+                    <text fg={resolveRowColor(theme, row.tone)} attributes={TextAttributes.BOLD}>
+                      {row.value}
+                    </text>
+                  </box>
+                )}
+              </For>
+              <Rule theme={theme} width={SPLASH_PANEL_WIDTH} />
+            </>
           )
           : (
-            <box marginTop={1}>
-              <text fg={theme.inactive}>Tip: </text>
-              <text fg={theme.text}>{stripTipPrefix(splashTipText)}</text>
-            </box>
+            <>
+              <box>
+                <text fg={theme.inactive}>Tip: </text>
+                <text fg={theme.text}>{stripTipPrefix(splashTipText)}</text>
+              </box>
+              <Rule theme={theme} width={SPLASH_PANEL_WIDTH} />
+            </>
           )}
-        <box marginTop={1}>
-          <Rule theme={theme} />
-        </box>
       </box>
     </box>
   );
@@ -209,8 +214,8 @@ function IconRows(props: { readonly rows: LogoIconRows; readonly theme: ThemeCol
   );
 }
 
-function Rule(props: { readonly theme: ThemeColors }): JSX.Element {
-  return <text fg={props.theme.promptBorder}>────────────────────────────────────────────────────</text>;
+function Rule(props: { readonly theme: ThemeColors; readonly width?: number }): JSX.Element {
+  return <text fg={props.theme.promptBorder}>{"─".repeat(props.width ?? 52)}</text>;
 }
 
 function buildInfoRows(props: {
