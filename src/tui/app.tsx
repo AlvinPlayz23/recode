@@ -53,6 +53,7 @@ import { OperationAbortedError } from "../errors/recode-error.ts";
 import { exportConversationToHtml } from "../history/export-html.ts";
 import {
   createConversationRecord,
+  listHistoryForWorkspace,
   loadConversation,
   loadHistoryIndex,
   markConversationAsCurrent,
@@ -569,10 +570,9 @@ export function TuiApp(props: TuiAppProps) {
   onMount(() => {
     inputRef?.focus();
     applyInputCursorStyle(inputRef, t().brandShimmer);
-    void restoreOrCreateConversation({
+    void startFreshConversation({
       historyRoot: historyRoot(),
       runtimeConfig: sessionRuntimeConfig(),
-      setRuntimeConfig: setSessionRuntimeConfig,
       setConversation: setCurrentConversation,
       setEntries,
       setPreviousMessages,
@@ -1348,6 +1348,7 @@ export function TuiApp(props: TuiAppProps) {
       if (builtinCommand.name === "history") {
         await openHistoryPicker({
           historyRoot: historyRoot(),
+          workspaceRoot: sessionRuntimeConfig().workspaceRoot,
           currentConversationId: currentConversation()?.id,
           setBusy: setHistoryPickerBusy,
           setItems: setHistoryPickerItems,
@@ -2715,33 +2716,18 @@ function normalizeDraftInput(previousDraft: string, nextValue: string): string {
 interface RestoreConversationOptions {
   readonly historyRoot: string;
   readonly runtimeConfig: RuntimeConfig;
-  readonly setRuntimeConfig: (value: RuntimeConfig) => void;
   readonly setConversation: (value: SavedConversationRecord) => void;
   readonly setEntries: (value: readonly UiEntry[]) => void;
   readonly setPreviousMessages: (value: readonly ConversationMessage[]) => void;
   readonly setSessionMode: (value: SessionMode) => void;
 }
 
-async function restoreOrCreateConversation(options: RestoreConversationOptions): Promise<void> {
-  const index = loadHistoryIndex(options.historyRoot);
-  const conversation = index.lastConversationId === undefined
-    ? undefined
-    : loadConversation(options.historyRoot, index.lastConversationId);
-
-  if (conversation === undefined) {
-    const nextConversation = startNewConversation(options.historyRoot, options.runtimeConfig, "build");
-    options.setConversation(nextConversation);
-    options.setEntries([]);
-    options.setPreviousMessages([]);
-    options.setSessionMode("build");
-    return;
-  }
-
-  options.setRuntimeConfig(restoreConversationRuntime(options.runtimeConfig, conversation));
-  options.setConversation(conversation);
-  options.setEntries(rehydrateEntriesFromTranscript(conversation.transcript));
-  options.setPreviousMessages(conversation.transcript);
-  options.setSessionMode(conversation.mode);
+async function startFreshConversation(options: RestoreConversationOptions): Promise<void> {
+  const nextConversation = startNewConversation(options.historyRoot, options.runtimeConfig, "build");
+  options.setConversation(nextConversation);
+  options.setEntries([]);
+  options.setPreviousMessages([]);
+  options.setSessionMode("build");
 }
 
 function startNewConversation(
@@ -2824,6 +2810,7 @@ function rehydrateEntriesFromTranscript(transcript: readonly ConversationMessage
 
 interface OpenHistoryPickerOptions {
   readonly historyRoot: string;
+  readonly workspaceRoot: string;
   readonly currentConversationId: string | undefined;
   readonly setBusy: (value: boolean) => void;
   readonly setItems: (value: readonly HistoryPickerItem[]) => void;
@@ -2840,8 +2827,8 @@ async function openHistoryPicker(options: OpenHistoryPickerOptions): Promise<voi
   options.setSelectedIndex(0);
 
   try {
-    const index = loadHistoryIndex(options.historyRoot);
-    options.setItems(index.conversations.map((item) => ({
+    const items = listHistoryForWorkspace(loadHistoryIndex(options.historyRoot), options.workspaceRoot);
+    options.setItems(items.map((item) => ({
       ...item,
       current: item.id === options.currentConversationId
     })));

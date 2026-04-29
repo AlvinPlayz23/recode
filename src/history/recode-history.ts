@@ -22,6 +22,7 @@ export interface SavedConversationMeta {
   readonly id: string;
   readonly title: string;
   readonly preview: string;
+  readonly workspaceRoot: string;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly providerId: string;
@@ -94,7 +95,7 @@ export function loadConversation(historyRoot: string, conversationId: string): S
  * Create a new conversation record for the current runtime session.
  */
 export function createConversationRecord(
-  runtimeConfig: Pick<RuntimeConfig, "providerId" | "providerName" | "model">,
+  runtimeConfig: Pick<RuntimeConfig, "workspaceRoot" | "providerId" | "providerName" | "model">,
   transcript: readonly ConversationMessage[],
   mode: SessionMode,
   seed?: Partial<Pick<SavedConversationRecord, "id" | "createdAt">>
@@ -160,7 +161,7 @@ export function markConversationAsCurrent(historyRoot: string, conversationId: s
  * Build a conversation preview and title from transcript content.
  */
 export function buildConversationMeta(
-  runtimeConfig: Pick<RuntimeConfig, "providerId" | "providerName" | "model">,
+  runtimeConfig: Pick<RuntimeConfig, "workspaceRoot" | "providerId" | "providerName" | "model">,
   transcript: readonly ConversationMessage[],
   mode: SessionMode,
   createdAt: string,
@@ -178,6 +179,7 @@ export function buildConversationMeta(
     id: conversationId,
     title: summarizeText(titleSource, 64),
     preview: summarizeText(previewSource, 120),
+    workspaceRoot: runtimeConfig.workspaceRoot,
     createdAt,
     updatedAt,
     providerId: runtimeConfig.providerId,
@@ -198,6 +200,17 @@ export function createEmptyHistoryIndex(): RecodeHistoryIndex {
   };
 }
 
+/**
+ * Return only conversations that belong to the current workspace.
+ */
+export function listHistoryForWorkspace(
+  index: RecodeHistoryIndex,
+  workspaceRoot: string
+): readonly SavedConversationMeta[] {
+  const workspaceKey = toWorkspaceKey(workspaceRoot);
+  return index.conversations.filter((conversation) => toWorkspaceKey(conversation.workspaceRoot) === workspaceKey);
+}
+
 function writeHistoryIndex(historyRoot: string, index: RecodeHistoryIndex): void {
   mkdirSync(historyRoot, { recursive: true });
   const indexPath = join(historyRoot, HISTORY_INDEX_FILENAME);
@@ -209,6 +222,7 @@ function conversationToMeta(conversation: SavedConversationRecord): SavedConvers
     id: conversation.id,
     title: conversation.title,
     preview: conversation.preview,
+    workspaceRoot: conversation.workspaceRoot,
     createdAt: conversation.createdAt,
     updatedAt: conversation.updatedAt,
     providerId: conversation.providerId,
@@ -270,6 +284,7 @@ function parseConversationMeta(value: unknown): SavedConversationMeta | undefine
   const id = readOptionalString(value, "id");
   const title = readOptionalString(value, "title");
   const preview = readOptionalString(value, "preview");
+  const workspaceRoot = readOptionalString(value, "workspaceRoot") ?? "";
   const createdAt = readOptionalString(value, "createdAt");
   const updatedAt = readOptionalString(value, "updatedAt");
   const providerId = readOptionalString(value, "providerId");
@@ -298,6 +313,7 @@ function parseConversationMeta(value: unknown): SavedConversationMeta | undefine
     id,
     title,
     preview,
+    workspaceRoot,
     createdAt,
     updatedAt,
     providerId,
@@ -450,4 +466,14 @@ function isMissingFileError(error: unknown): boolean {
   return error instanceof Error
     && "code" in error
     && error.code === "ENOENT";
+}
+
+function toWorkspaceKey(workspaceRoot: string): string {
+  const normalized = workspaceRoot.trim() === ""
+    ? ""
+    : resolve(workspaceRoot).replace(/[\\/]+$/u, "");
+
+  return process.platform === "win32"
+    ? normalized.toLowerCase()
+    : normalized;
 }

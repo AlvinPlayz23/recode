@@ -12,6 +12,7 @@ import type { ConversationMessage } from "../messages/message.ts";
 import {
   buildConversationMeta,
   createConversationRecord,
+  listHistoryForWorkspace,
   loadConversation,
   loadHistoryIndex,
   resolveHistoryRoot,
@@ -48,7 +49,12 @@ describe("recode history", () => {
     ];
 
     const conversation = createConversationRecord(
-      { providerId: "openai", providerName: "OpenAI", model: "gpt-4.1" },
+      {
+        workspaceRoot: "/workspace/app-one",
+        providerId: "openai",
+        providerName: "OpenAI",
+        model: "gpt-4.1"
+      },
       transcript,
       "build",
       { id: "conversation-1", createdAt: "2026-01-01T00:00:00.000Z" }
@@ -59,6 +65,7 @@ describe("recode history", () => {
 
     expect(index.lastConversationId).toBe("conversation-1");
     expect(index.conversations[0]?.title).toBe("Explain the architecture");
+    expect(index.conversations[0]?.workspaceRoot).toBe("/workspace/app-one");
     expect(loadedConversation).toEqual(conversation);
   });
 
@@ -72,7 +79,12 @@ describe("recode history", () => {
 
   it("builds conversation metadata from the transcript", () => {
     const meta = buildConversationMeta(
-      { providerId: "openai", providerName: "OpenAI", model: "gpt-4.1" },
+      {
+        workspaceRoot: "/workspace/app-one",
+        providerId: "openai",
+        providerName: "OpenAI",
+        model: "gpt-4.1"
+      },
       [
         { role: "user", content: "Implement the setup wizard", },
         { role: "assistant", content: "Implemented.", toolCalls: [] }
@@ -87,6 +99,7 @@ describe("recode history", () => {
       id: "conversation-2",
       title: "Implement the setup wizard",
       preview: "Implemented.",
+      workspaceRoot: "/workspace/app-one",
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:05:00.000Z",
       providerId: "openai",
@@ -95,5 +108,49 @@ describe("recode history", () => {
       mode: "plan",
       messageCount: 2
     });
+  });
+
+  it("returns only conversations from the active workspace", () => {
+    const historyRoot = mkdtempSync(join(tmpdir(), "recode-history-workspace-"));
+    const sharedTranscript: readonly ConversationMessage[] = [
+      { role: "user", content: "Check this workspace" },
+      { role: "assistant", content: "Done.", toolCalls: [] }
+    ];
+
+    saveConversation(
+      historyRoot,
+      createConversationRecord(
+        {
+          workspaceRoot: "/workspace/app-one",
+          providerId: "openai",
+          providerName: "OpenAI",
+          model: "gpt-4.1"
+        },
+        sharedTranscript,
+        "build",
+        { id: "conversation-1", createdAt: "2026-01-01T00:00:00.000Z" }
+      ),
+      false
+    );
+
+    saveConversation(
+      historyRoot,
+      createConversationRecord(
+        {
+          workspaceRoot: "/workspace/app-two",
+          providerId: "openai",
+          providerName: "OpenAI",
+          model: "gpt-4.1"
+        },
+        sharedTranscript,
+        "build",
+        { id: "conversation-2", createdAt: "2026-01-01T00:01:00.000Z" }
+      ),
+      false
+    );
+
+    const filtered = listHistoryForWorkspace(loadHistoryIndex(historyRoot), "/workspace/app-one");
+
+    expect(filtered.map((item) => item.id)).toEqual(["conversation-1"]);
   });
 });
