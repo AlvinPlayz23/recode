@@ -7,7 +7,7 @@
 import type { AiModel } from "../ai/types.ts";
 import { streamAssistantResponse } from "../ai/stream-assistant-response.ts";
 import { ModelResponseError, OperationAbortedError } from "../errors/recode-error.ts";
-import type { ConversationMessage, ToolCall } from "../messages/message.ts";
+import type { ConversationMessage, ToolCall, ToolResultMessage } from "../messages/message.ts";
 import { formatQuestionAnswerSummary, parseQuestionToolResult } from "../tools/ask-user-question-tool.ts";
 import { executeToolCall } from "../tools/execute-tool-call.ts";
 import type { ToolExecutionContext } from "../tools/tool.ts";
@@ -25,6 +25,13 @@ export interface TextDeltaObserver {
 }
 
 /**
+ * Tool result observer.
+ */
+export interface ToolResultObserver {
+  (toolResult: ToolResultMessage): void;
+}
+
+/**
  * Agent execution options.
  */
 export interface AgentRunOptions {
@@ -37,6 +44,7 @@ export interface AgentRunOptions {
   readonly abortSignal?: AbortSignal;
   readonly onToolCall?: ToolCallObserver;
   readonly onTextDelta?: TextDeltaObserver;
+  readonly onToolResult?: ToolResultObserver;
 }
 
 /**
@@ -144,6 +152,7 @@ export async function runAgentLoop(options: AgentRunOptions): Promise<AgentRunRe
 
       const toolResult = await executeToolCall(toolCall, options.toolRegistry, options.toolContext);
       messages.push(toolResult);
+      options.onToolResult?.(toolResult);
       const followUpUserMessage = buildSyntheticUserMessageFromToolResult(toolResult.toolName, toolResult.content, toolResult.isError);
       if (followUpUserMessage !== undefined) {
         messages.push(followUpUserMessage);

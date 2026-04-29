@@ -7,6 +7,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { ConversationMessage } from "../messages/message.ts";
+import type { EditToolResultMetadata, ToolResultMetadata } from "../tools/tool.ts";
 import { getTheme, type ThemeName } from "../tui/theme.ts";
 import type { SavedConversationRecord } from "./recode-history.ts";
 
@@ -60,6 +61,8 @@ function buildConversationHtml(conversation: SavedConversationRecord, themeName:
       --success: ${theme.success};
       --error: ${theme.error};
       --border: ${theme.promptBorder};
+      --diff-added: ${theme.diffAdded};
+      --diff-removed: ${theme.diffRemoved};
     }
     * { box-sizing: border-box; }
     body {
@@ -125,6 +128,41 @@ function buildConversationHtml(conversation: SavedConversationRecord, themeName:
     }
     .tool-ok { color: var(--success); }
     .tool-error { color: var(--error); }
+    .tool-preview {
+      margin-top: 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      background: rgba(255,255,255,0.03);
+    }
+    .tool-preview-header {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 13px;
+      background: rgba(255,255,255,0.02);
+    }
+    .tool-preview-path {
+      color: var(--brand-bright);
+    }
+    .diff-lines {
+      margin: 0;
+      padding: 0;
+    }
+    .diff-line {
+      display: block;
+      white-space: pre-wrap;
+      word-break: break-word;
+      padding: 0.2rem 0.75rem;
+    }
+    .diff-line.removed {
+      background: color-mix(in srgb, var(--diff-removed) 65%, transparent);
+      color: var(--text);
+    }
+    .diff-line.added {
+      background: color-mix(in srgb, var(--diff-added) 65%, transparent);
+      color: var(--text);
+    }
     .footer {
       margin-top: 28px;
       color: var(--muted);
@@ -179,8 +217,41 @@ ${message.toolCalls.length === 0 ? "" : `  <div class="content" style="margin-to
       return `<article class="message tool ${message.isError ? "error" : ""}">
   <div class="message-header">${message.isError ? "Tool Error" : "Tool Result"} · ${escapeHtml(message.toolName)}</div>
   <div class="content ${message.isError ? "tool-error" : "tool-ok"}">${escapeHtml(message.content)}</div>
+${renderToolMetadata(message.metadata)}
 </article>`;
   }
+}
+
+function renderToolMetadata(metadata: ToolResultMetadata | undefined): string {
+  if (metadata?.kind !== "edit-preview") {
+    return "";
+  }
+
+  return renderEditPreview(metadata);
+}
+
+function renderEditPreview(metadata: EditToolResultMetadata): string {
+  const removedLines = splitDiffLines(metadata.oldText);
+  const addedLines = splitDiffLines(metadata.newText);
+
+  return `  <div class="tool-preview">
+    <div class="tool-preview-header">Edit Preview · <span class="tool-preview-path">${escapeHtml(metadata.path)}</span></div>
+    <div class="diff-lines">
+${removedLines.map((line) => `      <span class="diff-line removed">-${escapeHtml(line)}</span>`).join("\n")}
+${addedLines.map((line) => `      <span class="diff-line added">+${escapeHtml(line)}</span>`).join("\n")}
+    </div>
+  </div>`;
+}
+
+function splitDiffLines(value: string): readonly string[] {
+  const normalized = value.replace(/\r\n/g, "\n");
+  const lines = normalized.split("\n");
+
+  if (lines.length > 1 && lines.at(-1) === "") {
+    return lines.slice(0, -1);
+  }
+
+  return lines;
 }
 
 function escapeHtml(value: string): string {

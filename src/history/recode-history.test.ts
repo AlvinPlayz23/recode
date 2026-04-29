@@ -27,7 +27,24 @@ describe("recode history", () => {
     const historyRoot = mkdtempSync(join(tmpdir(), "recode-history-"));
     const transcript: readonly ConversationMessage[] = [
       { role: "user", content: "Explain the architecture" },
-      { role: "assistant", content: "Here is the architecture.", toolCalls: [] }
+      {
+        role: "assistant",
+        content: "Here is the architecture.",
+        toolCalls: []
+      },
+      {
+        role: "tool",
+        toolCallId: "call_1",
+        toolName: "Edit",
+        content: "Edited file: src/index.ts",
+        isError: false,
+        metadata: {
+          kind: "edit-preview",
+          path: "src/index.ts",
+          oldText: "old line",
+          newText: "new line"
+        }
+      }
     ];
 
     const conversation = createConversationRecord(

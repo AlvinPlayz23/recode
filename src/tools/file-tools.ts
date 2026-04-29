@@ -156,7 +156,13 @@ export function createEditFileTool(): ToolDefinition {
 
       return {
         content: `Edited file: ${input.path}`,
-        isError: false
+        isError: false,
+        metadata: {
+          kind: "edit-preview",
+          path: input.path,
+          oldText: input.oldText,
+          newText: input.newText
+        }
       };
     }
   };

@@ -186,6 +186,42 @@ describe("runAgentLoop", () => {
     expect(result.finalText).toBe("Hello world");
   });
 
+  it("emits tool result notifications after tool execution", async () => {
+    fakeStreamAssistantResponse
+      .mockImplementationOnce(() => makeStreamResult([
+        toolCallPart("call_3", "echo_tool", { text: "preview" }),
+        ...finishParts()
+      ]))
+      .mockImplementationOnce(() => makeStreamResult([
+        textPart("done"),
+        ...finishParts()
+      ]));
+
+    const toolResults: Array<Record<string, unknown>> = [];
+    const registry = new ToolRegistry([createEchoTool()]);
+
+    await runAgentLoop({
+      systemPrompt: "test",
+      initialUserPrompt: "preview",
+      languageModel: {} as never,
+      toolRegistry: registry,
+      toolContext: { workspaceRoot: "/tmp/recode", approvalMode: "yolo" },
+      onToolResult(toolResult) {
+        toolResults.push(toolResult as unknown as Record<string, unknown>);
+      }
+    });
+
+    expect(toolResults).toEqual([
+      {
+        role: "tool",
+        toolCallId: "call_3",
+        toolName: "echo_tool",
+        content: "echo: preview",
+        isError: false
+      }
+    ]);
+  });
+
   it("throws when the stream emits an error part", async () => {
     fakeStreamAssistantResponse.mockImplementationOnce(() => makeStreamResult([
       { type: "error", error: new Error("boom") }

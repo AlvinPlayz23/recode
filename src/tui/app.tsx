@@ -20,12 +20,17 @@
  * @author dev
  */
 
+import { readdirSync } from "node:fs";
+import { join, relative, sep } from "node:path";
 import {
   decodePasteBytes,
   type PasteEvent,
   stripAnsiSequences,
   TextAttributes,
-  type InputRenderable,
+  InputRenderable,
+  type KeyBinding as TextareaKeyBinding,
+  type TextareaRenderable,
+  defaultTextareaKeyBindings,
   type SyntaxStyle
 } from "@opentui/core";
 import { useKeyboard, usePaste, useRenderer, useSelectionHandler, useTerminalDimensions } from "@opentui/solid";
@@ -66,10 +71,12 @@ import {
 } from "../runtime/runtime-config.ts";
 import type {
   ApprovalMode,
+  EditToolResultMetadata,
   QuestionAnswer,
   QuestionPrompt,
   QuestionToolDecision,
   QuestionToolRequest,
+  ToolResultMetadata,
   ToolApprovalDecision,
   ToolApprovalRequest,
   ToolApprovalScope,
@@ -87,7 +94,8 @@ import {
 import { Logo } from "./logo.tsx";
 import { createMarkdownSyntaxStyle } from "./markdown-style.ts";
 import { filterToolsForSessionMode, getSessionModeLabel, type SessionMode } from "./session-mode.ts";
-import { getSpinnerSegments, Spinner } from "./spinner.tsx";
+import { getFooterTip } from "./startup-quotes.ts";
+import { getSpinnerPhaseGlyph, getSpinnerSegments, Spinner, type SpinnerPhase } from "./spinner.tsx";
 import {
   DEFAULT_LAYOUT_MODE,
   DEFAULT_TOOL_MARKER_NAME,
@@ -106,9 +114,10 @@ import {
 
 interface UiEntry {
   readonly id: string;
-  readonly kind: "user" | "assistant" | "tool" | "tool-group" | "error" | "status";
+  readonly kind: "user" | "assistant" | "tool" | "tool-preview" | "tool-group" | "error" | "status";
   readonly title: string;
   readonly body: string;
+  readonly metadata?: ToolResultMetadata;
 }
 
 interface ModelPickerOption {
@@ -153,6 +162,11 @@ interface PendingPaste {
   readonly text: string;
 }
 
+interface FileSuggestionItem {
+  readonly displayPath: string;
+  readonly directory: boolean;
+}
+
 interface ActiveApprovalRequest extends ToolApprovalRequest {
   readonly selectedIndex: number;
   readonly resolve: (decision: ToolApprovalDecision) => void;
@@ -164,6 +178,31 @@ interface ActiveQuestionRequest extends QuestionToolRequest {
   readonly answers: Readonly<Record<string, QuestionAnswer>>;
   readonly resolve: (decision: QuestionToolDecision) => void;
 }
+
+interface ActiveToast {
+  readonly message: string;
+}
+
+interface FileSuggestionPanelState {
+  readonly items: readonly FileSuggestionItem[];
+  readonly hasMore: boolean;
+  readonly selectedIndex: number;
+  readonly selectedItem: FileSuggestionItem | undefined;
+}
+
+type PromptRenderable = InputRenderable | TextareaRenderable;
+
+const PROMPT_TEXTAREA_KEY_BINDINGS: TextareaKeyBinding[] = [
+  { name: "return", action: "submit" },
+  { name: "return", ctrl: true, action: "newline" },
+  ...defaultTextareaKeyBindings.filter((binding) =>
+    binding.name !== "return"
+    || binding.ctrl === true
+    || binding.meta === true
+    || binding.shift === true
+    || binding.super === true
+  )
+];
 
 export interface TuiAppProps {
   readonly systemPrompt: string;
@@ -192,6 +231,7 @@ export function TuiApp(props: TuiAppProps) {
   const [streamingEntryId, setStreamingEntryId] = createSignal<string | undefined>(undefined);
   const [streamingBody, setStreamingBody] = createSignal("");
   const [commandSelectionIndex, setCommandSelectionIndex] = createSignal(0);
+  const [fileSuggestionSelectionIndex, setFileSuggestionSelectionIndex] = createSignal(0);
   const [modelPickerOpen, setModelPickerOpen] = createSignal(false);
   const [modelPickerBusy, setModelPickerBusy] = createSignal(false);
   const [modelPickerQuery, setModelPickerQuery] = createSignal("");
@@ -213,13 +253,19 @@ export function TuiApp(props: TuiAppProps) {
   const [approvalModePickerSelectedIndex, setApprovalModePickerSelectedIndex] = createSignal(0);
   const [activeApprovalRequest, setActiveApprovalRequest] = createSignal<ActiveApprovalRequest | undefined>(undefined);
   const [activeQuestionRequest, setActiveQuestionRequest] = createSignal<ActiveQuestionRequest | undefined>(undefined);
+  const [activeToast, setActiveToast] = createSignal<ActiveToast | undefined>(undefined);
   const [exitHintVisible, setExitHintVisible] = createSignal(false);
   const [layoutMode, setLayoutMode] = createSignal<LayoutMode>(initialConfig.layoutMode ?? DEFAULT_LAYOUT_MODE);
   const [minimalMode, setMinimalMode] = createSignal(initialConfig.minimalMode ?? false);
   const [toolsCollapsed, setToolsCollapsed] = createSignal(false);
   const [layoutPickerOpen, setLayoutPickerOpen] = createSignal(false);
   const [layoutPickerSelectedIndex, setLayoutPickerSelectedIndex] = createSignal(0);
-  let inputRef: InputRenderable | undefined;
+  const [footerTipIndex, setFooterTipIndex] = createSignal(0);
+  const [busyPhase, setBusyPhase] = createSignal<SpinnerPhase>("thinking");
+  const [fileSuggestionVersion, setFileSuggestionVersion] = createSignal(0);
+  const [splashDetailsVisible, setSplashDetailsVisible] = createSignal(true);
+  const [headerVisible, setHeaderVisible] = createSignal(true);
+  let inputRef: PromptRenderable | undefined;
   let modelPickerInputRef: InputRenderable | undefined;
   let historyPickerInputRef: InputRenderable | undefined;
   let themePickerInputRef: InputRenderable | undefined;
@@ -233,8 +279,9 @@ export function TuiApp(props: TuiAppProps) {
   let lastHandledPasteSignature: string | undefined;
   let lastHandledPasteAt = 0;
   let exitHintTimer: ReturnType<typeof setTimeout> | undefined;
+  let activeToastTimer: ReturnType<typeof setTimeout> | undefined;
   let ctrlCArmed = false;
-
+  let headerRefreshScheduled = false;
   const t = createMemo<ThemeColors>(() => getTheme(themeName()));
   const markdownStyle = createMemo(() => createMarkdownSyntaxStyle(t()));
   const sessionLanguageModel = createMemo(() => createLanguageModel(sessionRuntimeConfig()));
@@ -257,8 +304,18 @@ export function TuiApp(props: TuiAppProps) {
     requestQuestionAnswers
   }));
 
-  const statusMarquee = createMemo(() => buildStatusMarquee(themeName(), statusTick(), t()));
+  const statusMarquee = createMemo(() => buildStatusMarquee(themeName(), statusTick(), t(), busyPhase()));
   const commandSuggestions = createMemo(() => findBuiltinCommands(draft()));
+  const workspaceFiles = createMemo(() => {
+    fileSuggestionVersion();
+    return collectWorkspaceFiles(sessionRuntimeConfig().workspaceRoot);
+  });
+  const fileSuggestionPanel = createMemo(() => buildFileSuggestionPanelState(
+    draft(),
+    workspaceFiles(),
+    busy() || modalOpen(),
+    fileSuggestionSelectionIndex()
+  ));
   const modelPickerOptions = createMemo(() => buildModelPickerOptions(
     modelPickerGroups(),
     modelPickerQuery(),
@@ -284,26 +341,102 @@ export function TuiApp(props: TuiAppProps) {
     busy() || modalOpen(),
     commandSelectionIndex()
   ));
+  const hasConversationStarted = createMemo(() =>
+    busy()
+    || previousMessages().length > 0
+    || entries().some((entry) =>
+      entry.kind === "user"
+      || entry.kind === "tool"
+      || entry.kind === "tool-preview"
+      || entry.kind === "tool-group"
+      || entry.kind === "error"
+    )
+  );
+  const showSplashLogo = createMemo(() => !minimalMode() && !hasConversationStarted());
   const conversationFlowWidth = createMemo(() => Math.max(24, terminal().width - 10));
-  const availableConversationHeight = createMemo(() => Math.max(8, terminal().height - 8));
+  const effectiveSplashDetailsVisible = createMemo(() => splashDetailsVisible() && terminal().height >= 24);
+  const headerHeight = createMemo(() => estimateHeaderHeight(minimalMode(), showSplashLogo(), effectiveSplashDetailsVisible()));
+  const availableConversationHeight = createMemo(() => Math.max(1, terminal().height - headerHeight() - 4));
   const composerDocked = createMemo(() => estimateConversationFlowHeight(
     entries(),
     conversationFlowWidth(),
-    commandPanel()
+    commandPanel(),
+    fileSuggestionPanel(),
+    draft()
   ) >= availableConversationHeight());
+  const footerTipText = createMemo(() => getFooterTip(footerTipIndex()).text);
+  const footerMetaText = createMemo(() => `${sessionRuntimeConfig().providerName} • ${sessionRuntimeConfig().model}`);
+  const promptPlaceholder = createMemo(() => {
+    if (busy()) {
+      return "Waiting...";
+    }
+
+    return draft().includes("\n")
+      ? "↵ send · Ctrl+↵ newline"
+      : "↵ send · Ctrl+↵ newline";
+  });
   let lastCopiedSelectionText = "";
 
   const statusInterval = setInterval(() => {
     setStatusTick((value) => value + 1);
   }, 120);
+  const footerTipInterval = setInterval(() => {
+    setFooterTipIndex((value) => value + 1);
+  }, 30_000);
+  let splashDetailsTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => {
     clearInterval(statusInterval);
+    clearInterval(footerTipInterval);
     if (streamFlushTimer !== undefined) {
       clearTimeout(streamFlushTimer);
     }
     if (exitHintTimer !== undefined) {
       clearTimeout(exitHintTimer);
     }
+    if (activeToastTimer !== undefined) {
+      clearTimeout(activeToastTimer);
+    }
+    if (splashDetailsTimer !== undefined) {
+      clearTimeout(splashDetailsTimer);
+    }
+  });
+
+  createEffect(() => {
+    if (!showSplashLogo()) {
+      setSplashDetailsVisible(true);
+      if (splashDetailsTimer !== undefined) {
+        clearTimeout(splashDetailsTimer);
+        splashDetailsTimer = undefined;
+      }
+      return;
+    }
+
+    setSplashDetailsVisible(true);
+    if (splashDetailsTimer !== undefined) {
+      clearTimeout(splashDetailsTimer);
+    }
+    splashDetailsTimer = setTimeout(() => {
+      setSplashDetailsVisible(false);
+      splashDetailsTimer = undefined;
+    }, 15_000);
+  });
+
+  createEffect(() => {
+    themeName();
+    showSplashLogo();
+    effectiveSplashDetailsVisible();
+    footerTipIndex();
+
+    if (headerRefreshScheduled) {
+      return;
+    }
+
+    headerRefreshScheduled = true;
+    setHeaderVisible(false);
+    queueMicrotask(() => {
+      headerRefreshScheduled = false;
+      setHeaderVisible(true);
+    });
   });
 
   const flushPendingStreamText = () => {
@@ -338,6 +471,18 @@ export function TuiApp(props: TuiAppProps) {
     pendingStreamEntryId = undefined;
   };
 
+  const showToast = (message: string) => {
+    setActiveToast({ message });
+    if (activeToastTimer !== undefined) {
+      clearTimeout(activeToastTimer);
+    }
+
+    activeToastTimer = setTimeout(() => {
+      activeToastTimer = undefined;
+      setActiveToast(undefined);
+    }, 1500);
+  };
+
   const schedulePendingStreamTextFlush = (entryId: string, delta: string) => {
     if (pendingStreamEntryId !== undefined && pendingStreamEntryId !== entryId) {
       flushAndResetPendingStreamText();
@@ -365,12 +510,12 @@ export function TuiApp(props: TuiAppProps) {
     }
 
     const visibleValue = toVisibleDraft(nextDraft);
-    if (inputRef.value === visibleValue) {
+    if (getRenderableText(inputRef) === visibleValue) {
       return;
     }
 
     syncingVisibleDraft = true;
-    inputRef.value = visibleValue;
+    setRenderableText(inputRef, visibleValue);
     queueMicrotask(() => {
       syncingVisibleDraft = false;
     });
@@ -471,7 +616,7 @@ export function TuiApp(props: TuiAppProps) {
     const token = `{Paste ${lineCount} lines #${pasteCounter}}`;
     setPendingPastes((current) => [...current, { token, text: normalizedText }]);
     inputRef.insertText(`${token} `);
-    syncDraftValue(normalizeDraftInput(draft(), inputRef.value));
+    syncDraftValue(normalizeDraftInput(draft(), getRenderableText(inputRef)));
     setCommandSelectionIndex(0);
     inputRef.focus();
     return true;
@@ -867,7 +1012,16 @@ export function TuiApp(props: TuiAppProps) {
       return;
     }
 
+    const filePanel = fileSuggestionPanel();
     const panel = commandPanel();
+
+    if (key.name === "escape" && filePanel !== undefined) {
+      key.preventDefault();
+      key.stopPropagation();
+      setFileSuggestionSelectionIndex(0);
+      inputRef?.focus();
+      return;
+    }
 
     if (key.name === "escape" && panel !== undefined) {
       key.preventDefault();
@@ -879,7 +1033,46 @@ export function TuiApp(props: TuiAppProps) {
       return;
     }
 
-    if (busy() || panel === undefined) {
+    if (busy()) {
+      return;
+    }
+
+    if (filePanel !== undefined) {
+      switch (key.name) {
+        case "up":
+          if (filePanel.items.length === 0) {
+            return;
+          }
+          key.preventDefault();
+          key.stopPropagation();
+          setFileSuggestionSelectionIndex(moveBuiltinCommandSelectionIndex(filePanel.selectedIndex, filePanel.items.length, -1));
+          inputRef?.focus();
+          return;
+        case "down":
+          if (filePanel.items.length === 0) {
+            return;
+          }
+          key.preventDefault();
+          key.stopPropagation();
+          setFileSuggestionSelectionIndex(moveBuiltinCommandSelectionIndex(filePanel.selectedIndex, filePanel.items.length, 1));
+          inputRef?.focus();
+          return;
+        case "tab":
+        case "return":
+        case "enter":
+          if (filePanel.selectedItem === undefined) {
+            return;
+          }
+          key.preventDefault();
+          key.stopPropagation();
+          applyFileSuggestionDraft(inputRef, draft(), setDraft, setFileSuggestionSelectionIndex, filePanel.selectedItem);
+          return;
+        default:
+          break;
+      }
+    }
+
+    if (panel === undefined) {
       return;
     }
 
@@ -941,6 +1134,7 @@ export function TuiApp(props: TuiAppProps) {
     }
 
     writeClipboardText(selectedText);
+    showToast("Copied text");
     lastCopiedSelectionText = selectedText;
   });
 
@@ -1287,6 +1481,7 @@ export function TuiApp(props: TuiAppProps) {
     const expandedPrompt = expandDraftPastes(prompt, pendingPastes());
     clearDraft(inputRef, setDraft);
     setPendingPastes([]);
+    setBusyPhase("thinking");
     setBusy(true);
     appendEntry(setEntries, createEntry("user", "You", prompt));
 
@@ -1309,6 +1504,7 @@ export function TuiApp(props: TuiAppProps) {
         toolContext: sessionToolContext(),
         abortSignal: abortController.signal,
         onToolCall(toolCall) {
+          setBusyPhase("tool");
           flushAndResetPendingStreamText();
           const currentId = currentStreamingId;
           const currentBody = streamingBody();
@@ -1334,6 +1530,14 @@ export function TuiApp(props: TuiAppProps) {
         },
         onTextDelta(delta) {
           schedulePendingStreamTextFlush(currentStreamingId, delta);
+        },
+        onToolResult(toolResult) {
+          setBusyPhase("thinking");
+          setFileSuggestionVersion((value) => value + 1);
+          const toolResultEntry = createToolResultEntry(toolResult.toolName, toolResult.content, toolResult.metadata);
+          if (toolResultEntry !== undefined) {
+            appendEntry(setEntries, toolResultEntry);
+          }
         }
       });
 
@@ -1356,6 +1560,7 @@ export function TuiApp(props: TuiAppProps) {
       });
 
       setPreviousMessages(result.transcript);
+      setBusyPhase("saving-history");
       const persistedConversation = persistConversation(
         historyRoot(),
         sessionRuntimeConfig(),
@@ -1385,6 +1590,7 @@ export function TuiApp(props: TuiAppProps) {
         activeAbortController = undefined;
       }
       setStreamingEntryId(undefined);
+      setBusyPhase("thinking");
       setBusy(false);
       inputRef?.focus();
     }
@@ -1431,14 +1637,54 @@ export function TuiApp(props: TuiAppProps) {
           </box>
         </>
       </Show>
+      <Show when={fileSuggestionPanel() !== undefined}>
+        <box
+          flexDirection="column"
+          border
+          borderColor={t().promptBorder}
+          marginBottom={1}
+          paddingLeft={1}
+          paddingRight={1}
+          flexShrink={0}
+        >
+          <Show
+            when={fileSuggestionPanel()!.items.length > 0}
+            fallback={<text fg={t().hintText}>No workspace path matched that @ query.</text>}
+          >
+            <For each={fileSuggestionPanel()!.items}>
+              {(item, index) => (
+                <box flexDirection="row" gap={1}>
+                  <box width={28} flexShrink={0}>
+                    <text
+                      fg={index() === fileSuggestionPanel()!.selectedIndex ? t().brandShimmer : t().text}
+                      attributes={index() === fileSuggestionPanel()!.selectedIndex ? TextAttributes.BOLD : TextAttributes.NONE}
+                    >
+                      {`${index() === fileSuggestionPanel()!.selectedIndex ? "›" : " "} @${item.displayPath}`}
+                    </text>
+                  </box>
+                  <box flexGrow={1} flexShrink={1} minWidth={0}>
+                    <text fg={index() === fileSuggestionPanel()!.selectedIndex ? t().brandShimmer : t().hintText}>
+                      {item.directory ? "Directory" : "File"}
+                    </text>
+                  </box>
+                </box>
+              )}
+            </For>
+            <Show when={fileSuggestionPanel()!.hasMore}>
+              <text fg={t().hintText} attributes={TextAttributes.DIM}>… more workspace paths available</text>
+            </Show>
+          </Show>
+        </box>
+      </Show>
       <box
         flexDirection="row"
-        alignItems="center"
-        height={3}
+        alignItems="flex-start"
         border
         borderColor={t().promptBorder}
         paddingLeft={1}
         paddingRight={1}
+        paddingTop={0}
+        paddingBottom={0}
         flexShrink={0}
       >
         <Show
@@ -1451,56 +1697,79 @@ export function TuiApp(props: TuiAppProps) {
         >
           <text fg={t().statusText}>◇ </text>
         </Show>
-        <input
-          ref={(value) => {
+        <textarea
+          ref={(value: TextareaRenderable) => {
             inputRef = value;
             applyInputCursorStyle(value, t().brandShimmer);
             if (!modalOpen()) {
               value.focus();
             }
           }}
-          focused={!modalOpen()}
-          value={toVisibleDraft(draft())}
+          initialValue={toVisibleDraft(draft())}
           flexGrow={1}
-          placeholder={busy() ? "Waiting..." : "Send a message to Recode..."}
+          minHeight={1}
+          maxHeight={4}
+          wrapMode="word"
+          placeholder={promptPlaceholder()}
+          keyBindings={PROMPT_TEXTAREA_KEY_BINDINGS}
           onPaste={(event) => {
             void handlePromptPaste(event, decodePasteBytes(event.bytes));
           }}
-          onInput={(value) => {
+          onContentChange={() => {
             if (syncingVisibleDraft) {
               return;
             }
-            const nextDraft = normalizeDraftInput(draft(), value);
+            const nextDraft = normalizeDraftInput(draft(), inputRef?.plainText ?? "");
             syncDraftValue(nextDraft);
             setCommandSelectionIndex(0);
+            setFileSuggestionSelectionIndex(0);
           }}
           onSubmit={() => {
             void submitPrompt(draft());
           }}
         />
       </box>
-      <box flexDirection="row" alignItems="center" gap={1} paddingLeft={0} paddingTop={0}>
-        <text fg={t().hintText} attributes={TextAttributes.DIM}>{`[${sessionRuntimeConfig().providerName}]`}</text>
-        <text fg={t().hintText} attributes={TextAttributes.DIM}>{`[${sessionRuntimeConfig().model}]`}</text>
-        <text fg={t().hintText} attributes={TextAttributes.DIM}>{`[${getThemeDefinition(themeName()).label}]`}</text>
-        <box flexGrow={1} />
-        <text
-          fg={sessionMode() === "plan" ? t().brandShimmer : t().success}
-          attributes={TextAttributes.BOLD}
-        >
-          {`[${getSessionModeLabel(sessionMode())}]`}
-        </text>
-        <Show when={busy() || modelPickerBusy() || historyPickerBusy()}>
-          <box flexDirection="row" gap={1} marginLeft={1}>
-            <box flexDirection="row">
-              <For each={statusMarquee()}>
-                {(segment) => <text fg={segment.color}>{segment.text}</text>}
-              </For>
-            </box>
-            <text fg={t().hintText}>{modalOpen() ? "Press ESC to close" : "Press ESC to abort"}</text>
+      <Show
+        when={!showSplashLogo()}
+        fallback={
+          <box flexDirection="row" alignItems="center" gap={1} paddingTop={0}>
+            <Show
+              when={busy() || modelPickerBusy() || historyPickerBusy()}
+              fallback={<text fg={t().hintText} attributes={TextAttributes.DIM}>{footerTipText()}</text>}
+            >
+              <box flexDirection="row">
+                <For each={statusMarquee()}>
+                  {(segment) => <text fg={segment.color}>{segment.text}</text>}
+                </For>
+              </box>
+              <text fg={t().hintText}>{modalOpen() ? "Press ESC to close" : "Press ESC to abort"}</text>
+            </Show>
           </box>
-        </Show>
-      </box>
+        }
+      >
+        <box flexDirection="row" alignItems="center" gap={1} paddingLeft={0} paddingTop={0}>
+          <text fg={t().hintText} attributes={TextAttributes.DIM}>{footerMetaText()}</text>
+          <box flexGrow={1} flexShrink={1} minWidth={0} justifyContent="center">
+            <text fg={t().hintText} attributes={TextAttributes.DIM}>{footerTipText()}</text>
+          </box>
+          <text
+            fg={sessionMode() === "plan" ? t().brandShimmer : t().success}
+            attributes={TextAttributes.BOLD}
+          >
+            {getSessionModeLabel(sessionMode())}
+          </text>
+          <Show when={busy() || modelPickerBusy() || historyPickerBusy()}>
+            <box flexDirection="row" gap={1} marginLeft={1}>
+              <box flexDirection="row">
+                <For each={statusMarquee()}>
+                  {(segment) => <text fg={segment.color}>{segment.text}</text>}
+                </For>
+              </box>
+              <text fg={t().hintText}>{modalOpen() ? "Press ESC to close" : "Press ESC to abort"}</text>
+            </box>
+          </Show>
+        </box>
+      </Show>
       <Show when={exitHintVisible()}>
         <box justifyContent="center" paddingTop={0}>
           <text fg={t().error} attributes={TextAttributes.BOLD}>Try Ctrl+C again to exit</text>
@@ -1512,9 +1781,18 @@ export function TuiApp(props: TuiAppProps) {
   return (
     <box width="100%" height="100%" flexDirection="column" paddingX={1} paddingTop={minimalMode() ? 0 : 1} paddingBottom={0}>
       {/* ── Header: Logo + Info ── */}
-      <Show when={!minimalMode()}>
+      <Show when={!minimalMode() && headerVisible()}>
         <box flexDirection="column" alignItems="flex-start" flexShrink={0} paddingLeft={4}>
-          <Logo theme={t()} />
+          <Logo
+            themeName={themeName()}
+            variant={showSplashLogo() ? "splash" : "header"}
+            model={sessionRuntimeConfig().model}
+            approvalMode={approvalMode()}
+            sessionMode={sessionMode()}
+            workspaceRoot={sessionRuntimeConfig().workspaceRoot}
+            showSplashDetails={effectiveSplashDetailsVisible()}
+            splashTipText={footerTipText()}
+          />
         </box>
       </Show>
 
@@ -2080,11 +2358,48 @@ export function TuiApp(props: TuiAppProps) {
           </Show>
         </box>
       </Show>
+
+      <Show when={activeToast() !== undefined}>
+        <box
+          position="absolute"
+          right={3}
+          top={2}
+          maxWidth={Math.max(20, Math.min(32, terminal().width - 6))}
+          border
+          borderColor={t().success}
+          backgroundColor={t().userMessageBackground}
+          paddingLeft={1}
+          paddingRight={1}
+          paddingTop={1}
+          paddingBottom={1}
+        >
+          <text fg={t().success} attributes={TextAttributes.BOLD} wrapMode="word" width="100%">
+            {activeToast()!.message}
+          </text>
+        </box>
+      </Show>
     </box>
   );
 }
 
-function applyInputCursorStyle(input: InputRenderable | undefined, color: string): void {
+function getRenderableText(input: PromptRenderable | undefined): string {
+  return input?.plainText ?? "";
+}
+
+function setRenderableText(input: PromptRenderable | undefined, value: string): void {
+  if (input === undefined) {
+    return;
+  }
+
+  if (input instanceof InputRenderable) {
+    input.value = value;
+  } else {
+    input.editBuffer.setText(value);
+    input.cursorOffset = value.length;
+  }
+}
+
+function applyInputCursorStyle(input: PromptRenderable | undefined, color: string): void {
   if (input === undefined) {
     return;
   }
@@ -2108,24 +2423,21 @@ interface BuiltinCommandHandlerOptions {
 }
 
 function clearDraft(
-  input: InputRenderable | undefined,
+  input: PromptRenderable | undefined,
   setDraft: (value: string) => void
 ): void {
-  if (input !== undefined) {
-    input.value = "";
-  }
-
+  setRenderableText(input, "");
   setDraft("");
 }
 
 function applyCommandDraft(
-  input: InputRenderable | undefined,
+  input: PromptRenderable | undefined,
   setDraft: (value: string) => void,
   setCommandSelectionIndex: (value: number) => void,
   command: string
 ): void {
   if (input !== undefined) {
-    input.value = toVisibleDraft(command);
+    setRenderableText(input, toVisibleDraft(command));
     input.focus();
   }
 
@@ -2173,6 +2485,31 @@ interface CommandPanelState {
   readonly selectedCommand: { readonly command: string; readonly description: string } | undefined;
 }
 
+function buildFileSuggestionPanelState(
+  draft: string,
+  files: readonly FileSuggestionItem[],
+  busy: boolean,
+  selectedIndex: number
+): FileSuggestionPanelState | undefined {
+  const query = getFileSuggestionQuery(draft);
+
+  if (busy || query === undefined) {
+    return undefined;
+  }
+
+  const normalizedQuery = normalizePathForSuggestion(query).toLowerCase();
+  const matchingItems = files.filter((item) => normalizedQuery === "" || item.displayPath.toLowerCase().includes(normalizedQuery));
+  const visibleItems = matchingItems.slice(0, 6);
+  const normalizedSelectedIndex = normalizeBuiltinCommandSelectionIndex(selectedIndex, visibleItems.length);
+
+  return {
+    items: visibleItems,
+    hasMore: matchingItems.length > visibleItems.length,
+    selectedIndex: normalizedSelectedIndex,
+    selectedItem: visibleItems[normalizedSelectedIndex]
+  };
+}
+
 function buildCommandPanelState(
   draft: string,
   commands: readonly { readonly command: string; readonly description: string }[],
@@ -2185,15 +2522,95 @@ function buildCommandPanelState(
     return undefined;
   }
 
-  const visibleCommands = commands.slice(0, 6);
+  const visibleCommands = commands;
   const normalizedSelectedIndex = normalizeBuiltinCommandSelectionIndex(selectedIndex, visibleCommands.length);
 
   return {
     commands: visibleCommands,
-    hasMore: commands.length > visibleCommands.length,
+    hasMore: false,
     selectedIndex: normalizedSelectedIndex,
     selectedCommand: visibleCommands[normalizedSelectedIndex]
   };
+}
+
+function getFileSuggestionQuery(value: string): string | undefined {
+  const match = /(?:^|\s)@([^\n\r\t ]*)$/.exec(value);
+  return match?.[1];
+}
+
+function applyFileSuggestionDraft(
+  input: PromptRenderable | undefined,
+  currentDraft: string,
+  setDraft: (value: string) => void,
+  setSelectionIndex: (value: number) => void,
+  item: FileSuggestionItem
+): void {
+  const suffix = item.directory ? "" : " ";
+  const nextDraft = currentDraft.replace(/(^|\s)@([^\n\r\t ]*)$/, `$1@${item.displayPath}${suffix}`);
+  setDraft(nextDraft);
+  setSelectionIndex(0);
+  if (input !== undefined) {
+    setRenderableText(input, toVisibleDraft(nextDraft));
+    input.focus();
+  }
+}
+
+function collectWorkspaceFiles(workspaceRoot: string, limit = 400): readonly FileSuggestionItem[] {
+  const results: FileSuggestionItem[] = [];
+  const stack = [workspaceRoot];
+
+  while (stack.length > 0 && results.length < limit) {
+    const currentDirectory = stack.pop();
+    if (currentDirectory === undefined) {
+      continue;
+    }
+
+    let entries: ReturnType<typeof readdirSync>;
+    try {
+      entries = readdirSync(currentDirectory, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (shouldSkipWorkspaceSuggestionEntry(entry.name)) {
+        continue;
+      }
+
+      const absolutePath = join(currentDirectory, entry.name);
+      const relativePath = normalizePathForSuggestion(relative(workspaceRoot, absolutePath));
+      if (relativePath === "") {
+        continue;
+      }
+
+      const directory = entry.isDirectory();
+      results.push({
+        displayPath: directory ? `${relativePath}/` : relativePath,
+        directory
+      });
+
+      if (directory && results.length < limit) {
+        stack.push(absolutePath);
+      }
+
+      if (results.length >= limit) {
+        break;
+      }
+    }
+  }
+
+  return results.sort((left, right) => left.displayPath.localeCompare(right.displayPath));
+}
+
+function shouldSkipWorkspaceSuggestionEntry(name: string): boolean {
+  return name === ".git"
+    || name === "node_modules"
+    || name === "refs"
+    || name === ".recode";
+}
+
+function normalizePathForSuggestion(value: string): string {
+  return value.split(sep).join("/");
 }
 
 function buildBuiltinHelpBody(): string {
@@ -2392,6 +2809,11 @@ function rehydrateEntriesFromTranscript(transcript: readonly ConversationMessage
       case "tool":
         if (message.isError) {
           entries.push(createEntry("error", "error", `${message.toolName} failed: ${message.content}`));
+        } else {
+          const toolResultEntry = createToolResultEntry(message.toolName, message.content, message.metadata);
+          if (toolResultEntry !== undefined) {
+            entries.push(toolResultEntry);
+          }
         }
         break;
     }
@@ -2432,7 +2854,7 @@ async function openHistoryPicker(options: OpenHistoryPickerOptions): Promise<voi
 }
 
 function closeHistoryPicker(
-  input: InputRenderable | undefined,
+  input: PromptRenderable | undefined,
   setOpen: (value: boolean) => void,
   setQuery: (value: string) => void,
   setSelectedIndex: (value: number) => void
@@ -2537,7 +2959,7 @@ function openThemePicker(
 }
 
 function closeThemePicker(
-  input: InputRenderable | undefined,
+  input: PromptRenderable | undefined,
   setOpen: (value: boolean) => void,
   setQuery: (value: string) => void,
   setSelectedIndex: (value: number) => void
@@ -2630,7 +3052,7 @@ function openApprovalModePicker(
 }
 
 function closeApprovalModePicker(
-  input: InputRenderable | undefined,
+  input: PromptRenderable | undefined,
   setOpen: (value: boolean) => void,
   setSelectedIndex: (value: number) => void
 ): void {
@@ -2719,10 +3141,28 @@ function expandDraftPastes(value: string, pastes: readonly PendingPaste[]): stri
 function estimateConversationFlowHeight(
   entries: readonly UiEntry[],
   width: number,
-  commandPanel: CommandPanelState | undefined
+  commandPanel: CommandPanelState | undefined,
+  fileSuggestionPanel: FileSuggestionPanelState | undefined,
+  draft: string
 ): number {
   const transcriptHeight = entries.reduce((total, entry) => total + estimateEntryHeight(entry, width), 0);
-  return transcriptHeight + estimateComposerHeight(width, commandPanel);
+  return transcriptHeight + estimateComposerHeight(width, commandPanel, fileSuggestionPanel, draft);
+}
+
+function estimateHeaderHeight(
+  minimalMode: boolean,
+  showSplashLogo: boolean,
+  splashDetailsVisible: boolean
+): number {
+  if (minimalMode) {
+    return 0;
+  }
+
+  if (showSplashLogo) {
+    return splashDetailsVisible ? 18 : 10;
+  }
+
+  return 5;
 }
 
 function estimateEntryHeight(entry: UiEntry, width: number): number {
@@ -2734,6 +3174,7 @@ function estimateEntryHeight(entry: UiEntry, width: number): number {
     case "assistant":
       return estimateWrappedTextHeight(entry.body, contentWidth) + 1;
     case "tool":
+    case "tool-preview":
     case "tool-group":
     case "status":
       return estimateWrappedTextHeight(entry.body, contentWidth) + 1;
@@ -2742,13 +3183,24 @@ function estimateEntryHeight(entry: UiEntry, width: number): number {
   }
 }
 
-function estimateComposerHeight(width: number, commandPanel: CommandPanelState | undefined): number {
+function estimateComposerHeight(
+  width: number,
+  commandPanel: CommandPanelState | undefined,
+  fileSuggestionPanel: FileSuggestionPanelState | undefined,
+  draft: string
+): number {
   const commandCount = commandPanel?.commands.length ?? 0;
   const commandPanelHeight = commandPanel === undefined
     ? 0
     : commandCount + (commandPanel.hasMore ? 2 : 1);
+  const fileSuggestionCount = fileSuggestionPanel?.items.length ?? 0;
+  const fileSuggestionPanelHeight = fileSuggestionPanel === undefined
+    ? 0
+    : fileSuggestionCount + (fileSuggestionPanel.hasMore ? 2 : 1);
+  const visibleDraft = toVisibleDraft(draft);
+  const draftHeight = Math.min(4, estimateWrappedTextHeight(visibleDraft === "" ? " " : visibleDraft, Math.max(8, width - 8)));
 
-  return commandPanelHeight + 4 + estimateBadgeLineHeight(width);
+  return commandPanelHeight + fileSuggestionPanelHeight + draftHeight + 3 + estimateBadgeLineHeight(width);
 }
 
 function estimateBadgeLineHeight(width: number): number {
@@ -2808,7 +3260,7 @@ async function openModelPicker(options: OpenModelPickerOptions): Promise<void> {
 }
 
 function closeModelPicker(
-  input: InputRenderable | undefined,
+  input: PromptRenderable | undefined,
   setOpen: (value: boolean) => void,
   setQuery: (value: string) => void,
   setSelectedIndex: (value: number) => void
@@ -2990,7 +3442,7 @@ function openCustomizePicker(
 }
 
 function closeCustomizePicker(
-  input: InputRenderable | undefined,
+  input: PromptRenderable | undefined,
   setOpen: (value: boolean) => void,
   setSelectedRow: (value: number) => void
 ): void {
@@ -3272,6 +3724,34 @@ function renderEntry(
         </box>
       );
 
+    case "tool-preview": {
+      const metadata = entry.metadata;
+      return (
+        <box flexDirection="column" paddingLeft={4} marginTop={compact() ? 0 : 1} marginBottom={0}>
+          <box flexDirection="row">
+            <text fg={t().tool} attributes={TextAttributes.DIM}>{toolMarker()} </text>
+            <text fg={t().tool} attributes={TextAttributes.DIM}>{entry.body}</text>
+          </box>
+          <Show when={metadata?.kind === "edit-preview"}>
+            <box paddingLeft={2} paddingTop={1} paddingRight={1}>
+              <diff
+                oldCode={(metadata as EditToolResultMetadata | undefined)?.oldText ?? ""}
+                newCode={(metadata as EditToolResultMetadata | undefined)?.newText ?? ""}
+                language={resolveDiffLanguage((metadata as EditToolResultMetadata | undefined)?.path ?? "")}
+                mode="unified"
+                showLineNumbers={true}
+                context={2}
+                addedLineColor={t().diffAdded}
+                removedLineColor={t().diffRemoved}
+                unchangedLineColor="transparent"
+                width="100%"
+              />
+            </box>
+          </Show>
+        </box>
+      );
+    }
+
     case "tool-group":
       return (
         <box flexDirection="row" paddingLeft={4} marginTop={0} marginBottom={0}>
@@ -3306,6 +3786,7 @@ interface SingleTurnOptions {
   readonly abortSignal?: AbortSignal;
   readonly onToolCall: (toolCall: ToolCall) => void;
   readonly onTextDelta: TextDeltaObserver;
+  readonly onToolResult?: (toolResult: Extract<ConversationMessage, { role: "tool" }>) => void;
 }
 
 async function runSingleTurn(options: SingleTurnOptions): Promise<AgentRunResult> {
@@ -3322,6 +3803,9 @@ async function runSingleTurn(options: SingleTurnOptions): Promise<AgentRunResult
     },
     onTextDelta(delta) {
       options.onTextDelta(delta);
+    },
+    onToolResult(toolResult) {
+      options.onToolResult?.(toolResult);
     }
   });
 }
@@ -3333,6 +3817,51 @@ function createEntry(kind: UiEntry["kind"], title: string, body: string): UiEntr
     title,
     body
   };
+}
+
+function createToolResultEntry(
+  toolName: string,
+  _content: string,
+  metadata: ToolResultMetadata | undefined
+): UiEntry | undefined {
+  if (metadata?.kind === "edit-preview") {
+    return {
+      ...createEntry("tool-preview", "tool", `${toToolDisplayName(toolName)} · ${metadata.path}`),
+      metadata
+    };
+  }
+
+  return undefined;
+}
+
+function resolveDiffLanguage(path: string): string {
+  const normalized = path.trim().toLowerCase();
+
+  if (normalized.endsWith(".tsx") || normalized.endsWith(".ts") || normalized.endsWith(".jsx") || normalized.endsWith(".js")) {
+    return "typescript";
+  }
+
+  if (normalized.endsWith(".json")) {
+    return "json";
+  }
+
+  if (normalized.endsWith(".md")) {
+    return "markdown";
+  }
+
+  if (normalized.endsWith(".css")) {
+    return "css";
+  }
+
+  if (normalized.endsWith(".html")) {
+    return "html";
+  }
+
+  if (normalized.endsWith(".sh")) {
+    return "bash";
+  }
+
+  return "text";
 }
 
 function appendEntry(
@@ -3370,9 +3899,28 @@ interface MarqueeSegment {
 function buildStatusMarquee(
   themeName: ThemeName,
   tick: number,
-  theme: ThemeColors
+  theme: ThemeColors,
+  phase: SpinnerPhase
 ): readonly MarqueeSegment[] {
-  return getSpinnerSegments(themeName, tick, theme);
+  return [
+    getSpinnerPhaseGlyph(phase, theme),
+    { text: " ", color: theme.divider },
+    ...getSpinnerSegments(themeName, tick, theme),
+    { text: " ", color: theme.divider },
+    { text: getSpinnerPhaseLabel(phase), color: theme.hintText }
+  ];
+}
+
+function getSpinnerPhaseLabel(phase: SpinnerPhase): string {
+  switch (phase) {
+    case "tool":
+      return "running tool";
+    case "saving-history":
+      return "saving history";
+    case "thinking":
+    default:
+      return "thinking";
+  }
 }
 
 // ── Layout Picker ──
@@ -3420,7 +3968,7 @@ function openLayoutPicker(
 }
 
 function closeLayoutPicker(
-  input: InputRenderable | undefined,
+  input: PromptRenderable | undefined,
   setOpen: (value: boolean) => void,
   setSelectedIndex: (value: number) => void
 ): void {

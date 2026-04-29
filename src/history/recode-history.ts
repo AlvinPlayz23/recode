@@ -9,6 +9,7 @@ import { dirname, join, resolve } from "node:path";
 import type { RuntimeConfig } from "../runtime/runtime-config.ts";
 import { isRecord } from "../shared/is-record.ts";
 import type { AssistantMessage, ConversationMessage, ToolCall, ToolResultMessage, UserMessage } from "../messages/message.ts";
+import type { EditToolResultMetadata, ToolResultMetadata } from "../tools/tool.ts";
 import type { SessionMode } from "../tui/session-mode.ts";
 
 const HISTORY_VERSION = 1;
@@ -358,6 +359,7 @@ function parseToolResultMessage(value: Record<string, unknown>): ToolResultMessa
   const toolCallId = readOptionalString(value, "toolCallId");
   const toolName = readOptionalString(value, "toolName");
   const content = readOptionalString(value, "content");
+  const metadata = parseToolResultMetadata(value["metadata"]);
 
   if (
     toolCallId === undefined
@@ -373,7 +375,8 @@ function parseToolResultMessage(value: Record<string, unknown>): ToolResultMessa
     toolCallId,
     toolName,
     content,
-    isError: value["isError"]
+    isError: value["isError"],
+    ...(metadata === undefined ? {} : { metadata })
   };
 }
 
@@ -394,6 +397,36 @@ function parseToolCall(value: unknown): ToolCall | undefined {
     id,
     name,
     argumentsJson
+  };
+}
+
+function parseToolResultMetadata(value: unknown): ToolResultMetadata | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  switch (value["kind"]) {
+    case "edit-preview":
+      return parseEditToolResultMetadata(value);
+    default:
+      return undefined;
+  }
+}
+
+function parseEditToolResultMetadata(value: Record<string, unknown>): EditToolResultMetadata | undefined {
+  const path = readOptionalString(value, "path");
+  const oldText = typeof value["oldText"] === "string" ? value["oldText"] : undefined;
+  const newText = typeof value["newText"] === "string" ? value["newText"] : undefined;
+
+  if (path === undefined || oldText === undefined || newText === undefined) {
+    return undefined;
+  }
+
+  return {
+    kind: "edit-preview",
+    path,
+    oldText,
+    newText
   };
 }
 

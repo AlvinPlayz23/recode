@@ -130,12 +130,24 @@ export interface ToolExecutionContext {
   readonly requestQuestionAnswers?: QuestionRequestHandler;
 }
 
+/** Structured preview for one successful Edit tool replacement. */
+export interface EditToolResultMetadata {
+  readonly kind: "edit-preview";
+  readonly path: string;
+  readonly oldText: string;
+  readonly newText: string;
+}
+
+/** Structured metadata attached to a tool result. */
+export type ToolResultMetadata = EditToolResultMetadata;
+
 /**
  * Tool execution result.
  */
 export interface ToolResult {
   readonly content: string;
   readonly isError: boolean;
+  readonly metadata?: ToolResultMetadata;
 }
 
 /**

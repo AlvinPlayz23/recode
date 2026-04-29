@@ -16,6 +16,8 @@ export interface SpinnerSegment {
   readonly color: string;
 }
 
+export type SpinnerPhase = "thinking" | "tool" | "saving-history";
+
 export type SpinnerStyleName =
   | "sakura-lantern"
   | "paper-beads"
@@ -23,7 +25,8 @@ export type SpinnerStyleName =
   | "midnight-blade"
   | "amber-scan"
   | "frost-stars"
-  | "petal-drift";
+  | "petal-drift"
+  | "solarized-beam";
 
 interface SpinnerThemeDefinition {
   readonly style: SpinnerStyleName;
@@ -97,6 +100,15 @@ const SPINNER_THEME_DEFINITIONS: Readonly<Record<ThemeName, SpinnerThemeDefiniti
     holdEnd: 2,
     headGlyph: "✿",
     trailGlyphs: ["❀", "·", "·"],
+    inactiveGlyph: "·"
+  }),
+  "solarized-light": createScannerDefinition({
+    style: "solarized-beam",
+    width: 8,
+    holdStart: 2,
+    holdEnd: 2,
+    headGlyph: "▣",
+    trailGlyphs: ["▢", "□", "·"],
     inactiveGlyph: "·"
   })
 };
@@ -235,6 +247,8 @@ export interface SpinnerProps {
   readonly theme?: ThemeColors;
   /** Theme name fallback if colors are not passed. */
   readonly themeName?: ThemeName;
+  /** Optional active phase hint for the leading phase glyph. */
+  readonly phase?: SpinnerPhase;
 }
 
 /**
@@ -256,6 +270,9 @@ export function Spinner(props: SpinnerProps): JSX.Element {
   return (
     <box flexDirection="row">
       <box flexDirection="row" gap={1}>
+        <text fg={getSpinnerPhaseGlyph(props.phase ?? "thinking", theme()).color}>
+          {getSpinnerPhaseGlyph(props.phase ?? "thinking", theme()).text}
+        </text>
         <For each={getSpinnerSegments(resolvedThemeName(), frame(), theme())}>
           {(segment) => <text fg={segment.color}>{segment.text}</text>}
         </For>
@@ -265,4 +282,23 @@ export function Spinner(props: SpinnerProps): JSX.Element {
       )}
     </box>
   );
+}
+
+/**
+ * Return the phase glyph segment shown ahead of the animated spinner.
+ *
+ * @param phase Current agent phase
+ * @param theme Current theme colors
+ * @returns Phase glyph segment
+ */
+export function getSpinnerPhaseGlyph(phase: SpinnerPhase, theme: ThemeColors): SpinnerSegment {
+  switch (phase) {
+    case "tool":
+      return { text: "▣", color: theme.warning };
+    case "saving-history":
+      return { text: "◆", color: theme.success };
+    case "thinking":
+    default:
+      return { text: "◌", color: theme.brandShimmer };
+  }
 }

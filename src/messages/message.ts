@@ -4,6 +4,8 @@
  * @author dev
  */
 
+import type { ToolResultMetadata } from "../tools/tool.ts";
+
 /**
  * A tool call emitted by the model.
  */
@@ -39,6 +41,7 @@ export interface ToolResultMessage {
   readonly toolName: string;
   readonly content: string;
   readonly isError: boolean;
+  readonly metadata?: ToolResultMetadata;
 }
 
 /**

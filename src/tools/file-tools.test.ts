@@ -30,6 +30,12 @@ describe("Edit tool", () => {
 
       expect(result.isError).toBe(false);
       expect(await Bun.file(filePath).text()).toBe("$&-literal world\n");
+      expect(result.metadata).toEqual({
+        kind: "edit-preview",
+        path: "sample.txt",
+        oldText: "hello",
+        newText: "$&-literal"
+      });
     } finally {
       await rm(workspaceRoot, { recursive: true, force: true });
     }

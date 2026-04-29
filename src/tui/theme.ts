@@ -67,7 +67,7 @@ export interface ThemeColors {
 }
 
 /** Named theme identifiers. */
-export type ThemeName = "senren-dusk" | "paper-lantern" | "matcha-night" | "midnight-ink" | "amber-terminal" | "frost-glass" | "sakura-bloom";
+export type ThemeName = "senren-dusk" | "paper-lantern" | "matcha-night" | "midnight-ink" | "amber-terminal" | "frost-glass" | "sakura-bloom" | "solarized-light";
 
 /** Named tool marker identifiers. */
 export type ToolMarkerName = "arrow" | "hook" | "fancy" | "triangle" | "minimal" | "stylized";
@@ -317,6 +317,37 @@ export const SAKURA_BLOOM_THEME: ThemeColors = {
   diffRemoved: "#5c1a30",
 };
 
+/** High-contrast solarized-inspired light theme. */
+export const SOLARIZED_LIGHT_THEME: ThemeColors = {
+  text: "#073642",
+  inverseText: "#fdf6e3",
+  brand: "#005f87",
+  brandShimmer: "#003b4d",
+  inactive: "#586e75",
+  subtle: "#657b83",
+  success: "#0b6e4f",
+  error: "#b00020",
+  warning: "#9a6700",
+  suggestion: "#005f87",
+  userMessageBackground: "#eee8d5",
+  userMessageBackgroundHover: "#e4dcc7",
+  messageActionsBackground: "#ddd3bb",
+  promptBorder: "#657b8355",
+  bashBorder: "#005f87",
+  bashMessageBackgroundColor: "#f3ecd9",
+  selectionBg: "#c9d8d0",
+  statusText: "#073642",
+  hintText: "#586e75",
+  divider: "#93a1a1",
+  active: "#005f87",
+  user: "#7c3f00",
+  assistantLabel: "#003b4d",
+  assistantBody: "#fdf6e3",
+  tool: "#005f87",
+  diffAdded: "#d9f0d8",
+  diffRemoved: "#f5d7d9",
+};
+
 const THEMES: readonly ThemeDefinition[] = [
   {
     name: "senren-dusk",
@@ -366,6 +397,13 @@ const THEMES: readonly ThemeDefinition[] = [
     description: "Vivid sakura pink with warm golden accents.",
     colors: SAKURA_BLOOM_THEME,
     promptMarker: "✿"
+  },
+  {
+    name: "solarized-light",
+    label: "Solarized Light",
+    description: "High-contrast light mode tuned for bright rooms and glare.",
+    colors: SOLARIZED_LIGHT_THEME,
+    promptMarker: "›"
   }
 ] as const;
 

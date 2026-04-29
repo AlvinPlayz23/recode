@@ -37,7 +37,8 @@ export async function executeToolCall(
       toolCallId: toolCall.id,
       toolName: toolCall.name,
       content: result.content,
-      isError: result.isError
+      isError: result.isError,
+      ...(result.metadata === undefined ? {} : { metadata: result.metadata })
     };
   } catch (error) {
     return createErrorResult(toolCall, errorToMessage(error));
