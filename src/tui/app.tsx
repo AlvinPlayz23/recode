@@ -22,6 +22,7 @@
 
 import {
   decodePasteBytes,
+  type PasteEvent,
   stripAnsiSequences,
   TextAttributes,
   type InputRenderable,
@@ -184,6 +185,8 @@ export function TuiApp(props: TuiAppProps) {
   let streamFlushTimer: ReturnType<typeof setTimeout> | undefined;
   let syncingVisibleDraft = false;
   let pasteCounter = 0;
+  let lastHandledPasteSignature: string | undefined;
+  let lastHandledPasteAt = 0;
   let exitHintTimer: ReturnType<typeof setTimeout> | undefined;
   let ctrlCArmed = false;
 
@@ -353,24 +356,42 @@ export function TuiApp(props: TuiAppProps) {
     });
   });
 
-  usePaste((event) => {
-    if (busy() || modalOpen()) {
-      return;
+  const handlePromptPaste = (event: Pick<PasteEvent, "preventDefault">, rawText: string): boolean => {
+    if (busy() || modalOpen() || inputRef === undefined || isCommandDraft(draft())) {
+      return false;
     }
 
-    const text = stripAnsiSequences(decodePasteBytes(event.bytes));
-    const lineCount = countPastedLines(text);
-    if (lineCount <= 1) {
-      return;
+    const normalizedText = normalizePastedText(stripAnsiSequences(rawText));
+    const lineCount = countPastedLines(normalizedText.trimEnd());
+    const shouldSummarize = lineCount > 1;
+
+    if (!shouldSummarize) {
+      return false;
     }
 
+    const signature = `${normalizedText.length}:${lineCount}:${normalizedText.slice(0, 96)}`;
+    const now = Date.now();
+    if (lastHandledPasteSignature === signature && now - lastHandledPasteAt < 120) {
+      event.preventDefault();
+      return true;
+    }
+
+    lastHandledPasteSignature = signature;
+    lastHandledPasteAt = now;
     event.preventDefault();
+
     pasteCounter += 1;
     const token = `{Paste ${lineCount} lines #${pasteCounter}}`;
-    setPendingPastes((current) => [...current, { token, text }]);
-    syncDraftValue(`${draft()}${token}`);
+    setPendingPastes((current) => [...current, { token, text: normalizedText }]);
+    inputRef.insertText(`${token} `);
+    syncDraftValue(normalizeDraftInput(draft(), inputRef.value));
     setCommandSelectionIndex(0);
-    inputRef?.focus();
+    inputRef.focus();
+    return true;
+  };
+
+  usePaste((event) => {
+    void handlePromptPaste(event, decodePasteBytes(event.bytes));
   });
 
   useKeyboard((key) => {
@@ -1031,6 +1052,9 @@ export function TuiApp(props: TuiAppProps) {
           value={toVisibleDraft(draft())}
           flexGrow={1}
           placeholder={busy() ? "Waiting..." : "Send a message to Recode..."}
+          onPaste={(event) => {
+            void handlePromptPaste(event, decodePasteBytes(event.bytes));
+          }}
           onInput={(value) => {
             if (syncingVisibleDraft) {
               return;
@@ -2013,6 +2037,10 @@ function countPastedLines(value: string): number {
   }
 
   return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").length;
+}
+
+function normalizePastedText(value: string): string {
+  return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
 function expandDraftPastes(value: string, pastes: readonly PendingPaste[]): string {
