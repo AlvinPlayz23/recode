@@ -26,7 +26,8 @@ export type SpinnerStyleName =
   | "amber-scan"
   | "frost-stars"
   | "petal-drift"
-  | "solarized-beam";
+  | "solarized-beam"
+  | "monochrome-scan";
 
 interface SpinnerThemeDefinition {
   readonly style: SpinnerStyleName;
@@ -109,6 +110,15 @@ const SPINNER_THEME_DEFINITIONS: Readonly<Record<ThemeName, SpinnerThemeDefiniti
     holdEnd: 2,
     headGlyph: "▣",
     trailGlyphs: ["▢", "□", "·"],
+    inactiveGlyph: "·"
+  }),
+  "monochrome": createScannerDefinition({
+    style: "monochrome-scan",
+    width: 8,
+    holdStart: 2,
+    holdEnd: 2,
+    headGlyph: "■",
+    trailGlyphs: ["▣", "▪", "·"],
     inactiveGlyph: "·"
   })
 };

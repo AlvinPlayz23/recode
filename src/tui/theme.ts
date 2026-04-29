@@ -67,7 +67,7 @@ export interface ThemeColors {
 }
 
 /** Named theme identifiers. */
-export type ThemeName = "senren-dusk" | "paper-lantern" | "matcha-night" | "midnight-ink" | "amber-terminal" | "frost-glass" | "sakura-bloom" | "solarized-light";
+export type ThemeName = "senren-dusk" | "paper-lantern" | "matcha-night" | "midnight-ink" | "amber-terminal" | "frost-glass" | "sakura-bloom" | "solarized-light" | "monochrome";
 
 /** Named tool marker identifiers. */
 export type ToolMarkerName = "arrow" | "hook" | "fancy" | "triangle" | "minimal" | "stylized";
@@ -348,6 +348,37 @@ export const SOLARIZED_LIGHT_THEME: ThemeColors = {
   diffRemoved: "#f5d7d9",
 };
 
+/** High-contrast monochrome dark theme. */
+export const MONOCHROME_THEME: ThemeColors = {
+  text: "#f5f5f5",
+  inverseText: "#101010",
+  brand: "#ffffff",
+  brandShimmer: "#d9d9d9",
+  inactive: "#a6a6a6",
+  subtle: "#8c8c8c",
+  success: "#cfcfcf",
+  error: "#e0e0e0",
+  warning: "#d4d4d4",
+  suggestion: "#bfbfbf",
+  userMessageBackground: "#171717",
+  userMessageBackgroundHover: "#202020",
+  messageActionsBackground: "#262626",
+  promptBorder: "#8c8c8c55",
+  bashBorder: "#ffffff",
+  bashMessageBackgroundColor: "#141414",
+  selectionBg: "#4d4d4d",
+  statusText: "#f0f0f0",
+  hintText: "#b0b0b0",
+  divider: "#6e6e6e",
+  active: "#ffffff",
+  user: "#f5f5f5",
+  assistantLabel: "#e6e6e6",
+  assistantBody: "#fafafa",
+  tool: "#d0d0d0",
+  diffAdded: "#2d2d2d",
+  diffRemoved: "#3a3a3a",
+};
+
 const THEMES: readonly ThemeDefinition[] = [
   {
     name: "senren-dusk",
@@ -404,6 +435,13 @@ const THEMES: readonly ThemeDefinition[] = [
     description: "High-contrast light mode tuned for bright rooms and glare.",
     colors: SOLARIZED_LIGHT_THEME,
     promptMarker: "›"
+  },
+  {
+    name: "monochrome",
+    label: "Monochrome",
+    description: "High-contrast grayscale theme with no color accents.",
+    colors: MONOCHROME_THEME,
+    promptMarker: "•"
   }
 ] as const;
 
