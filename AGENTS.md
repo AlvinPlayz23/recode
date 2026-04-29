@@ -1,273 +1,323 @@
-# Recode Development Guide
+# Recode Agent Guide
 
-## Project Overview
+## What This Repository Is
 
-**Recode** is a coding agent built with TypeScript and Bun, with a Senren-inspired TUI terminal interface.
+**Recode** is a local coding-agent CLI built with TypeScript and Bun.
 
-After receiving a user instruction, the agent enters an iterative loop: call the LLM -> parse tool calls -> execute tools -> send results back to the LLM -> repeat until the model stops requesting tools or the maximum iteration count is reached. Streaming output and multi-turn conversation are both supported.
+It has two user-facing modes:
+- **Interactive TUI mode** powered by OpenTUI + SolidJS
+- **One-shot CLI mode** for a single prompt and final answer
+
+The core product is not “just a chat UI.” It is an iterative agent runtime:
+
+```text
+user prompt
+  -> build model request
+  -> stream assistant output
+  -> collect tool calls
+  -> execute tools
+  -> append tool results to transcript
+  -> continue until the model stops calling tools
+```
+
+Streaming, multi-turn conversation, persistent history, provider/model config, approval modes, and HTML export are all part of the current app surface.
+
+## Stack
 
 - **Runtime**: Bun
-- **Language**: TypeScript (`strict` mode with `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `useUnknownInCatchVariables`, and `noImplicitOverride`)
+- **Language**: TypeScript
 - **TUI**: OpenTUI + SolidJS
 - **Package manager**: bun
+- **Build output**: native Bun-compiled binaries
 
-## Meta Rules
+## First Things To Know
 
-- Reply in English
-- Determine user intent first, then decide whether to answer, investigate, or implement
-- Do only what the user explicitly asked for; do not expand scope on your own
-- Search before editing, verify before finishing
+- Reply in **English**
+- Search before editing
+- Verify before claiming behavior
+- Do only the requested scope unless a small support change is clearly necessary
+- Prefer small, local, reversible edits over big rewrites
+- If the user is talking about **TUI behavior**, assume their live terminal feedback is more authoritative than static code inspection
 
-## Project Naming
+## Current Product Surface
 
-The project name **recode** should be used consistently across the codebase and product surface.
+### CLI
 
-Related imagery is welcome: sacred blades, Hoori, hot spring town atmosphere, shrine maiden motifs, cherry pinks, and warm oranges. Keep it lively, but restrained.
+```text
+recode               Start the interactive TUI
+recode setup         Open the provider/model setup wizard
+recode <prompt>      Run one-shot mode
+recode -h --help     Show help
+recode -v --version  Show version
+```
 
-## Technical Constraints
+### TUI Commands
 
-### TypeScript
+- `/help`
+- `/clear`
+- `/status`
+- `/config`
+- `/models`
+- `/theme`
+- `/approval-mode`
+- `/export`
+- `/history`
+- `/new`
+- `/exit`
+- `/quit`
 
-- `strict` mode, no `any`, no `@ts-ignore`, no `@ts-expect-error`
-- Prefer `interface` over `type` unless `type` is required for unions, intersections, or other `type`-only features
-- Exported symbols must have JSDoc comments
-- File header comment format:
+### Persistent State
 
-```typescript
+- Global config: `~/.recode/config.json`
+- Global history: `~/.recode/history/`
+
+The config currently stores:
+- providers
+- active provider
+- selected model
+- theme
+- approval mode
+- approval allowlist
+
+The history layer currently stores:
+- conversation metadata
+- transcript
+- current/last active conversation
+
+### Current Approval Modes
+
+- `approval`
+  - reads run directly
+  - edits and bash require approval
+- `auto-edits`
+  - reads and edits run directly
+  - bash requires approval
+- `yolo`
+  - everything runs directly
+
+## Architecture
+
+## Core Runtime Flow
+
+```text
+src/index.ts
+  -> loadRuntimeConfig()
+  -> createLanguageModel()
+  -> createTools()
+  -> ToolRegistry
+  -> either:
+     - runTui()
+     - runAgentLoop()
+```
+
+```text
+runAgentLoop()
+  -> streamAssistantResponse()
+  -> collect text/tool calls
+  -> executeToolCall()
+  -> append tool results
+  -> repeat
+```
+
+## Main Modules
+
+| Module | Responsibility | Key Files |
+| --- | --- | --- |
+| `src/agent/` | main iterative agent loop | `run-agent-loop.ts` |
+| `src/ai/` | internal AI transport layer | `stream-assistant-response.ts`, `providers/*` |
+| `src/cli/` | setup wizard and non-TUI terminal flows | `setup.ts` |
+| `src/config/` | persistent config load/save/update helpers | `recode-config.ts` |
+| `src/errors/` | custom error types | `recode-error.ts` |
+| `src/history/` | saved conversations and HTML export | `recode-history.ts`, `export-html.ts` |
+| `src/messages/` | internal transcript types | `message.ts` |
+| `src/models/` | model factory and provider model listing | `create-model-client.ts`, `list-models.ts` |
+| `src/prompt/` | system prompt loading | `system-prompt.ts`, `system-prompt.md` |
+| `src/runtime/` | runtime config assembly from config + env | `runtime-config.ts` |
+| `src/shared/` | small reusable helpers | `is-record.ts` |
+| `src/tools/` | tool definitions, registry, execution, sandboxing | see below |
+| `src/tui/` | interactive UI, selectors, prompt, history/model/theme flow | `app.tsx`, `run-tui.tsx`, `theme.ts`, `message-format.ts` |
+
+## Model Layer
+
+Recode no longer depends on the Vercel AI SDK.
+
+The internal model layer currently supports:
+- `openai` -> OpenAI Responses API
+- `openai-chat` -> OpenAI Chat Completions API
+- `anthropic` -> Anthropic Messages API
+
+`RECODE_BASE_URL` allows OpenAI-compatible backends.
+
+## Tool Layer
+
+Current tools:
+- `Bash`
+- `Read`
+- `Write`
+- `Edit`
+- `Glob`
+- `Grep`
+
+Structure:
+
+```text
+ToolDefinition
+  -> ToolRegistry
+  -> executeToolCall()
+  -> createTools()
+```
+
+Safety:
+- file access is constrained through safe path resolution
+- bash has app-layer validation
+- bubblewrap is used when available
+
+## TUI Layout Model
+
+The TUI is not a separate agent implementation. It is a stateful frontend around the same loop.
+
+Current TUI responsibilities:
+- render transcript entries
+- manage draft input
+- handle slash commands
+- show selectors/popups
+- persist/restore conversations
+- stream assistant output incrementally
+- request tool approvals interactively
+
+Important files:
+- `src/tui/app.tsx`
+- `src/tui/run-tui.tsx`
+- `src/tui/theme.ts`
+- `src/tui/message-format.ts`
+
+## Current TUI Behaviors To Preserve
+
+- Header stays left-aligned with a small left inset
+- Prompt starts below the header when the chat is short
+- As content grows, the prompt is pushed downward
+- Once the screen fills, the prompt behaves like a docked composer
+- Slash mode changes the prompt marker from `◈` to `/`
+- `/models`, `/theme`, `/history`, `/approval-mode` use picker-style overlays
+- `Ctrl+C` is a two-step exit in TUI and one-shot CLI
+
+If a task touches the TUI, be careful not to accidentally regress:
+- prompt docking
+- transcript order above the prompt
+- overlay/modal positioning
+- slash-mode input rewriting
+- live focus behavior
+
+## Skills And References
+
+If a task involves TUI work, use the local **`opentui`** skill:
+- `.agents/skills/opentui/SKILL.md`
+
+Useful local references:
+- `.agents/skills/opentui/references/`
+- `refs/opencode/`
+- `refs/pi-packages/`
+
+When using references:
+- use them to understand patterns
+- do not copy large chunks blindly
+- adapt to Recode’s current architecture and style
+
+## Known Reality About TUI Debugging
+
+The user can see the live TUI. You usually cannot.
+
+Treat the user’s report as the source of truth for:
+- rendering glitches
+- focus bugs
+- paste behavior
+- prompt docking issues
+- selector collisions
+
+If code looks correct but the user says the live terminal is wrong, believe the runtime report first.
+
+## Project Conventions
+
+## TypeScript
+
+- `strict` mode
+- no `any`
+- no `@ts-ignore`
+- no `@ts-expect-error`
+- prefer `interface` over `type` except when `type` is clearly the right fit
+- exported APIs should have JSDoc
+
+Header comment format:
+
+```ts
 /**
  * {module description}
  */
 ```
 
-### Bun
+## Naming
 
-- Use Bun-native APIs (`Bun.file()`, `Bun.spawn()`, `Bun.Glob`, etc.) and do not add Node polyfills
-  - Note: the current `file-tools.ts` and `glob-tool.ts` / `grep-tool.ts` use `node:fs/promises` (`mkdir`, `stat`) and `node:path` (`join`, `relative`, `dirname`), which is acceptable because Bun supports those Node APIs
-- Use `bun test` for tests
-- Use `bun run` for scripts
+- files: `kebab-case`
+- functions/variables: `camelCase`
+- classes/interfaces: `PascalCase`
+- constants: `UPPER_SNAKE_CASE`
+- tool names: `PascalCase`
 
-### Dependency Management
+## Comments
 
-- Check whether the project already has the needed capability before adding a dependency
-- Prefer existing dependencies; update only one major dependency at a time
-- Record the reason for introducing a dependency in a commit message or comment
-- Current production dependencies: `@opentui/core`, `@opentui/solid`, `solid-js`
+- explain **why**
+- avoid low-value narration
+- keep TODOs contextual
 
-## Architecture
+## Dependency Policy
 
-### Core Flow
+- prefer what is already in the repo
+- avoid new dependencies unless clearly justified
+- check if Bun or OpenTUI already provides the capability
 
-```text
-User input
-  -> index.ts (CLI entrypoint, argument parsing)
-  -> runAgentLoop() (iterative loop)
-    -> stream assistant response
-    -> parse tool calls
-    -> executeToolCall() (tool execution)
-    -> append ToolResultMessage to the transcript
-    -> repeat until there are no tool calls or maxIterations is reached
+## Build And Verification
+
+Primary verification commands:
+
+```bash
+bun run check
+bun run test
 ```
 
-### Module Responsibilities
+Build commands:
 
-| Module | Responsibility | Key Files |
-| --- | --- | --- |
-| `agent/` | Main agent loop (multi-turn conversation) | `run-agent-loop.ts` |
-| `ai/` | Internal AI transport layer | `stream-assistant-response.ts`, `providers/*` |
-| `errors/` | Custom error hierarchy | `recode-error.ts` |
-| `messages/` | Conversation message model | `message.ts` |
-| `models/` | Runtime model factory | `create-model-client.ts` |
-| `prompt/` | System prompt | `system-prompt.md` |
-| `runtime/` | Environment variable loading | `runtime-config.ts` |
-| `shared/` | Shared helpers | `is-record.ts` |
-| `tools/` | Tool system | See below |
-| `tui/` | OpenTUI + SolidJS UI | `app.tsx`, `logo.tsx`, `spinner.tsx`, `theme.ts`, `output.ts`, `message-format.ts`, `hitokoto.ts`, `run-tui.tsx` |
-
-### Model Client
-
-The runtime model factory creates an internal `AiModel` descriptor:
-
-- `openai` -> OpenAI Responses API
-- `openai-chat` -> OpenAI Chat Completions API
-- `anthropic` -> Anthropic Messages API
-
-The agent loop streams one assistant turn through the internal AI layer and converts between Recode's internal message model and provider-specific payloads.
-
-### Error Hierarchy
-
-```text
-RecodeError (base)
-├── ConfigurationError    — runtime configuration error
-├── ModelResponseError    — malformed or failed model response
-├── ToolExecutionError    — tool execution error
-└── PathSecurityError     — workspace path escape
+```bash
+bun run build
+bun run build:all
 ```
 
-## Provider Support
+For docs-only changes, you do not need to run typecheck/tests unless the user asks or the docs depend on verified behavior you changed elsewhere.
 
-| Provider | `RECODE_PROVIDER` value | Requires API key |
-| --- | --- | --- |
-| OpenAI Responses API | `openai` (default) | Yes |
-| OpenAI Chat Completions API | `openai-chat` | Yes |
-| Anthropic Messages API | `anthropic` | Yes |
+### Guidelines:
 
-The `openai` and `openai-chat` providers can target OpenAI-compatible backends by changing `RECODE_BASE_URL` and `RECODE_API_KEY`.
-
-## Tool System
-
-### Structure
-
-```text
-ToolDefinition (interface)
-  -> ToolRegistry (name index)
-  -> executeToolCall() (invocation executor)
-  -> createTools() (tool factory)
-```
-
-### Tool List
-
-| Tool | Purpose | Source File | Key Details |
-| --- | --- | --- | --- |
-| `Bash` | Execute shell commands | `src/tools/bash-tool.ts` | `zsh -lc`, 30s timeout, 12KB output cap |
-| `Read` | Read files | `src/tools/file-tools.ts` | Limited to 1MB text files |
-| `Write` | Write files | `src/tools/file-tools.ts` | Creates parent directories automatically |
-| `Edit` | Edit files in place | `src/tools/file-tools.ts` | Exact replacement, target text must be unique |
-| `Glob` | Find files by pattern | `src/tools/glob-tool.ts` | Up to 100 results via `Bun.Glob` |
-| `Grep` | Search file contents by regex | `src/tools/grep-tool.ts` | Supports `content` and `files_with_matches` output modes; skips binary files |
-
-### Safety Mechanisms
-
-All file operations go through `resolveSafePath()` to ensure they stay inside `workspaceRoot`.
-
-The Bash tool has two layers of sandboxing:
-- **Application layer** (`bash-sandbox.ts`): validates command arguments and rejects absolute path escapes, `..` traversal, privilege escalation commands, dangerous environment mutations, and redirects outside the workspace
-- **OS layer** (`bwrap-sandbox.ts`): uses `bubblewrap` to isolate the filesystem with `--unshare-all`; automatically falls back to application-layer validation when `bwrap` is unavailable
-
-## Intent Routing
-
-| User wording | Default action |
-| --- | --- |
-| "explain / analyze / compare / how to" | Research and answer only, no file edits |
-| "check / inspect / debug / locate" | Search code, config, and logs first, then report findings |
-| "implement / add / modify / fix" | Find existing patterns and boundaries first, then make the smallest viable implementation |
-| "refactor / optimize / clean up" | Evaluate benefits, risk, and impact first, then proceed in steps |
-| Ambiguous request | Explore first; if still unclear, ask one minimal necessary question |
-
-## Code Style
-
-### Naming
-
-- Files: `kebab-case` (`agent-runner.ts`)
-- Classes / interfaces: `PascalCase` (`ToolExecutor`)
-- Functions / variables: `camelCase` (`parseCommand`)
-- Constants: `UPPER_SNAKE_CASE` (`MAX_RETRIES`)
-- Type parameters: `PascalCase`; single letters only for simple generics (`T`, `K`, `V`)
-- **Tool internal names**: `PascalCase` (`Bash` / `Read` / `Write` / `Edit` / `Glob` / `Grep`)
-- Private fields: `#` prefix (ECMAScript private fields)
-
-### Structure
-
-- One file, one responsibility
-- Public APIs should be re-exported through `index.ts` where appropriate
-- Use `RecodeError` subclasses for error handling instead of throwing raw strings
-- Use `async/await`, not `.then()` chains
-
-### Comments
-
-- Explain **why**, not just **what**
-- `TODO` comments must include context (issue number or short explanation)
-- Public APIs must have JSDoc comments
-
-### TUI / Visual Direction
-
-- Use the Senren-inspired palette defined in `src/tui/theme.ts`
-- The logo component includes the animated Ciallo shimmer effect
-- The startup screen fetches a quote from the Hitokoto API
-- Tool calls should be displayed in a human-readable form with a concise argument summary, such as `Bash · ls -la` or `Read · src/tui/app.tsx`
-- The status bar uses a lantern-style marquee animation
-
-## Execution Protocol
-
-### 1. Understand
-
-Before starting, clarify the goal, constraints, impact area, and validation method.
-
-### 2. Explore
-
-- Find 2-3 similar implementations first to confirm existing patterns
-- Read entrypoints, call chains, config, and tests before editing
-- The repository is the primary source of truth; do not make confident claims about unread code
-
-### 3. Decide
-
-- Prefer existing implementations, dependencies, and tools
-- Prefer boring and reliable solutions
-- For changes spanning more than one file, more than one layer, or an unclear scope, provide a brief plan before editing
-
-### 4. Implement
-
-- Work in small, verifiable, reversible steps
-- Bug fixes should address the bug itself, not bundle unrelated refactors
-- Do not create files, add dependencies, or change public interfaces unless needed
-
-### 5. Verify
-
-- `bun run check` passes
-- `bun test` passes
-- New features include corresponding tests
-- `lsp_diagnostics` has no new errors
-
-### 6. Deliver
-
-Explain what changed, where it changed, how it was verified, and whether any known risks remain.
+If behavior is TUI-specific:
+- say what you verified statically
+- say what still needs live user confirmation
 
 ## Hard Constraints
 
-| Rule | Description |
-| --- | --- |
-| Type safety | No `any`, `@ts-ignore`, `@ts-expect-error`, or empty `catch` blocks |
-| Scope discipline | Do not expand requirements or add extra features on your own |
-| Guessing | Do not make certain claims about code, results, or docs you have not read |
-| Fake verification | If you did not run the command, test, or inspect the output, do not claim it was verified |
-| Retry limit | Try the same problem at most 3 times before stopping and explaining the current state |
+- Do not claim you verified something you did not verify
+- Do not expand scope just because a nearby improvement is tempting
+- Do not make confident claims about code you did not inspect
+- Do not add extra product behavior unless needed for the requested task
 
-## Tests
+## Current Gaps Worth Knowing
 
-- Test files should be named `{module}.test.ts` and live beside the source file
-- Core logic, edge cases, and failure paths must be covered
-- Tests must be independent and self-contained
-- Current coverage includes the agent loop, runtime config, file tools, glob tool, grep tool, safe path, bash sandbox, bwrap sandbox, output formatting, and message formatting
+These are not automatic todo items. They are just context:
+- paste mode is still an active area and may need more refinement
+- some popup/overlay layout behavior in docked prompt mode may still need cleanup
+- `src/tui/app.tsx` carries a lot of UI state and is the most likely place for regressions
 
-## Build
+## Definition Of Done
 
-```bash
-bun run build      # Build a native binary for the current platform into dist/
-bun run build:all  # Build native binaries for Linux/macOS/Windows
-```
+A task is done when:
+- the requested scope is covered
+- the change matches repo style
+- verification is complete for the kind of change made
+- risks or remaining live-runtime unknowns are stated clearly
 
-The build script in `scripts/build.ts` uses `Bun.build()` with `compile` enabled to produce self-contained binaries. It injects `RECODE_VERSION` through `define` during the build.
-
-## Git Commits
-
-Follow [Conventional Commits](https://www.conventionalcommits.org/). Commit messages should be written in English:
-
-```text
-type(scope): short summary
-
-optional details
-```
-
-Types: `feat` / `fix` / `refactor` / `docs` / `test` / `chore` / `perf`
-
-If the user explicitly asks for a commit, append:
-
-```text
-Co-Authored-By: opencode <noreply@opencode.ai>
-```
-
-## Definition of Done
-
-- The user-requested scope is fully covered
-- Changes match the existing code style
-- Type checking / tests / build have passed
-- The feature or fix has been actually verified with evidence

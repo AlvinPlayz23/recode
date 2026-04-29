@@ -67,7 +67,13 @@ export interface ThemeColors {
 }
 
 /** Named theme identifiers. */
-export type ThemeName = "senren-dusk" | "paper-lantern" | "matcha-night";
+export type ThemeName = "senren-dusk" | "paper-lantern" | "matcha-night" | "midnight-ink" | "amber-terminal" | "frost-glass" | "sakura-bloom";
+
+/** Layout density mode. */
+export type LayoutMode = "compact" | "comfortable";
+
+/** Default layout mode. */
+export const DEFAULT_LAYOUT_MODE: LayoutMode = "comfortable";
 
 /** One selectable theme definition. */
 export interface ThemeDefinition {
@@ -75,6 +81,7 @@ export interface ThemeDefinition {
   readonly label: string;
   readonly description: string;
   readonly colors: ThemeColors;
+  readonly promptMarker: string;
 }
 
 /** Default theme name. */
@@ -113,16 +120,16 @@ export const SENREN_DUSK_THEME: ThemeColors = {
 
 /** Warm light-paper theme. */
 export const PAPER_LANTERN_THEME: ThemeColors = {
-  text: "#3d241f",
+  text: "#6b4d46",
   inverseText: "#fffaf2",
-  brand: "#c85f5f",
-  brandShimmer: "#9d443f",
-  inactive: "#7f5b52",
-  subtle: "#946e62",
+  brand: "#6b4d46",
+  brandShimmer: "#6b4d46",
+  inactive: "#6b4d46",
+  subtle: "#6b4d46",
   success: "#4f7a4d",
   error: "#a94756",
   warning: "#bb7b1f",
-  suggestion: "#9e6027",
+  suggestion: "#6b4d46",
   userMessageBackground: "#f5e7dc",
   userMessageBackgroundHover: "#edd9cd",
   messageActionsBackground: "#ead1c4",
@@ -130,14 +137,14 @@ export const PAPER_LANTERN_THEME: ThemeColors = {
   bashBorder: "#c96f6f",
   bashMessageBackgroundColor: "#f7ede4",
   selectionBg: "#e3b8aa",
-  statusText: "#8f5238",
-  hintText: "#8c695f",
+  statusText: "#6b4d46",
+  hintText: "#6b4d46",
   divider: "#ba8e82",
-  active: "#c85f5f",
-  user: "#8f5b20",
-  assistantLabel: "#9d443f",
-  assistantBody: "#3d241f",
-  tool: "#8a5c40",
+  active: "#6b4d46",
+  user: "#8c695f",
+  assistantLabel: "#6b4d46",
+  assistantBody: "#fffaf2",
+  tool: "#6b4d46",
   diffAdded: "#d7ead2",
   diffRemoved: "#f2d2d7",
 };
@@ -173,24 +180,179 @@ export const MATCHA_NIGHT_THEME: ThemeColors = {
   diffRemoved: "#5b2d37",
 };
 
+/** Deep blue indigo dark theme. */
+export const MIDNIGHT_INK_THEME: ThemeColors = {
+  text: "#d0d8e8",
+  inverseText: "#0a0e17",
+  brand: "#58a6ff",
+  brandShimmer: "#a0cdff",
+  inactive: "#8b9dc3",
+  subtle: "#6b7d9e",
+  success: "#56d364",
+  error: "#f85149",
+  warning: "#d29922",
+  suggestion: "#79c0ff",
+  userMessageBackground: "#0d1526",
+  userMessageBackgroundHover: "#131d30",
+  messageActionsBackground: "#182336",
+  promptBorder: "#30415a55",
+  bashBorder: "#58a6ff",
+  bashMessageBackgroundColor: "#0b1220",
+  selectionBg: "#264f78",
+  statusText: "#c0d8f0",
+  hintText: "#6b7d9e",
+  divider: "#30415a",
+  active: "#58a6ff",
+  user: "#d2a8ff",
+  assistantLabel: "#a0cdff",
+  assistantBody: "#e0e8f0",
+  tool: "#79c0ff",
+  diffAdded: "#1b4332",
+  diffRemoved: "#5c2030",
+};
+
+/** Retro amber-on-black CRT theme. */
+export const AMBER_TERMINAL_THEME: ThemeColors = {
+  text: "#ffcc66",
+  inverseText: "#1a1200",
+  brand: "#ffb000",
+  brandShimmer: "#ffd866",
+  inactive: "#cc9933",
+  subtle: "#a67c00",
+  success: "#66cc33",
+  error: "#ff6644",
+  warning: "#ffaa00",
+  suggestion: "#e6a800",
+  userMessageBackground: "#1a1400",
+  userMessageBackgroundHover: "#221a00",
+  messageActionsBackground: "#2a2000",
+  promptBorder: "#7a600044",
+  bashBorder: "#ffb000",
+  bashMessageBackgroundColor: "#141000",
+  selectionBg: "#4a3800",
+  statusText: "#ffe080",
+  hintText: "#a68a40",
+  divider: "#7a6020",
+  active: "#ffb000",
+  user: "#ffe0a0",
+  assistantLabel: "#ffd866",
+  assistantBody: "#ffdd88",
+  tool: "#e6c060",
+  diffAdded: "#2a4010",
+  diffRemoved: "#5c2010",
+};
+
+/** Cool icy blues light theme. */
+export const FROST_GLASS_THEME: ThemeColors = {
+  text: "#1a2a3a",
+  inverseText: "#f0f6ff",
+  brand: "#2196f3",
+  brandShimmer: "#1565c0",
+  inactive: "#5a7a94",
+  subtle: "#7a94a8",
+  success: "#2e7d32",
+  error: "#c62828",
+  warning: "#f57f17",
+  suggestion: "#1976d2",
+  userMessageBackground: "#e3f0fa",
+  userMessageBackgroundHover: "#d4e6f5",
+  messageActionsBackground: "#c8ddf0",
+  promptBorder: "#90b4d055",
+  bashBorder: "#2196f3",
+  bashMessageBackgroundColor: "#edf5fc",
+  selectionBg: "#b3d4f0",
+  statusText: "#1a4060",
+  hintText: "#5a7a94",
+  divider: "#90b4d0",
+  active: "#2196f3",
+  user: "#c06000",
+  assistantLabel: "#1565c0",
+  assistantBody: "#1a2a3a",
+  tool: "#3a7ab0",
+  diffAdded: "#d4edda",
+  diffRemoved: "#f8d7da",
+};
+
+/** Bright vivid sakura pink theme. */
+export const SAKURA_BLOOM_THEME: ThemeColors = {
+  text: "#fff0f5",
+  inverseText: "#1a0010",
+  brand: "#ff69b4",
+  brandShimmer: "#ffb6c1",
+  inactive: "#d4a0b0",
+  subtle: "#c08090",
+  success: "#66bb6a",
+  error: "#ff5252",
+  warning: "#ffab40",
+  suggestion: "#ff80ab",
+  userMessageBackground: "#2a0f1a",
+  userMessageBackgroundHover: "#351520",
+  messageActionsBackground: "#3a1a26",
+  promptBorder: "#a0607055",
+  bashBorder: "#ff69b4",
+  bashMessageBackgroundColor: "#200a14",
+  selectionBg: "#6a2040",
+  statusText: "#ffd0e0",
+  hintText: "#c0909a",
+  divider: "#b07080",
+  active: "#ff69b4",
+  user: "#ffd700",
+  assistantLabel: "#ffb6c1",
+  assistantBody: "#fff5f8",
+  tool: "#f0a0c0",
+  diffAdded: "#1a4030",
+  diffRemoved: "#5c1a30",
+};
+
 const THEMES: readonly ThemeDefinition[] = [
   {
     name: "senren-dusk",
     label: "Senren Dusk",
     description: "Warm sakura pinks and soft lantern contrast.",
-    colors: SENREN_DUSK_THEME
+    colors: SENREN_DUSK_THEME,
+    promptMarker: "◈"
   },
   {
     name: "paper-lantern",
     label: "Paper Lantern",
     description: "Bright parchment background with warm ink contrast.",
-    colors: PAPER_LANTERN_THEME
+    colors: PAPER_LANTERN_THEME,
+    promptMarker: "❯"
   },
   {
     name: "matcha-night",
     label: "Matcha Night",
     description: "Quiet green night palette with softer contrast.",
-    colors: MATCHA_NIGHT_THEME
+    colors: MATCHA_NIGHT_THEME,
+    promptMarker: "λ"
+  },
+  {
+    name: "midnight-ink",
+    label: "Midnight Ink",
+    description: "Deep blue indigo dark palette for late-night coding.",
+    colors: MIDNIGHT_INK_THEME,
+    promptMarker: "⌘"
+  },
+  {
+    name: "amber-terminal",
+    label: "Amber Terminal",
+    description: "Retro amber-on-black CRT nostalgia.",
+    colors: AMBER_TERMINAL_THEME,
+    promptMarker: "▸"
+  },
+  {
+    name: "frost-glass",
+    label: "Frost Glass",
+    description: "Cool icy blues on a bright frosted background.",
+    colors: FROST_GLASS_THEME,
+    promptMarker: "❖"
+  },
+  {
+    name: "sakura-bloom",
+    label: "Sakura Bloom",
+    description: "Vivid sakura pink with warm golden accents.",
+    colors: SAKURA_BLOOM_THEME,
+    promptMarker: "✿"
   }
 ] as const;
 
@@ -231,4 +393,14 @@ export function getThemeDefinition(name: ThemeName): ThemeDefinition {
  */
 export function getTheme(name: ThemeName = DEFAULT_THEME_NAME): ThemeColors {
   return getThemeDefinition(name).colors;
+}
+
+/**
+ * Check whether a layout mode value is valid.
+ *
+ * @param value Candidate layout mode
+ * @returns Whether the value is a valid layout mode
+ */
+export function isLayoutMode(value: string): value is LayoutMode {
+  return value === "compact" || value === "comfortable";
 }

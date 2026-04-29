@@ -29,7 +29,7 @@ import {
   type SyntaxStyle
 } from "@opentui/core";
 import { useKeyboard, usePaste, useRenderer, useSelectionHandler, useTerminalDimensions } from "@opentui/solid";
-import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type { AiModel } from "../ai/types.ts";
 import type { AgentRunResult, TextDeltaObserver } from "../agent/run-agent-loop.ts";
 import { runAgentLoop } from "../agent/run-agent-loop.ts";
@@ -38,6 +38,8 @@ import {
   saveRecodeConfigFile,
   selectConfiguredApprovalAllowlist,
   selectConfiguredApprovalMode,
+  selectConfiguredLayoutMode,
+  selectConfiguredMinimalMode,
   selectConfiguredProviderModel,
   selectConfiguredTheme
 } from "../config/recode-config.ts";
@@ -80,10 +82,12 @@ import { Logo } from "./logo.tsx";
 import { createMarkdownSyntaxStyle } from "./markdown-style.ts";
 import { Spinner } from "./spinner.tsx";
 import {
+  DEFAULT_LAYOUT_MODE,
   DEFAULT_THEME_NAME,
   getAvailableThemes,
   getThemeDefinition,
   getTheme,
+  type LayoutMode,
   type ThemeColors,
   type ThemeDefinition,
   type ThemeName
@@ -91,7 +95,7 @@ import {
 
 interface UiEntry {
   readonly id: string;
-  readonly kind: "user" | "assistant" | "tool" | "error" | "status";
+  readonly kind: "user" | "assistant" | "tool" | "tool-group" | "error" | "status";
   readonly title: string;
   readonly body: string;
 }
@@ -175,6 +179,11 @@ export function TuiApp(props: TuiAppProps) {
   const [approvalModePickerSelectedIndex, setApprovalModePickerSelectedIndex] = createSignal(0);
   const [activeApprovalRequest, setActiveApprovalRequest] = createSignal<ActiveApprovalRequest | undefined>(undefined);
   const [exitHintVisible, setExitHintVisible] = createSignal(false);
+  const [layoutMode, setLayoutMode] = createSignal<LayoutMode>(initialConfig.layoutMode ?? DEFAULT_LAYOUT_MODE);
+  const [minimalMode, setMinimalMode] = createSignal(initialConfig.minimalMode ?? false);
+  const [toolsCollapsed, setToolsCollapsed] = createSignal(false);
+  const [layoutPickerOpen, setLayoutPickerOpen] = createSignal(false);
+  const [layoutPickerSelectedIndex, setLayoutPickerSelectedIndex] = createSignal(0);
   let inputRef: InputRenderable | undefined;
   let modelPickerInputRef: InputRenderable | undefined;
   let historyPickerInputRef: InputRenderable | undefined;
@@ -199,6 +208,7 @@ export function TuiApp(props: TuiAppProps) {
     || historyPickerOpen()
     || themePickerOpen()
     || approvalModePickerOpen()
+    || layoutPickerOpen()
     || activeApprovalRequest() !== undefined
   );
   const sessionToolContext = createMemo<ToolExecutionContext>(() => ({
@@ -222,6 +232,9 @@ export function TuiApp(props: TuiAppProps) {
   const themePickerTotalOptionCount = createMemo(() => themePickerItems().length);
   const approvalModePickerItems = createMemo(() => buildApprovalModePickerItems(approvalMode()));
   const approvalModePickerTotalOptionCount = createMemo(() => approvalModePickerItems().length);
+  const themeDefinition = createMemo(() => getThemeDefinition(themeName()));
+  const layoutPickerItems = createMemo(() => buildLayoutPickerItems(layoutMode(), toolsCollapsed()));
+  const layoutPickerTotalOptionCount = createMemo(() => layoutPickerItems().length);
   const commandPanel = createMemo(() => buildCommandPanelState(
     draft(),
     commandSuggestions(),
@@ -354,6 +367,14 @@ export function TuiApp(props: TuiAppProps) {
       setEntries,
       setPreviousMessages
     });
+  });
+
+  createEffect(() => {
+    const cursorColor = t().brandShimmer;
+    applyInputCursorStyle(inputRef, cursorColor);
+    applyInputCursorStyle(modelPickerInputRef, cursorColor);
+    applyInputCursorStyle(historyPickerInputRef, cursorColor);
+    applyInputCursorStyle(themePickerInputRef, cursorColor);
   });
 
   const handlePromptPaste = (event: Pick<PasteEvent, "preventDefault">, rawText: string): boolean => {
@@ -498,6 +519,46 @@ export function TuiApp(props: TuiAppProps) {
             },
             close() {
               closeApprovalModePicker(inputRef, setApprovalModePickerOpen, setApprovalModePickerSelectedIndex);
+            }
+          });
+          return;
+        default:
+          return;
+      }
+    }
+
+    if (layoutPickerOpen()) {
+      switch (key.name) {
+        case "escape":
+          key.preventDefault();
+          closeLayoutPicker(inputRef, setLayoutPickerOpen, setLayoutPickerSelectedIndex);
+          return;
+        case "up":
+          key.preventDefault();
+          setLayoutPickerSelectedIndex((current) =>
+            moveBuiltinCommandSelectionIndex(current, layoutPickerTotalOptionCount(), -1)
+          );
+          return;
+        case "down":
+          key.preventDefault();
+          setLayoutPickerSelectedIndex((current) =>
+            moveBuiltinCommandSelectionIndex(current, layoutPickerTotalOptionCount(), 1)
+          );
+          return;
+        case "return":
+        case "enter":
+          key.preventDefault();
+          submitSelectedLayoutPickerItem({
+            configPath: sessionRuntimeConfig().configPath,
+            selectedIndex: layoutPickerSelectedIndex(),
+            items: layoutPickerItems(),
+            setLayoutMode,
+            setToolsCollapsed,
+            appendEntry(entry) {
+              appendEntry(setEntries, entry);
+            },
+            close() {
+              closeLayoutPicker(inputRef, setLayoutPickerOpen, setLayoutPickerSelectedIndex);
             }
           });
           return;
@@ -830,6 +891,26 @@ export function TuiApp(props: TuiAppProps) {
         return;
       }
 
+      if (builtinCommand.name === "layout") {
+        openLayoutPicker(setLayoutPickerOpen, setLayoutPickerSelectedIndex, layoutMode());
+        return;
+      }
+
+      if (builtinCommand.name === "minimal") {
+        const next = !minimalMode();
+        setMinimalMode(next);
+        try {
+          persistMinimalMode(sessionRuntimeConfig().configPath, next);
+        } catch {
+          // Non-critical — the toggle still takes effect this session.
+        }
+        appendEntry(
+          setEntries,
+          createEntry("status", "status", next ? "Minimal mode enabled — header hidden" : "Minimal mode disabled — header visible")
+        );
+        return;
+      }
+
       if (builtinCommand.name === "export") {
         const conversation = currentConversation();
         if (conversation === undefined) {
@@ -1034,7 +1115,7 @@ export function TuiApp(props: TuiAppProps) {
           when={busy()}
           fallback={
             <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>
-              {isCommandDraft(draft()) ? "/ " : "◈ "}
+              {isCommandDraft(draft()) ? "/ " : `${themeDefinition().promptMarker} `}
             </text>
           }
         >
@@ -1092,11 +1173,13 @@ export function TuiApp(props: TuiAppProps) {
   );
 
   return (
-    <box width="100%" height="100%" flexDirection="column" paddingX={1} paddingTop={1} paddingBottom={0}>
+    <box width="100%" height="100%" flexDirection="column" paddingX={1} paddingTop={minimalMode() ? 0 : 1} paddingBottom={0}>
       {/* ── Header: Logo + Info ── */}
-      <box flexDirection="column" alignItems="flex-start" flexShrink={0} paddingLeft={4}>
-        <Logo theme={t()} />
-      </box>
+      <Show when={!minimalMode()}>
+        <box flexDirection="column" alignItems="flex-start" flexShrink={0} paddingLeft={4}>
+          <Logo theme={t()} />
+        </box>
+      </Show>
 
       {/* ── Transcript + Composer ── */}
       <Show
@@ -1104,8 +1187,8 @@ export function TuiApp(props: TuiAppProps) {
         fallback={
           <box flexDirection="column" flexGrow={1} paddingRight={1}>
             <box flexDirection="column" flexShrink={0}>
-              <For each={entries()}>
-                {(entry) => renderEntry(entry, t(), markdownStyle(), streamingEntryId, streamingBody)}
+              <For each={renderVisibleEntries(entries(), toolsCollapsed())}>
+                {(entry) => renderEntry(entry, t, markdownStyle, streamingEntryId, streamingBody, layoutMode)}
               </For>
             </box>
             {renderComposer()}
@@ -1115,8 +1198,8 @@ export function TuiApp(props: TuiAppProps) {
         <box flexDirection="column" flexGrow={1} paddingRight={1}>
           <scrollbox flexGrow={1} flexShrink={1} minHeight={0} scrollY stickyScroll>
             <box flexDirection="column" flexShrink={0}>
-              <For each={entries()}>
-                {(entry) => renderEntry(entry, t(), markdownStyle(), streamingEntryId, streamingBody)}
+              <For each={renderVisibleEntries(entries(), toolsCollapsed())}>
+                {(entry) => renderEntry(entry, t, markdownStyle, streamingEntryId, streamingBody, layoutMode)}
               </For>
             </box>
           </scrollbox>
@@ -1370,6 +1453,47 @@ export function TuiApp(props: TuiAppProps) {
                 const selected = () => index() === normalizeBuiltinCommandSelectionIndex(
                   approvalModePickerSelectedIndex(),
                   approvalModePickerTotalOptionCount()
+                );
+
+                return (
+                  <box flexDirection="column" marginBottom={1} paddingLeft={1} paddingRight={1}>
+                    <text
+                      fg={selected() ? t().brandShimmer : t().text}
+                      attributes={selected() ? TextAttributes.BOLD : TextAttributes.NONE}
+                    >
+                      {`${selected() ? "›" : " "} ${item.label}${item.active ? " (current)" : ""}`}
+                    </text>
+                    <text fg={t().hintText} attributes={TextAttributes.DIM}>{item.description}</text>
+                  </box>
+                );
+              }}
+            </For>
+          </scrollbox>
+        </box>
+      </Show>
+
+      <Show when={layoutPickerOpen()}>
+        <box
+          flexDirection="column"
+          border
+          borderColor={t().brandShimmer}
+          marginLeft={3}
+          marginRight={3}
+          marginBottom={1}
+          paddingLeft={1}
+          paddingRight={1}
+          paddingTop={1}
+          paddingBottom={1}
+          flexShrink={0}
+        >
+          <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>Layout &amp; Density</text>
+          <text fg={t().hintText}>Use arrows to navigate. Press Enter to toggle. Press ESC to close.</text>
+          <scrollbox height={Math.max(5, Math.min(terminal().height - 18, 12))} scrollY marginTop={1}>
+            <For each={layoutPickerItems()}>
+              {(item, index) => {
+                const selected = () => index() === normalizeBuiltinCommandSelectionIndex(
+                  layoutPickerSelectedIndex(),
+                  layoutPickerTotalOptionCount()
                 );
 
                 return (
@@ -2071,6 +2195,7 @@ function estimateEntryHeight(entry: UiEntry, width: number): number {
     case "assistant":
       return estimateWrappedTextHeight(entry.body, contentWidth) + 1;
     case "tool":
+    case "tool-group":
     case "status":
       return estimateWrappedTextHeight(entry.body, contentWidth) + 1;
     case "error":
@@ -2430,20 +2555,38 @@ function toTitleCase(value: string): string {
 
 function renderEntry(
   entry: UiEntry,
-  t: ReturnType<typeof getTheme>,
-  mdStyle: SyntaxStyle,
+  t: () => ReturnType<typeof getTheme>,
+  mdStyle: () => SyntaxStyle,
   currentStreamingId: () => string | undefined,
-  currentStreamingBody: () => string
+  currentStreamingBody: () => string,
+  layout: () => LayoutMode
 ) {
+  const compact = () => layout() === "compact";
+  const userMarginY = () => compact() ? 0 : 1;
+
   switch (entry.kind) {
     case "user":
       return (
-        <box flexDirection="row" marginTop={1} marginBottom={1} paddingLeft={2}>
-          <text fg={t.user}>◈ </text>
-          <box flexDirection="column">
-            <For each={toDisplayLines(entry.body)}>
-              {(line) => <text fg={t.text}>{line}</text>}
-            </For>
+        <box
+          flexDirection="column"
+          marginTop={userMarginY()}
+          marginBottom={userMarginY()}
+          marginLeft={2}
+          marginRight={2}
+          border
+          borderColor={t().userMessageBackground}
+          paddingLeft={1}
+          paddingRight={1}
+          paddingTop={compact() ? 0 : 0}
+          paddingBottom={compact() ? 0 : 0}
+        >
+          <box flexDirection="row">
+            <text fg={t().user}>◈ </text>
+            <box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
+              <For each={toDisplayLines(entry.body)}>
+                {(line) => <text fg={t().user}>{line}</text>}
+              </For>
+            </box>
           </box>
         </box>
       );
@@ -2451,15 +2594,15 @@ function renderEntry(
     case "assistant":
       return (
         <Show when={entry.id === currentStreamingId() ? currentStreamingBody() !== "" : entry.body !== ""}>
-          <box width="100%" flexDirection="row" marginTop={1} marginBottom={0} paddingLeft={2}>
+          <box width="100%" flexDirection="row" marginTop={compact() ? 0 : 1} marginBottom={0} paddingLeft={2}>
             <box width={2} flexShrink={0}>
-              <text fg={t.brandShimmer}>❀ </text>
+              <text fg={t().assistantLabel}>❀ </text>
             </box>
             <box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0} paddingRight={1}>
               <markdown
                 content={entry.id === currentStreamingId() ? currentStreamingBody() : entry.body}
-                syntaxStyle={mdStyle}
-                fg={t.assistantBody}
+                syntaxStyle={mdStyle()}
+                fg={t().assistantBody}
                 conceal={entry.id !== currentStreamingId()}
                 streaming={entry.id === currentStreamingId()}
                 width="100%"
@@ -2472,7 +2615,7 @@ function renderEntry(
                   borders: true,
                   outerBorder: true,
                   borderStyle: "single",
-                  borderColor: t.divider,
+                  borderColor: t().divider,
                   selectable: true
                 }}
               />
@@ -2484,22 +2627,30 @@ function renderEntry(
     case "tool":
       return (
         <box flexDirection="row" paddingLeft={4} marginTop={0} marginBottom={0}>
-          <text fg={t.tool} attributes={TextAttributes.DIM}>⊰ </text>
-          <text fg={t.tool} attributes={TextAttributes.DIM}>{entry.body}</text>
+          <text fg={t().tool} attributes={TextAttributes.DIM}>⊰ </text>
+          <text fg={t().tool} attributes={TextAttributes.DIM}>{entry.body}</text>
+        </box>
+      );
+
+    case "tool-group":
+      return (
+        <box flexDirection="row" paddingLeft={4} marginTop={0} marginBottom={0}>
+          <text fg={t().tool} attributes={TextAttributes.DIM}>⊰ </text>
+          <text fg={t().tool} attributes={TextAttributes.DIM}>{entry.body}</text>
         </box>
       );
 
     case "error":
       return (
-        <box flexDirection="column" marginTop={1} paddingLeft={3}>
-          <text fg={t.error}>⚠ {entry.body}</text>
+        <box flexDirection="column" marginTop={compact() ? 0 : 1} paddingLeft={3}>
+          <text fg={t().error}>⚠ {entry.body}</text>
         </box>
       );
 
     case "status":
       return (
         <box flexDirection="row" marginTop={0} marginBottom={0} paddingLeft={3}>
-          <text fg={t.statusText} attributes={TextAttributes.DIM}>◌ {entry.body}</text>
+          <text fg={t().statusText} attributes={TextAttributes.DIM}>◌ {entry.body}</text>
         </box>
       );
   }
@@ -2604,4 +2755,158 @@ function buildStatusMarquee(tick: number): readonly MarqueeSegment[] {
   });
 
   return bars;
+}
+
+// ── Layout Picker ──
+
+interface LayoutPickerItem {
+  readonly id: string;
+  readonly label: string;
+  readonly description: string;
+  readonly active: boolean;
+}
+
+function buildLayoutPickerItems(currentLayout: LayoutMode, toolsCollapsed: boolean): readonly LayoutPickerItem[] {
+  return [
+    {
+      id: "compact",
+      label: "Compact",
+      description: "Tighter spacing between messages for power users.",
+      active: currentLayout === "compact"
+    },
+    {
+      id: "comfortable",
+      label: "Comfortable",
+      description: "Airy spacing for easier readability.",
+      active: currentLayout === "comfortable"
+    },
+    {
+      id: "collapse-tools",
+      label: toolsCollapsed ? "Expand Tool Output" : "Collapse Tool Output",
+      description: toolsCollapsed
+        ? "Show each tool call individually in the transcript."
+        : "Group consecutive tool calls into a compact summary.",
+      active: false
+    }
+  ];
+}
+
+function openLayoutPicker(
+  setOpen: (value: boolean) => void,
+  setSelectedIndex: (value: number) => void,
+  currentLayout: LayoutMode
+): void {
+  setOpen(true);
+  const activeIndex = currentLayout === "compact" ? 0 : 1;
+  setSelectedIndex(activeIndex);
+}
+
+function closeLayoutPicker(
+  input: InputRenderable | undefined,
+  setOpen: (value: boolean) => void,
+  setSelectedIndex: (value: number) => void
+): void {
+  setOpen(false);
+  setSelectedIndex(0);
+  input?.focus();
+}
+
+interface SubmitLayoutPickerSelectionOptions {
+  readonly configPath: string;
+  readonly selectedIndex: number;
+  readonly items: readonly LayoutPickerItem[];
+  readonly setLayoutMode: (value: LayoutMode) => void;
+  readonly setToolsCollapsed: (value: boolean) => void;
+  readonly appendEntry: (entry: UiEntry) => void;
+  readonly close: () => void;
+}
+
+function submitSelectedLayoutPickerItem(options: SubmitLayoutPickerSelectionOptions): void {
+  const selectedItem = options.items[options.selectedIndex];
+  if (selectedItem === undefined) {
+    return;
+  }
+
+  if (selectedItem.id === "collapse-tools") {
+    const label = selectedItem.label;
+    options.setToolsCollapsed(label.startsWith("Collapse"));
+    options.appendEntry(createEntry(
+      "status",
+      "status",
+      label.startsWith("Collapse") ? "Tool output collapsed" : "Tool output expanded"
+    ));
+    options.close();
+    return;
+  }
+
+  const nextLayout = selectedItem.id as LayoutMode;
+  try {
+    persistLayoutMode(options.configPath, nextLayout);
+    options.setLayoutMode(nextLayout);
+    options.appendEntry(createEntry("status", "status", `Switched to ${selectedItem.label} layout`));
+    options.close();
+  } catch (error) {
+    options.appendEntry(createEntry("error", "error", toErrorMessage(error)));
+  }
+}
+
+function persistLayoutMode(configPath: string, mode: LayoutMode): void {
+  const config = loadRecodeConfigFile(configPath);
+  const nextConfig = selectConfiguredLayoutMode(config, mode);
+  saveRecodeConfigFile(configPath, nextConfig);
+}
+
+function persistMinimalMode(configPath: string, enabled: boolean): void {
+  const config = loadRecodeConfigFile(configPath);
+  const nextConfig = selectConfiguredMinimalMode(config, enabled);
+  saveRecodeConfigFile(configPath, nextConfig);
+}
+
+// ── Collapsible Tool Output ──
+
+function renderVisibleEntries(
+  entries: readonly UiEntry[],
+  collapsed: boolean
+): readonly UiEntry[] {
+  if (!collapsed) {
+    return entries;
+  }
+
+  const result: UiEntry[] = [];
+  let toolRunCount = 0;
+  let toolRunStartIndex = -1;
+
+  for (let i = 0; i <= entries.length; i++) {
+    const entry = entries[i];
+    const isTool = entry !== undefined && entry.kind === "tool";
+
+    if (isTool) {
+      if (toolRunCount === 0) {
+        toolRunStartIndex = i;
+      }
+      toolRunCount += 1;
+      continue;
+    }
+
+    // Flush any pending tool run.
+    if (toolRunCount > 0) {
+      if (toolRunCount === 1) {
+        result.push(entries[toolRunStartIndex]!);
+      } else {
+        result.push(createEntry(
+          "tool-group",
+          "tool",
+          `${toolRunCount} tool calls (collapsed)`
+        ));
+      }
+      toolRunCount = 0;
+      toolRunStartIndex = -1;
+    }
+
+    if (entry !== undefined) {
+      result.push(entry);
+    }
+  }
+
+  return result;
 }

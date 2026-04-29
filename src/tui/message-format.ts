@@ -8,7 +8,7 @@
  * Built-in TUI command names.
  */
 export type BuiltinCommandName =
-  "help" | "clear" | "status" | "config" | "models" | "theme" | "approval-mode" | "export" | "history" | "new" | "exit" | "quit";
+  "help" | "clear" | "status" | "config" | "models" | "theme" | "approval-mode" | "export" | "history" | "new" | "layout" | "minimal" | "exit" | "quit";
 
 /**
  * Built-in TUI command definition.
@@ -38,6 +38,8 @@ const BUILTIN_COMMANDS: readonly BuiltinCommandDefinition[] = [
   { name: "export", command: "/export", description: "Export the current conversation to HTML" },
   { name: "history", command: "/history", description: "Open the conversation history" },
   { name: "new", command: "/new", description: "Start a new conversation" },
+  { name: "layout", command: "/layout", description: "Switch between compact and comfortable layout" },
+  { name: "minimal", command: "/minimal", description: "Toggle minimal mode (hide header)" },
   { name: "exit", command: "/exit", description: "Exit Recode" },
   { name: "quit", command: "/quit", description: "Exit Recode" }
 ] as const;
@@ -53,6 +55,8 @@ const BUILTIN_COMMAND_ALIASES: Readonly<Record<string, BuiltinCommandName>> = {
   "/export": "export",
   "/history": "history",
   "/new": "new",
+  "/layout": "layout",
+  "/minimal": "minimal",
   "/exit": "exit",
   "/quit": "quit"
 };

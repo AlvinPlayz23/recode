@@ -33,6 +33,8 @@ describe("tui message format", () => {
     expect(parseBuiltinCommand("/export")).toEqual({ name: "export", raw: "/export" });
     expect(parseBuiltinCommand("/history")).toEqual({ name: "history", raw: "/history" });
     expect(parseBuiltinCommand("/new")).toEqual({ name: "new", raw: "/new" });
+    expect(parseBuiltinCommand("/layout")).toEqual({ name: "layout", raw: "/layout" });
+    expect(parseBuiltinCommand("/minimal")).toEqual({ name: "minimal", raw: "/minimal" });
     expect(parseBuiltinCommand("hello")).toBeUndefined();
   });
 
@@ -48,6 +50,8 @@ describe("tui message format", () => {
       { name: "export", command: "/export", description: "Export the current conversation to HTML" },
       { name: "history", command: "/history", description: "Open the conversation history" },
       { name: "new", command: "/new", description: "Start a new conversation" },
+      { name: "layout", command: "/layout", description: "Switch between compact and comfortable layout" },
+      { name: "minimal", command: "/minimal", description: "Toggle minimal mode (hide header)" },
       { name: "exit", command: "/exit", description: "Exit Recode" },
       { name: "quit", command: "/quit", description: "Exit Recode" }
     ]);
@@ -65,6 +69,8 @@ describe("tui message format", () => {
       "/export",
       "/history",
       "/new",
+      "/layout",
+      "/minimal",
       "/exit",
       "/quit"
     ]);

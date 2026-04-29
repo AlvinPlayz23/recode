@@ -9,7 +9,7 @@ import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import type { ProviderKind } from "../providers/provider-kind.ts";
 import { isRecord } from "../shared/is-record.ts";
-import { isThemeName, type ThemeName } from "../tui/theme.ts";
+import { isLayoutMode, isThemeName, type LayoutMode, type ThemeName } from "../tui/theme.ts";
 import type { ApprovalMode, ToolApprovalScope } from "../tools/tool.ts";
 
 /**
@@ -42,6 +42,8 @@ export interface RecodeConfigFile {
   readonly themeName?: ThemeName;
   readonly approvalMode?: ApprovalMode;
   readonly approvalAllowlist?: readonly ToolApprovalScope[];
+  readonly layoutMode?: LayoutMode;
+  readonly minimalMode?: boolean;
   readonly providers: readonly ConfiguredProvider[];
 }
 
@@ -112,6 +114,8 @@ export function upsertConfiguredProvider(
     ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
     ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
     ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
+    ...(config.layoutMode === undefined ? {} : { layoutMode: config.layoutMode }),
+    ...(config.minimalMode === undefined ? {} : { minimalMode: config.minimalMode }),
     ...(makeActive ? { activeProviderId: provider.id } : (
       config.activeProviderId === undefined ? {} : { activeProviderId: config.activeProviderId }
     ))
@@ -145,6 +149,8 @@ export function selectConfiguredProviderModel(
     ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
     ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
     ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
+    ...(config.layoutMode === undefined ? {} : { layoutMode: config.layoutMode }),
+    ...(config.minimalMode === undefined ? {} : { minimalMode: config.minimalMode }),
     providers
   };
 }
@@ -162,6 +168,8 @@ export function selectConfiguredTheme(
     themeName,
     ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
     ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
+    ...(config.layoutMode === undefined ? {} : { layoutMode: config.layoutMode }),
+    ...(config.minimalMode === undefined ? {} : { minimalMode: config.minimalMode }),
     ...(config.activeProviderId === undefined ? {} : { activeProviderId: config.activeProviderId })
   };
 }
@@ -179,6 +187,8 @@ export function selectConfiguredApprovalMode(
     approvalMode,
     ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
     ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
+    ...(config.layoutMode === undefined ? {} : { layoutMode: config.layoutMode }),
+    ...(config.minimalMode === undefined ? {} : { minimalMode: config.minimalMode }),
     ...(config.activeProviderId === undefined ? {} : { activeProviderId: config.activeProviderId })
   };
 }
@@ -196,6 +206,46 @@ export function selectConfiguredApprovalAllowlist(
     ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
     ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
     approvalAllowlist,
+    ...(config.layoutMode === undefined ? {} : { layoutMode: config.layoutMode }),
+    ...(config.minimalMode === undefined ? {} : { minimalMode: config.minimalMode }),
+    ...(config.activeProviderId === undefined ? {} : { activeProviderId: config.activeProviderId })
+  };
+}
+
+/**
+ * Update the configured layout mode.
+ */
+export function selectConfiguredLayoutMode(
+  config: RecodeConfigFile,
+  layoutMode: LayoutMode
+): RecodeConfigFile {
+  return {
+    version: CONFIG_VERSION,
+    providers: config.providers,
+    layoutMode,
+    ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
+    ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
+    ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
+    ...(config.minimalMode === undefined ? {} : { minimalMode: config.minimalMode }),
+    ...(config.activeProviderId === undefined ? {} : { activeProviderId: config.activeProviderId })
+  };
+}
+
+/**
+ * Update the configured minimal mode.
+ */
+export function selectConfiguredMinimalMode(
+  config: RecodeConfigFile,
+  minimalMode: boolean
+): RecodeConfigFile {
+  return {
+    version: CONFIG_VERSION,
+    providers: config.providers,
+    minimalMode,
+    ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
+    ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
+    ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
+    ...(config.layoutMode === undefined ? {} : { layoutMode: config.layoutMode }),
     ...(config.activeProviderId === undefined ? {} : { activeProviderId: config.activeProviderId })
   };
 }
@@ -209,6 +259,8 @@ function parseRecodeConfigFile(value: unknown): RecodeConfigFile {
   const themeName = readOptionalThemeName(value, "themeName");
   const approvalMode = readOptionalApprovalMode(value, "approvalMode");
   const approvalAllowlist = readOptionalApprovalAllowlist(value, "approvalAllowlist");
+  const layoutMode = readOptionalLayoutMode(value, "layoutMode");
+  const minimalMode = readOptionalBoolean(value, "minimalMode");
   const providersValue = value["providers"];
   const providers = Array.isArray(providersValue)
     ? providersValue.map(parseConfiguredProvider).filter((provider) => provider !== undefined)
@@ -220,6 +272,8 @@ function parseRecodeConfigFile(value: unknown): RecodeConfigFile {
     ...(themeName === undefined ? {} : { themeName }),
     ...(approvalMode === undefined ? {} : { approvalMode }),
     ...(approvalAllowlist === undefined ? {} : { approvalAllowlist }),
+    ...(layoutMode === undefined ? {} : { layoutMode }),
+    ...(minimalMode === undefined ? {} : { minimalMode }),
     ...(activeProviderId === undefined ? {} : { activeProviderId })
   };
 }
@@ -326,6 +380,16 @@ function readOptionalApprovalAllowlist(
   return value.filter((item): item is ToolApprovalScope =>
     item === "read" || item === "edit" || item === "bash"
   );
+}
+
+function readOptionalLayoutMode(record: Record<string, unknown>, key: string): LayoutMode | undefined {
+  const value = readOptionalNonEmptyString(record, key);
+  return value !== undefined && isLayoutMode(value) ? value : undefined;
+}
+
+function readOptionalBoolean(record: Record<string, unknown>, key: string): boolean | undefined {
+  const value = record[key];
+  return typeof value === "boolean" ? value : undefined;
 }
 
 function isMissingFileError(error: unknown): boolean {

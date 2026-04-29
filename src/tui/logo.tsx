@@ -6,7 +6,7 @@
 
 import { TextAttributes } from "@opentui/core";
 import type { JSX } from "@opentui/solid";
-import { For, createSignal, onCleanup } from "solid-js";
+import { For, createMemo, createSignal, onCleanup } from "solid-js";
 import { getRandomStartupQuote } from "./startup-quotes.ts";
 import { getTheme, type ThemeColors, type ThemeName } from "./theme.ts";
 
@@ -62,7 +62,7 @@ export interface LogoProps {
 }
 
 export function Logo(props: LogoProps): JSX.Element {
-  const t = props.theme ?? getTheme(props.themeName);
+  const theme = createMemo(() => props.theme ?? getTheme(props.themeName));
   const [tick, setTick] = createSignal(0);
   const quote = getRandomStartupQuote();
 
@@ -84,8 +84,8 @@ export function Logo(props: LogoProps): JSX.Element {
   return (
     <box flexDirection="column" alignItems="flex-start">
       <box flexDirection="row" justifyContent="flex-start">
-        <text fg={t.text} attributes={TextAttributes.BOLD} selectable={false}>Recode</text>
-        <text fg={t.inactive} selectable={false}> {VERSION} </text>
+        <text fg={theme().text} attributes={TextAttributes.BOLD} selectable={false}>Recode</text>
+        <text fg={theme().inactive} selectable={false}> {VERSION} </text>
         <text fg="#e8a0b0" selectable={false}>🌸 </text>
         <For each={chars()}>
           {(c) => <text fg={c.color} selectable={false}>{c.ch}</text>}
@@ -93,7 +93,7 @@ export function Logo(props: LogoProps): JSX.Element {
       </box>
       <box flexDirection="column" alignItems="stretch">
         <box flexDirection="row" justifyContent="flex-start">
-          <text fg={t.inactive} selectable={false}>“{quote.text}”</text>
+          <text fg={theme().inactive} selectable={false}>“{quote.text}”</text>
         </box>
       </box>
     </box>
