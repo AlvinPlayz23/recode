@@ -74,19 +74,50 @@ try {
       }
     });
   } else {
-    const result = await runAgentLoop({
-      systemPrompt: DEFAULT_SYSTEM_PROMPT,
-      initialUserPrompt: prompt,
-      languageModel,
-      toolRegistry,
-      toolContext: {
-        workspaceRoot: runtimeConfig.workspaceRoot,
-        approvalMode: runtimeConfig.approvalMode,
-        approvalAllowlist: runtimeConfig.approvalAllowlist
+    const abortController = new AbortController();
+    let ctrlCArmed = false;
+    let ctrlCTimer: ReturnType<typeof setTimeout> | undefined;
+    const handleSigint = () => {
+      if (ctrlCArmed) {
+        process.exit(130);
       }
-    });
 
-    console.log(result.finalText);
+      ctrlCArmed = true;
+      abortController.abort();
+      console.error("Try Ctrl+C again to exit.");
+
+      if (ctrlCTimer !== undefined) {
+        clearTimeout(ctrlCTimer);
+      }
+
+      ctrlCTimer = setTimeout(() => {
+        ctrlCArmed = false;
+        ctrlCTimer = undefined;
+      }, 1800);
+    };
+
+    process.on("SIGINT", handleSigint);
+    try {
+      const result = await runAgentLoop({
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
+        initialUserPrompt: prompt,
+        languageModel,
+        toolRegistry,
+        abortSignal: abortController.signal,
+        toolContext: {
+          workspaceRoot: runtimeConfig.workspaceRoot,
+          approvalMode: runtimeConfig.approvalMode,
+          approvalAllowlist: runtimeConfig.approvalAllowlist
+        }
+      });
+
+      console.log(result.finalText);
+    } finally {
+      process.off("SIGINT", handleSigint);
+      if (ctrlCTimer !== undefined) {
+        clearTimeout(ctrlCTimer);
+      }
+    }
   }
 } catch (error) {
   if (error instanceof Error) {

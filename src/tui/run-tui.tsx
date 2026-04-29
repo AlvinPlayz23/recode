@@ -40,7 +40,7 @@ export async function runTui(options: TuiRunOptions): Promise<void> {
       targetFps: 30,
       screenMode: "alternate-screen",
       useMouse: true,
-      exitOnCtrlC: true
+      exitOnCtrlC: false
     }
   );
 }

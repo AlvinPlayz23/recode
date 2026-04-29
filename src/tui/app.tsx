@@ -173,6 +173,7 @@ export function TuiApp(props: TuiAppProps) {
   const [approvalModePickerOpen, setApprovalModePickerOpen] = createSignal(false);
   const [approvalModePickerSelectedIndex, setApprovalModePickerSelectedIndex] = createSignal(0);
   const [activeApprovalRequest, setActiveApprovalRequest] = createSignal<ActiveApprovalRequest | undefined>(undefined);
+  const [exitHintVisible, setExitHintVisible] = createSignal(false);
   let inputRef: InputRenderable | undefined;
   let modelPickerInputRef: InputRenderable | undefined;
   let historyPickerInputRef: InputRenderable | undefined;
@@ -183,6 +184,8 @@ export function TuiApp(props: TuiAppProps) {
   let streamFlushTimer: ReturnType<typeof setTimeout> | undefined;
   let syncingVisibleDraft = false;
   let pasteCounter = 0;
+  let exitHintTimer: ReturnType<typeof setTimeout> | undefined;
+  let ctrlCArmed = false;
 
   const t = createMemo<ThemeColors>(() => getTheme(themeName()));
   const markdownStyle = createMemo(() => createMarkdownSyntaxStyle(t()));
@@ -238,6 +241,9 @@ export function TuiApp(props: TuiAppProps) {
     clearInterval(statusInterval);
     if (streamFlushTimer !== undefined) {
       clearTimeout(streamFlushTimer);
+    }
+    if (exitHintTimer !== undefined) {
+      clearTimeout(exitHintTimer);
     }
   });
 
@@ -348,7 +354,7 @@ export function TuiApp(props: TuiAppProps) {
   });
 
   usePaste((event) => {
-    if (busy() || modalOpen() || isCommandDraft(draft())) {
+    if (busy() || modalOpen()) {
       return;
     }
 
@@ -368,6 +374,34 @@ export function TuiApp(props: TuiAppProps) {
   });
 
   useKeyboard((key) => {
+    if (key.ctrl && key.name === "c") {
+      key.preventDefault();
+      key.stopPropagation();
+
+      if (ctrlCArmed) {
+        renderer.destroy();
+        return;
+      }
+
+      ctrlCArmed = true;
+      setExitHintVisible(true);
+      if (busy()) {
+        flushAndResetPendingStreamText();
+        activeAbortController?.abort();
+      }
+
+      if (exitHintTimer !== undefined) {
+        clearTimeout(exitHintTimer);
+      }
+
+      exitHintTimer = setTimeout(() => {
+        ctrlCArmed = false;
+        setExitHintVisible(false);
+        exitHintTimer = undefined;
+      }, 1800);
+      return;
+    }
+
     if (activeApprovalRequest() !== undefined) {
       const optionCount = APPROVAL_DECISIONS.length;
       switch (key.name) {
@@ -1025,6 +1059,11 @@ export function TuiApp(props: TuiAppProps) {
           </box>
         </Show>
       </box>
+      <Show when={exitHintVisible()}>
+        <box justifyContent="center" paddingTop={0}>
+          <text fg={t().error} attributes={TextAttributes.BOLD}>Try Ctrl+C again to exit</text>
+        </box>
+      </Show>
     </box>
   );
 
@@ -1973,7 +2012,7 @@ function countPastedLines(value: string): number {
     return 0;
   }
 
-  return value.replace(/\r\n/g, "\n").split("\n").length;
+  return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").length;
 }
 
 function expandDraftPastes(value: string, pastes: readonly PendingPaste[]): string {

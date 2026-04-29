@@ -12,6 +12,11 @@ The project keeps a light Senren-inspired aesthetic in the UI, but the focus is 
 - Iterative agent loop with multi-turn tool use
 - Interactive TUI mode and one-shot CLI mode
 - Internal AI transport layer with support for OpenAI Responses, OpenAI Chat Completions, and Anthropic Messages
+- Global provider/model config in `~/.recode/config.json`
+- Persistent conversation history in `~/.recode/history/`
+- Built-in model picker, theme picker, approval-mode picker, and history picker
+- Paste mode for compact multi-line paste placeholders in the composer
+- Session export to standalone HTML
 - Built-in tools: `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`
 - Shell safety checks plus optional `bubblewrap` isolation
 - Native binary builds for Linux, macOS, and Windows
@@ -53,7 +58,13 @@ recode -v, --version Show version
 | `/help` | Show built-in command help |
 | `/clear` | Clear the current session |
 | `/status` | Show current session status |
+| `/config` | Show current config, theme, provider, model, and approval settings |
 | `/models` | Open the model selector |
+| `/theme` | Open the theme selector |
+| `/approval-mode` | Open the approval-mode selector |
+| `/export` | Export the current conversation to HTML |
+| `/history` | Open the conversation history |
+| `/new` | Start a new conversation |
 | `/exit` | Exit Recode |
 | `/quit` | Exit Recode |
 
@@ -76,6 +87,29 @@ Each configured provider can define:
 - saved model IDs
 - default model ID
 
+The global config can also store:
+- active provider ID
+- active TUI theme
+- approval mode
+- persistent approval allowlist
+
+## Sessions And History
+
+Recode stores conversation history globally in:
+
+```text
+~/.recode/history/
+```
+
+It supports:
+- auto-save for each conversation
+- restore last session on startup
+- saved multi-turn transcripts
+- a history picker via `/history`
+- starting a fresh conversation via `/new`
+
+Conversations are stored as JSON files plus a global `index.json`.
+
 ## Environment Variables
 
 Recode uses Bun's native `.env` loading. No extra `dotenv` dependency is required. Environment variables are optional runtime overrides on top of `~/.recode/config.json`.
@@ -88,6 +122,52 @@ RECODE_API_KEY=your-api-key
 RECODE_BASE_URL=https://api.openai.com/v1
 RECODE_MODEL=your-model-id
 ```
+
+## Approval Modes
+
+Recode supports three tool approval modes:
+
+- `approval`
+  - `Read`, `Glob`, and `Grep` run directly
+  - `Write`, `Edit`, and `Bash` require approval
+- `auto-edits`
+  - read and edit tools run directly
+  - `Bash` still requires approval
+- `yolo`
+  - all tools run directly
+
+Use `/approval-mode` in the TUI to switch modes.
+
+When a tool needs approval, Recode opens a popup with:
+- allow once
+- always allow this scope
+- deny
+
+“Always allow” is persisted in the global config allowlist.
+
+## Paste Mode
+
+When you paste multi-line content into the main composer, Recode compacts it into a visible placeholder such as:
+
+```text
+{Paste 11 lines #1}
+```
+
+The full pasted text is still expanded before the prompt is sent to the model, so the UI stays compact without losing content.
+
+## Export
+
+Use `/export` to save the current conversation as a standalone HTML file. By default, Recode writes the export into the current workspace root with a name like:
+
+```text
+recode-export-<conversation-title>-<timestamp>.html
+```
+
+The export includes:
+- conversation title
+- provider and model metadata
+- full transcript
+- the currently selected Recode theme colors
 
 ### Providers
 
@@ -142,7 +222,9 @@ recode/
 ├── src/
 │   ├── agent/       # Agent loop
 │   ├── ai/          # Internal AI transport layer
+│   ├── config/      # Persistent user config
 │   ├── errors/      # Error types
+│   ├── history/     # Persistent sessions and HTML export
 │   ├── messages/    # Conversation message model
 │   ├── models/      # Runtime model factory
 │   ├── prompt/      # System prompt
@@ -154,7 +236,7 @@ recode/
 ├── scripts/
 │   └── build.ts     # Native build script
 ├── .env.example
-├── ~/.recode/      # Global provider and model config
+├── ~/.recode/       # Global config and history storage
 ├── AGENTS.md
 ├── bunfig.toml
 ├── package.json
