@@ -8,6 +8,7 @@ import type { AiModel } from "../ai/types.ts";
 import { streamAssistantResponse } from "../ai/stream-assistant-response.ts";
 import { ModelResponseError, OperationAbortedError } from "../errors/recode-error.ts";
 import type { ConversationMessage, ToolCall } from "../messages/message.ts";
+import { formatQuestionAnswerSummary, parseQuestionToolResult } from "../tools/ask-user-question-tool.ts";
 import { executeToolCall } from "../tools/execute-tool-call.ts";
 import type { ToolExecutionContext } from "../tools/tool.ts";
 import { ToolRegistry } from "../tools/tool-registry.ts";
@@ -143,6 +144,30 @@ export async function runAgentLoop(options: AgentRunOptions): Promise<AgentRunRe
 
       const toolResult = await executeToolCall(toolCall, options.toolRegistry, options.toolContext);
       messages.push(toolResult);
+      const followUpUserMessage = buildSyntheticUserMessageFromToolResult(toolResult.toolName, toolResult.content, toolResult.isError);
+      if (followUpUserMessage !== undefined) {
+        messages.push(followUpUserMessage);
+      }
     }
   }
+}
+
+function buildSyntheticUserMessageFromToolResult(
+  toolName: string,
+  content: string,
+  isError: boolean
+): ConversationMessage | undefined {
+  if (isError || toolName !== "AskUserQuestion") {
+    return undefined;
+  }
+
+  const parsed = parseQuestionToolResult(content);
+  if (parsed === undefined) {
+    return undefined;
+  }
+
+  return {
+    role: "user",
+    content: formatQuestionAnswerSummary(parsed)
+  };
 }

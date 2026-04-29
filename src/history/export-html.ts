@@ -146,6 +146,7 @@ function buildConversationHtml(conversation: SavedConversationRecord, themeName:
       <div class="meta">
         <span>Provider: <code>${escapeHtml(conversation.providerName)}</code></span>
         <span>Model: <code>${escapeHtml(conversation.model)}</code></span>
+        <span>Mode: <code>${escapeHtml(conversation.mode.toUpperCase())}</code></span>
         <span>Created: ${escapeHtml(formatDate(conversation.createdAt))}</span>
         <span>Updated: ${escapeHtml(formatDate(conversation.updatedAt))}</span>
       </div>

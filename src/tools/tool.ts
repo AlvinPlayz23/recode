@@ -5,11 +5,27 @@
  */
 
 /**
- * JSON Schema property definition.
+ * JSON Schema string definition.
  */
-export interface JsonSchemaProperty {
-  readonly type: "string" | "number" | "boolean";
-  readonly description: string;
+export interface JsonSchemaString {
+  readonly type: "string";
+  readonly description?: string;
+}
+
+/**
+ * JSON Schema number definition.
+ */
+export interface JsonSchemaNumber {
+  readonly type: "number";
+  readonly description?: string;
+}
+
+/**
+ * JSON Schema boolean definition.
+ */
+export interface JsonSchemaBoolean {
+  readonly type: "boolean";
+  readonly description?: string;
 }
 
 /**
@@ -17,10 +33,25 @@ export interface JsonSchemaProperty {
  */
 export interface JsonSchemaObject {
   readonly type: "object";
-  readonly properties: Readonly<Record<string, JsonSchemaProperty>>;
+  readonly description?: string;
+  readonly properties: Readonly<Record<string, JsonSchema>>;
   readonly required: readonly string[];
   readonly additionalProperties: boolean;
 }
+
+/**
+ * Array schema for tool input.
+ */
+export interface JsonSchemaArray {
+  readonly type: "array";
+  readonly description?: string;
+  readonly items: JsonSchema;
+  readonly minItems?: number;
+  readonly maxItems?: number;
+}
+
+/** Recursive JSON schema node supported by tool definitions. */
+export type JsonSchema = JsonSchemaString | JsonSchemaNumber | JsonSchemaBoolean | JsonSchemaObject | JsonSchemaArray;
 
 /**
  * Raw tool argument object.
@@ -50,6 +81,44 @@ export interface ToolApprovalHandler {
   (request: ToolApprovalRequest): Promise<ToolApprovalDecision>;
 }
 
+/** One selectable option in a user question. */
+export interface QuestionOption {
+  readonly label: string;
+  readonly description: string;
+}
+
+/** One question prompt presented to the user. */
+export interface QuestionPrompt {
+  readonly id: string;
+  readonly header: string;
+  readonly question: string;
+  readonly multiSelect: boolean;
+  readonly allowCustomText: boolean;
+  readonly options: readonly QuestionOption[];
+}
+
+/** Request payload for the AskUserQuestion tool. */
+export interface QuestionToolRequest {
+  readonly questions: readonly QuestionPrompt[];
+}
+
+/** One normalized answer returned from the question prompt. */
+export interface QuestionAnswer {
+  readonly questionId: string;
+  readonly selectedOptionLabels: readonly string[];
+  readonly customText: string;
+}
+
+/** Decision result for the AskUserQuestion tool. */
+export type QuestionToolDecision =
+  | { readonly dismissed: true }
+  | { readonly dismissed: false; readonly answers: readonly QuestionAnswer[] };
+
+/** Async question handler for interactive sessions. */
+export interface QuestionRequestHandler {
+  (request: QuestionToolRequest): Promise<QuestionToolDecision>;
+}
+
 /**
  * Tool execution context.
  */
@@ -58,6 +127,7 @@ export interface ToolExecutionContext {
   readonly approvalMode?: ApprovalMode;
   readonly approvalAllowlist?: readonly ToolApprovalScope[];
   readonly requestToolApproval?: ToolApprovalHandler;
+  readonly requestQuestionAnswers?: QuestionRequestHandler;
 }
 
 /**

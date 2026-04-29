@@ -23,6 +23,7 @@ describe("exportConversationToHtml", () => {
       providerId: "openai",
       providerName: "OpenAI",
       model: "gpt-4.1",
+      mode: "build",
       messageCount: 2,
       transcript: [
         { role: "user", content: "Explain the architecture." },

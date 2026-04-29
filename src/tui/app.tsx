@@ -59,12 +59,17 @@ import {
 import type { ConversationMessage, ToolCall } from "../messages/message.ts";
 import { createLanguageModel } from "../models/create-model-client.ts";
 import { listModelsForProvider, type ListedModelGroup } from "../models/list-models.ts";
+import { PLAN_SYSTEM_PROMPT } from "../prompt/plan-system-prompt.ts";
 import {
   selectRuntimeProviderModel,
   type RuntimeConfig
 } from "../runtime/runtime-config.ts";
 import type {
   ApprovalMode,
+  QuestionAnswer,
+  QuestionPrompt,
+  QuestionToolDecision,
+  QuestionToolRequest,
   ToolApprovalDecision,
   ToolApprovalRequest,
   ToolApprovalScope,
@@ -81,6 +86,7 @@ import {
 } from "./message-format.ts";
 import { Logo } from "./logo.tsx";
 import { createMarkdownSyntaxStyle } from "./markdown-style.ts";
+import { filterToolsForSessionMode, getSessionModeLabel, type SessionMode } from "./session-mode.ts";
 import { getSpinnerSegments, Spinner } from "./spinner.tsx";
 import {
   DEFAULT_LAYOUT_MODE,
@@ -152,6 +158,13 @@ interface ActiveApprovalRequest extends ToolApprovalRequest {
   readonly resolve: (decision: ToolApprovalDecision) => void;
 }
 
+interface ActiveQuestionRequest extends QuestionToolRequest {
+  readonly currentQuestionIndex: number;
+  readonly selectedOptionIndex: number;
+  readonly answers: Readonly<Record<string, QuestionAnswer>>;
+  readonly resolve: (decision: QuestionToolDecision) => void;
+}
+
 export interface TuiAppProps {
   readonly systemPrompt: string;
   readonly runtimeConfig: RuntimeConfig;
@@ -173,6 +186,7 @@ export function TuiApp(props: TuiAppProps) {
   const [draft, setDraft] = createSignal("");
   const [pendingPastes, setPendingPastes] = createSignal<readonly PendingPaste[]>([]);
   const [previousMessages, setPreviousMessages] = createSignal<readonly ConversationMessage[]>([]);
+  const [sessionMode, setSessionMode] = createSignal<SessionMode>("build");
   const [currentConversation, setCurrentConversation] = createSignal<SavedConversationRecord | undefined>(undefined);
   const [statusTick, setStatusTick] = createSignal(0);
   const [streamingEntryId, setStreamingEntryId] = createSignal<string | undefined>(undefined);
@@ -198,6 +212,7 @@ export function TuiApp(props: TuiAppProps) {
   const [approvalModePickerOpen, setApprovalModePickerOpen] = createSignal(false);
   const [approvalModePickerSelectedIndex, setApprovalModePickerSelectedIndex] = createSignal(0);
   const [activeApprovalRequest, setActiveApprovalRequest] = createSignal<ActiveApprovalRequest | undefined>(undefined);
+  const [activeQuestionRequest, setActiveQuestionRequest] = createSignal<ActiveQuestionRequest | undefined>(undefined);
   const [exitHintVisible, setExitHintVisible] = createSignal(false);
   const [layoutMode, setLayoutMode] = createSignal<LayoutMode>(initialConfig.layoutMode ?? DEFAULT_LAYOUT_MODE);
   const [minimalMode, setMinimalMode] = createSignal(initialConfig.minimalMode ?? false);
@@ -208,6 +223,7 @@ export function TuiApp(props: TuiAppProps) {
   let modelPickerInputRef: InputRenderable | undefined;
   let historyPickerInputRef: InputRenderable | undefined;
   let themePickerInputRef: InputRenderable | undefined;
+  let questionCustomInputRef: InputRenderable | undefined;
   let activeAbortController: AbortController | undefined;
   let pendingStreamText = "";
   let pendingStreamEntryId: string | undefined;
@@ -231,12 +247,14 @@ export function TuiApp(props: TuiAppProps) {
     || approvalModePickerOpen()
     || layoutPickerOpen()
     || activeApprovalRequest() !== undefined
+    || activeQuestionRequest() !== undefined
   );
   const sessionToolContext = createMemo<ToolExecutionContext>(() => ({
     ...props.toolContext,
     approvalMode: approvalMode(),
     approvalAllowlist: approvalAllowlist(),
-    requestToolApproval
+    requestToolApproval,
+    requestQuestionAnswers
   }));
 
   const statusMarquee = createMemo(() => buildStatusMarquee(themeName(), statusTick(), t()));
@@ -255,6 +273,8 @@ export function TuiApp(props: TuiAppProps) {
   const approvalModePickerTotalOptionCount = createMemo(() => approvalModePickerItems().length);
   const themeDefinition = createMemo(() => getThemeDefinition(themeName()));
   const toolMarkerDefinition = createMemo(() => getToolMarkerDefinition(toolMarkerName()));
+  const activeSystemPrompt = createMemo(() => sessionMode() === "plan" ? PLAN_SYSTEM_PROMPT : props.systemPrompt);
+  const activeToolRegistry = createMemo(() => createToolRegistryForMode(props.toolRegistry, sessionMode()));
   const customizeRows = createMemo(() => buildCustomizeRows(themeName(), toolMarkerName()));
   const layoutPickerItems = createMemo(() => buildLayoutPickerItems(layoutMode(), toolsCollapsed()));
   const layoutPickerTotalOptionCount = createMemo(() => layoutPickerItems().length);
@@ -379,6 +399,28 @@ export function TuiApp(props: TuiAppProps) {
     });
   }
 
+  function requestQuestionAnswers(request: QuestionToolRequest): Promise<QuestionToolDecision> {
+    return new Promise((resolve) => {
+      setActiveQuestionRequest({
+        ...request,
+        currentQuestionIndex: 0,
+        selectedOptionIndex: 0,
+        answers: Object.fromEntries(request.questions.map((question) => [
+          question.id,
+          {
+            questionId: question.id,
+            selectedOptionLabels: [],
+            customText: ""
+          } satisfies QuestionAnswer
+        ])),
+        resolve
+      });
+      queueMicrotask(() => {
+        questionCustomInputRef?.focus();
+      });
+    });
+  }
+
   onMount(() => {
     inputRef?.focus();
     applyInputCursorStyle(inputRef, t().brandShimmer);
@@ -388,7 +430,8 @@ export function TuiApp(props: TuiAppProps) {
       setRuntimeConfig: setSessionRuntimeConfig,
       setConversation: setCurrentConversation,
       setEntries,
-      setPreviousMessages
+      setPreviousMessages,
+      setSessionMode
     });
   });
 
@@ -465,6 +508,47 @@ export function TuiApp(props: TuiAppProps) {
         exitHintTimer = undefined;
       }, 1800);
       return;
+    }
+
+    if (activeQuestionRequest() !== undefined) {
+      switch (key.name) {
+        case "escape":
+          key.preventDefault();
+          resolveQuestionRequest({ dismissed: true });
+          return;
+        case "left":
+          key.preventDefault();
+          moveActiveQuestionIndex(-1);
+          return;
+        case "right":
+        case "tab":
+          key.preventDefault();
+          moveActiveQuestionIndex(1);
+          return;
+        case "up":
+          key.preventDefault();
+          moveActiveQuestionOptionIndex(-1);
+          return;
+        case "down":
+          key.preventDefault();
+          moveActiveQuestionOptionIndex(1);
+          return;
+        case "space":
+          key.preventDefault();
+          toggleActiveQuestionOption();
+          return;
+        case "return":
+        case "enter":
+          key.preventDefault();
+          if (key.shift) {
+            toggleActiveQuestionOption();
+            return;
+          }
+          submitActiveQuestionRequest();
+          return;
+        default:
+          return;
+      }
     }
 
     if (activeApprovalRequest() !== undefined) {
@@ -760,6 +844,7 @@ export function TuiApp(props: TuiAppProps) {
             setBusy: setModelPickerBusy,
             setRuntimeConfig: setSessionRuntimeConfig,
             currentConversation: currentConversation(),
+            currentMode: sessionMode(),
             transcript: previousMessages(),
             setConversation: setCurrentConversation,
             appendEntry(entry) {
@@ -890,6 +975,141 @@ export function TuiApp(props: TuiAppProps) {
     inputRef?.focus();
   };
 
+  const resolveQuestionRequest = (decision: QuestionToolDecision) => {
+    const request = activeQuestionRequest();
+    if (request === undefined) {
+      return;
+    }
+
+    setActiveQuestionRequest(undefined);
+    request.resolve(decision);
+    inputRef?.focus();
+  };
+
+  const moveActiveQuestionIndex = (direction: -1 | 1) => {
+    setActiveQuestionRequest((current) => {
+      if (current === undefined) {
+        return current;
+      }
+
+      const nextIndex = (current.currentQuestionIndex + direction + current.questions.length) % current.questions.length;
+      const nextQuestion = current.questions[nextIndex];
+      return nextQuestion === undefined
+        ? current
+        : {
+            ...current,
+            currentQuestionIndex: nextIndex,
+            selectedOptionIndex: normalizeBuiltinCommandSelectionIndex(
+              current.selectedOptionIndex,
+              nextQuestion.options.length
+            )
+          };
+    });
+    queueMicrotask(() => {
+      questionCustomInputRef?.focus();
+    });
+  };
+
+  const moveActiveQuestionOptionIndex = (direction: -1 | 1) => {
+    setActiveQuestionRequest((current) => {
+      if (current === undefined) {
+        return current;
+      }
+
+      const activeQuestion = current.questions[current.currentQuestionIndex];
+      if (activeQuestion === undefined) {
+        return current;
+      }
+
+      return {
+        ...current,
+        selectedOptionIndex: moveBuiltinCommandSelectionIndex(
+          current.selectedOptionIndex,
+          activeQuestion.options.length,
+          direction
+        )
+      };
+    });
+  };
+
+  const toggleActiveQuestionOption = () => {
+    setActiveQuestionRequest((current) => {
+      if (current === undefined) {
+        return current;
+      }
+
+      const activeQuestion = current.questions[current.currentQuestionIndex];
+      if (activeQuestion === undefined) {
+        return current;
+      }
+
+      const option = activeQuestion.options[
+        normalizeBuiltinCommandSelectionIndex(current.selectedOptionIndex, activeQuestion.options.length)
+      ];
+      if (option === undefined) {
+        return current;
+      }
+
+      const answer = current.answers[activeQuestion.id] ?? {
+        questionId: activeQuestion.id,
+        selectedOptionLabels: [],
+        customText: ""
+      };
+      const isSelected = answer.selectedOptionLabels.includes(option.label);
+      const selectedOptionLabels = activeQuestion.multiSelect
+        ? isSelected
+          ? answer.selectedOptionLabels.filter((label) => label !== option.label)
+          : [...answer.selectedOptionLabels, option.label]
+        : isSelected
+          ? []
+          : [option.label];
+
+      return {
+        ...current,
+        answers: {
+          ...current.answers,
+          [activeQuestion.id]: {
+            ...answer,
+            selectedOptionLabels
+          }
+        }
+      };
+    });
+  };
+
+  const submitActiveQuestionRequest = () => {
+    const request = activeQuestionRequest();
+    if (request === undefined) {
+      return;
+    }
+
+    const answers = request.questions.map((question) => request.answers[question.id] ?? {
+      questionId: question.id,
+      selectedOptionLabels: [],
+      customText: ""
+    });
+
+    const unanswered = request.questions.find((question, index) => {
+      const answer = answers[index];
+      return answer !== undefined
+        && answer.selectedOptionLabels.length === 0
+        && answer.customText.trim() === "";
+    });
+
+    if (unanswered !== undefined) {
+      appendEntry(
+        setEntries,
+        createEntry("status", "status", `Answer '${unanswered.header}' or press ESC to dismiss.`)
+      );
+      return;
+    }
+
+    resolveQuestionRequest({
+      dismissed: false,
+      answers
+    });
+  };
+
   const submitPrompt = async (value: string) => {
     const prompt = value.trim();
     const builtinCommand = parseBuiltinCommand(prompt);
@@ -1009,7 +1229,7 @@ export function TuiApp(props: TuiAppProps) {
       }
 
       if (builtinCommand.name === "new" || builtinCommand.name === "clear") {
-        const conversation = startNewConversation(historyRoot(), sessionRuntimeConfig());
+        const conversation = startNewConversation(historyRoot(), sessionRuntimeConfig(), sessionMode());
         setCurrentConversation(conversation);
         setEntries([createEntry("status", "status", "Started a new conversation")]);
         setPreviousMessages([]);
@@ -1019,11 +1239,42 @@ export function TuiApp(props: TuiAppProps) {
         return;
       }
 
+      if (builtinCommand.name === "plan" || builtinCommand.name === "build") {
+        const nextMode: SessionMode = builtinCommand.name;
+
+        if (sessionMode() === nextMode) {
+          appendEntry(setEntries, createEntry("status", "status", `Already in ${getSessionModeLabel(nextMode)} mode`));
+          return;
+        }
+
+        setSessionMode(nextMode);
+        const persistedConversation = persistConversation(
+          historyRoot(),
+          sessionRuntimeConfig(),
+          previousMessages(),
+          currentConversation(),
+          nextMode
+        );
+        setCurrentConversation(persistedConversation);
+        appendEntry(
+          setEntries,
+          createEntry(
+            "status",
+            "status",
+            nextMode === "plan"
+              ? "Switched to PLAN mode — Recode will clarify and plan without editing files"
+              : "Switched to BUILD mode — Recode can implement changes again"
+          )
+        );
+        return;
+      }
+
       await handleBuiltinCommand({
         commandName: builtinCommand.name,
         runtimeConfig: sessionRuntimeConfig(),
         themeName: themeName(),
         toolMarkerName: toolMarkerName(),
+        sessionMode: sessionMode(),
         entriesCount: entries().length,
         transcriptCount: previousMessages().length,
         appendEntry(entry) {
@@ -1050,11 +1301,11 @@ export function TuiApp(props: TuiAppProps) {
 
     try {
       const result = await runSingleTurn({
-        systemPrompt: props.systemPrompt,
+        systemPrompt: activeSystemPrompt(),
         prompt: expandedPrompt,
         previousMessages: previousMessages(),
         languageModel: sessionLanguageModel(),
-        toolRegistry: props.toolRegistry,
+        toolRegistry: activeToolRegistry(),
         toolContext: sessionToolContext(),
         abortSignal: abortController.signal,
         onToolCall(toolCall) {
@@ -1109,7 +1360,8 @@ export function TuiApp(props: TuiAppProps) {
         historyRoot(),
         sessionRuntimeConfig(),
         result.transcript,
-        currentConversation()
+        currentConversation(),
+        sessionMode()
       );
       setCurrentConversation(persistedConversation);
       appendEntry(
@@ -1231,6 +1483,13 @@ export function TuiApp(props: TuiAppProps) {
         <text fg={t().hintText} attributes={TextAttributes.DIM}>{`[${sessionRuntimeConfig().providerName}]`}</text>
         <text fg={t().hintText} attributes={TextAttributes.DIM}>{`[${sessionRuntimeConfig().model}]`}</text>
         <text fg={t().hintText} attributes={TextAttributes.DIM}>{`[${getThemeDefinition(themeName()).label}]`}</text>
+        <box flexGrow={1} />
+        <text
+          fg={sessionMode() === "plan" ? t().brandShimmer : t().success}
+          attributes={TextAttributes.BOLD}
+        >
+          {`[${getSessionModeLabel(sessionMode())}]`}
+        </text>
         <Show when={busy() || modelPickerBusy() || historyPickerBusy()}>
           <box flexDirection="row" gap={1} marginLeft={1}>
             <box flexDirection="row">
@@ -1274,7 +1533,7 @@ export function TuiApp(props: TuiAppProps) {
         }
       >
         <box flexDirection="column" flexGrow={1} paddingRight={1}>
-          <scrollbox flexGrow={1} flexShrink={1} minHeight={0} scrollY stickyScroll>
+          <scrollbox flexGrow={1} flexShrink={1} minHeight={0} scrollY stickyScroll stickyStart="bottom">
             <box flexDirection="column" flexShrink={0}>
               <For each={renderVisibleEntries(entries(), toolsCollapsed())}>
                 {(entry) => renderEntry(entry, t, markdownStyle, streamingEntryId, streamingBody, layoutMode, () => toolMarkerDefinition().symbol)}
@@ -1634,6 +1893,136 @@ export function TuiApp(props: TuiAppProps) {
         </box>
       </Show>
 
+      <Show when={activeQuestionRequest() !== undefined}>
+        <box
+          flexDirection="column"
+          border
+          borderColor={t().brandShimmer}
+          marginLeft={3}
+          marginRight={3}
+          marginBottom={1}
+          paddingLeft={1}
+          paddingRight={1}
+          paddingTop={1}
+          paddingBottom={1}
+          flexShrink={0}
+        >
+          <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>Questions</text>
+          <Show when={activeQuestionRequest()}>
+            {(request: () => ActiveQuestionRequest) => {
+              const activeQuestion = () => request().questions[request().currentQuestionIndex];
+              const activeAnswer = () => {
+                const question = activeQuestion();
+                return question === undefined
+                  ? undefined
+                  : request().answers[question.id];
+              };
+
+              return (
+                <>
+                  <text fg={t().hintText}>
+                    {`Question ${request().currentQuestionIndex + 1} of ${request().questions.length} · ←/→ to switch · Space to select · Enter to submit · ESC to dismiss`}
+                  </text>
+                  <Show when={activeQuestion()}>
+                    {(question: () => QuestionPrompt) => (
+                      <>
+                        <text fg={t().text} attributes={TextAttributes.BOLD} marginTop={1}>{question().header}</text>
+                        <text fg={t().assistantBody}>{question().question}</text>
+                        <text fg={t().hintText} attributes={TextAttributes.DIM}>
+                          {question().multiSelect ? "Select any answers that apply." : "Select one answer."}
+                        </text>
+                        <box
+                          flexDirection="column"
+                          border
+                          borderColor={t().promptBorder}
+                          marginTop={1}
+                          paddingLeft={1}
+                          paddingRight={1}
+                        >
+                          <For each={question().options}>
+                            {(option, index) => {
+                              const selected = () => index() === normalizeBuiltinCommandSelectionIndex(
+                                request().selectedOptionIndex,
+                                question().options.length
+                              );
+                              const chosen = () => activeAnswer()?.selectedOptionLabels.includes(option.label) ?? false;
+
+                              return (
+                                <box flexDirection="column" marginBottom={1}>
+                                  <text
+                                    fg={selected() ? t().brandShimmer : t().text}
+                                    attributes={selected() ? TextAttributes.BOLD : TextAttributes.NONE}
+                                  >
+                                    {`${selected() ? "›" : " "} ${chosen() ? "[x]" : "[ ]"} ${option.label}`}
+                                  </text>
+                                  <text fg={t().hintText} attributes={TextAttributes.DIM}>{option.description}</text>
+                                </box>
+                              );
+                            }}
+                          </For>
+                        </box>
+                        <Show when={question().allowCustomText}>
+                          <box
+                            flexDirection="row"
+                            alignItems="center"
+                            marginTop={1}
+                            border
+                            borderColor={t().promptBorder}
+                            paddingLeft={1}
+                            paddingRight={1}
+                          >
+                            <text fg={t().brandShimmer}>✎ </text>
+                            <input
+                              ref={(value) => {
+                                questionCustomInputRef = value;
+                                applyInputCursorStyle(value, t().brandShimmer);
+                              }}
+                              focused={activeQuestionRequest() !== undefined}
+                              value={activeAnswer()?.customText ?? ""}
+                              flexGrow={1}
+                              placeholder="Optional custom answer..."
+                              onInput={(value) => {
+                                setActiveQuestionRequest((current) => {
+                                  if (current === undefined) {
+                                    return current;
+                                  }
+
+                                  const currentQuestion = current.questions[current.currentQuestionIndex];
+                                  if (currentQuestion === undefined) {
+                                    return current;
+                                  }
+
+                                  const currentAnswer = current.answers[currentQuestion.id] ?? {
+                                    questionId: currentQuestion.id,
+                                    selectedOptionLabels: [],
+                                    customText: ""
+                                  };
+
+                                  return {
+                                    ...current,
+                                    answers: {
+                                      ...current.answers,
+                                      [currentQuestion.id]: {
+                                        ...currentAnswer,
+                                        customText: value
+                                      }
+                                    }
+                                  };
+                                });
+                              }}
+                            />
+                          </box>
+                        </Show>
+                      </>
+                    )}
+                  </Show>
+                </>
+              );
+            }}
+          </Show>
+        </box>
+      </Show>
+
       <Show when={activeApprovalRequest() !== undefined}>
         <box
           flexDirection="column"
@@ -1712,6 +2101,7 @@ interface BuiltinCommandHandlerOptions {
   readonly runtimeConfig: RuntimeConfig;
   readonly themeName: ThemeName;
   readonly toolMarkerName: ToolMarkerName;
+  readonly sessionMode: SessionMode;
   readonly entriesCount: number;
   readonly transcriptCount: number;
   readonly appendEntry: (entry: UiEntry) => void;
@@ -1757,7 +2147,13 @@ async function handleBuiltinCommand(options: BuiltinCommandHandlerOptions): Prom
       options.appendEntry(createEntry(
         "assistant",
         "Recode",
-        buildBuiltinStatusBody(options.runtimeConfig, options.toolMarkerName, options.entriesCount, options.transcriptCount)
+        buildBuiltinStatusBody(
+          options.runtimeConfig,
+          options.toolMarkerName,
+          options.sessionMode,
+          options.entriesCount,
+          options.transcriptCount
+        )
       ));
       return;
     case "config":
@@ -1813,6 +2209,7 @@ function buildBuiltinHelpBody(): string {
 function buildBuiltinStatusBody(
   runtimeConfig: RuntimeConfig,
   toolMarkerName: ToolMarkerName,
+  sessionMode: SessionMode,
   entriesCount: number,
   transcriptCount: number
 ): string {
@@ -1822,6 +2219,7 @@ function buildBuiltinStatusBody(
     `- Provider: ${runtimeConfig.providerName} (\`${runtimeConfig.providerId}\`)`,
     `- Provider kind: ${runtimeConfig.provider}`,
     `- Model: ${runtimeConfig.model}`,
+    `- Session mode: \`${getSessionModeLabel(sessionMode)}\``,
     `- Base URL: \`${runtimeConfig.baseUrl}\``,
     `- Tool marker: ${getToolMarkerDefinition(toolMarkerName).label} (\`${getToolMarkerDefinition(toolMarkerName).symbol}\`)`,
     `- Approval mode: \`${runtimeConfig.approvalMode}\``,
@@ -1871,6 +2269,12 @@ function buildBuiltinConfigBody(
   return lines.join("\n");
 }
 
+function createToolRegistryForMode(baseRegistry: ToolRegistry, mode: SessionMode): ToolRegistry {
+  return mode === "build"
+    ? baseRegistry
+    : new ToolRegistry(filterToolsForSessionMode(baseRegistry.list(), mode));
+}
+
 function isCommandDraft(value: string): boolean {
   return value.trimStart().startsWith("/");
 }
@@ -1898,6 +2302,7 @@ interface RestoreConversationOptions {
   readonly setConversation: (value: SavedConversationRecord) => void;
   readonly setEntries: (value: readonly UiEntry[]) => void;
   readonly setPreviousMessages: (value: readonly ConversationMessage[]) => void;
+  readonly setSessionMode: (value: SessionMode) => void;
 }
 
 async function restoreOrCreateConversation(options: RestoreConversationOptions): Promise<void> {
@@ -1907,10 +2312,11 @@ async function restoreOrCreateConversation(options: RestoreConversationOptions):
     : loadConversation(options.historyRoot, index.lastConversationId);
 
   if (conversation === undefined) {
-    const nextConversation = startNewConversation(options.historyRoot, options.runtimeConfig);
+    const nextConversation = startNewConversation(options.historyRoot, options.runtimeConfig, "build");
     options.setConversation(nextConversation);
     options.setEntries([]);
     options.setPreviousMessages([]);
+    options.setSessionMode("build");
     return;
   }
 
@@ -1918,13 +2324,15 @@ async function restoreOrCreateConversation(options: RestoreConversationOptions):
   options.setConversation(conversation);
   options.setEntries(rehydrateEntriesFromTranscript(conversation.transcript));
   options.setPreviousMessages(conversation.transcript);
+  options.setSessionMode(conversation.mode);
 }
 
 function startNewConversation(
   historyRoot: string,
-  runtimeConfig: RuntimeConfig
+  runtimeConfig: RuntimeConfig,
+  mode: SessionMode
 ): SavedConversationRecord {
-  const conversation = createConversationRecord(runtimeConfig, []);
+  const conversation = createConversationRecord(runtimeConfig, [], mode);
   saveConversation(historyRoot, conversation, true);
   return conversation;
 }
@@ -1933,11 +2341,13 @@ function persistConversation(
   historyRoot: string,
   runtimeConfig: RuntimeConfig,
   transcript: readonly ConversationMessage[],
-  currentConversation: SavedConversationRecord | undefined
+  currentConversation: SavedConversationRecord | undefined,
+  mode: SessionMode
 ): SavedConversationRecord {
   const conversation = createConversationRecord(
     runtimeConfig,
     transcript,
+    mode,
     currentConversation === undefined
       ? undefined
       : { id: currentConversation.id, createdAt: currentConversation.createdAt }
@@ -2480,6 +2890,7 @@ interface SubmitModelPickerSelectionOptions {
   readonly setBusy: (value: boolean) => void;
   readonly setRuntimeConfig: (value: RuntimeConfig) => void;
   readonly currentConversation: SavedConversationRecord | undefined;
+  readonly currentMode: SessionMode;
   readonly transcript: readonly ConversationMessage[];
   readonly setConversation: (value: SavedConversationRecord) => void;
   readonly appendEntry: (entry: UiEntry) => void;
@@ -2506,7 +2917,8 @@ async function submitSelectedModelPickerOption(options: SubmitModelPickerSelecti
       options.historyRoot,
       nextRuntimeConfig,
       options.transcript,
-      options.currentConversation
+      options.currentConversation,
+      options.currentMode
     );
     options.setConversation(nextConversation);
     options.appendEntry(createEntry(
@@ -2680,6 +3092,8 @@ function toToolDisplayName(toolName: string): string {
   switch (toolName) {
     case "Bash":
       return "Bash";
+    case "AskUserQuestion":
+      return "Ask";
     case "Read":
       return "Read";
     case "Write":
@@ -2706,6 +3120,12 @@ function summarizeToolArguments(toolName: string, argumentsJson: string): string
   switch (toolName) {
     case "Bash":
       return readTrimmedString(args, "command", 72);
+    case "AskUserQuestion": {
+      const questions = args?.["questions"];
+      return Array.isArray(questions)
+        ? `${questions.length} question${questions.length === 1 ? "" : "s"}`
+        : "";
+    }
     case "Read":
     case "Write":
     case "Edit":

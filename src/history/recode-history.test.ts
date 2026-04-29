@@ -33,6 +33,7 @@ describe("recode history", () => {
     const conversation = createConversationRecord(
       { providerId: "openai", providerName: "OpenAI", model: "gpt-4.1" },
       transcript,
+      "build",
       { id: "conversation-1", createdAt: "2026-01-01T00:00:00.000Z" }
     );
 
@@ -59,6 +60,7 @@ describe("recode history", () => {
         { role: "user", content: "Implement the setup wizard", },
         { role: "assistant", content: "Implemented.", toolCalls: [] }
       ],
+      "plan",
       "2026-01-01T00:00:00.000Z",
       "2026-01-01T00:05:00.000Z",
       "conversation-2"
@@ -73,6 +75,7 @@ describe("recode history", () => {
       providerId: "openai",
       providerName: "OpenAI",
       model: "gpt-4.1",
+      mode: "plan",
       messageCount: 2
     });
   });

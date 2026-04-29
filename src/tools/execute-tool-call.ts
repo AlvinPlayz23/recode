@@ -71,6 +71,8 @@ async function checkToolApproval(
 
 function getToolApprovalScope(toolName: string): ToolApprovalScope {
   switch (toolName) {
+    case "AskUserQuestion":
+      return "read";
     case "Read":
     case "Glob":
     case "Grep":

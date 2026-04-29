@@ -9,6 +9,7 @@ import { dirname, join, resolve } from "node:path";
 import type { RuntimeConfig } from "../runtime/runtime-config.ts";
 import { isRecord } from "../shared/is-record.ts";
 import type { AssistantMessage, ConversationMessage, ToolCall, ToolResultMessage, UserMessage } from "../messages/message.ts";
+import type { SessionMode } from "../tui/session-mode.ts";
 
 const HISTORY_VERSION = 1;
 const HISTORY_INDEX_FILENAME = "index.json";
@@ -25,6 +26,7 @@ export interface SavedConversationMeta {
   readonly providerId: string;
   readonly providerName: string;
   readonly model: string;
+  readonly mode: SessionMode;
   readonly messageCount: number;
 }
 
@@ -93,6 +95,7 @@ export function loadConversation(historyRoot: string, conversationId: string): S
 export function createConversationRecord(
   runtimeConfig: Pick<RuntimeConfig, "providerId" | "providerName" | "model">,
   transcript: readonly ConversationMessage[],
+  mode: SessionMode,
   seed?: Partial<Pick<SavedConversationRecord, "id" | "createdAt">>
 ): SavedConversationRecord {
   const now = new Date().toISOString();
@@ -100,7 +103,7 @@ export function createConversationRecord(
   const id = seed?.id ?? crypto.randomUUID();
 
   return {
-    ...buildConversationMeta(runtimeConfig, transcript, createdAt, now, id),
+    ...buildConversationMeta(runtimeConfig, transcript, mode, createdAt, now, id),
     transcript
   };
 }
@@ -158,6 +161,7 @@ export function markConversationAsCurrent(historyRoot: string, conversationId: s
 export function buildConversationMeta(
   runtimeConfig: Pick<RuntimeConfig, "providerId" | "providerName" | "model">,
   transcript: readonly ConversationMessage[],
+  mode: SessionMode,
   createdAt: string,
   updatedAt: string,
   conversationId: string
@@ -178,6 +182,7 @@ export function buildConversationMeta(
     providerId: runtimeConfig.providerId,
     providerName: runtimeConfig.providerName,
     model: runtimeConfig.model,
+    mode,
     messageCount: userMessages.length + assistantMessages.length
   };
 }
@@ -208,6 +213,7 @@ function conversationToMeta(conversation: SavedConversationRecord): SavedConvers
     providerId: conversation.providerId,
     providerName: conversation.providerName,
     model: conversation.model,
+    mode: conversation.mode,
     messageCount: conversation.messageCount
   };
 }
@@ -268,6 +274,7 @@ function parseConversationMeta(value: unknown): SavedConversationMeta | undefine
   const providerId = readOptionalString(value, "providerId");
   const providerName = readOptionalString(value, "providerName");
   const model = readOptionalString(value, "model");
+  const mode = value["mode"] === "plan" ? "plan" : "build";
   const messageCount = typeof value["messageCount"] === "number" && Number.isFinite(value["messageCount"])
     ? Math.max(0, Math.trunc(value["messageCount"]))
     : undefined;
@@ -295,6 +302,7 @@ function parseConversationMeta(value: unknown): SavedConversationMeta | undefine
     providerId,
     providerName,
     model,
+    mode,
     messageCount
   };
 }
