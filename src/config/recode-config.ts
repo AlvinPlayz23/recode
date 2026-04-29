@@ -9,7 +9,14 @@ import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import type { ProviderKind } from "../providers/provider-kind.ts";
 import { isRecord } from "../shared/is-record.ts";
-import { isLayoutMode, isThemeName, type LayoutMode, type ThemeName } from "../tui/theme.ts";
+import {
+  isLayoutMode,
+  isThemeName,
+  isToolMarkerName,
+  type LayoutMode,
+  type ThemeName,
+  type ToolMarkerName
+} from "../tui/theme.ts";
 import type { ApprovalMode, ToolApprovalScope } from "../tools/tool.ts";
 
 /**
@@ -40,6 +47,7 @@ export interface RecodeConfigFile {
   readonly version: 1;
   readonly activeProviderId?: string;
   readonly themeName?: ThemeName;
+  readonly toolMarkerName?: ToolMarkerName;
   readonly approvalMode?: ApprovalMode;
   readonly approvalAllowlist?: readonly ToolApprovalScope[];
   readonly layoutMode?: LayoutMode;
@@ -112,6 +120,7 @@ export function upsertConfiguredProvider(
     version: CONFIG_VERSION,
     providers,
     ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
+    ...(config.toolMarkerName === undefined ? {} : { toolMarkerName: config.toolMarkerName }),
     ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
     ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
     ...(config.layoutMode === undefined ? {} : { layoutMode: config.layoutMode }),
@@ -147,6 +156,7 @@ export function selectConfiguredProviderModel(
     version: CONFIG_VERSION,
     activeProviderId: providerId,
     ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
+    ...(config.toolMarkerName === undefined ? {} : { toolMarkerName: config.toolMarkerName }),
     ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
     ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
     ...(config.layoutMode === undefined ? {} : { layoutMode: config.layoutMode }),
@@ -166,6 +176,27 @@ export function selectConfiguredTheme(
     version: CONFIG_VERSION,
     providers: config.providers,
     themeName,
+    ...(config.toolMarkerName === undefined ? {} : { toolMarkerName: config.toolMarkerName }),
+    ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
+    ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
+    ...(config.layoutMode === undefined ? {} : { layoutMode: config.layoutMode }),
+    ...(config.minimalMode === undefined ? {} : { minimalMode: config.minimalMode }),
+    ...(config.activeProviderId === undefined ? {} : { activeProviderId: config.activeProviderId })
+  };
+}
+
+/**
+ * Update the configured tool marker.
+ */
+export function selectConfiguredToolMarker(
+  config: RecodeConfigFile,
+  toolMarkerName: ToolMarkerName
+): RecodeConfigFile {
+  return {
+    version: CONFIG_VERSION,
+    providers: config.providers,
+    toolMarkerName,
+    ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
     ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
     ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
     ...(config.layoutMode === undefined ? {} : { layoutMode: config.layoutMode }),
@@ -186,6 +217,7 @@ export function selectConfiguredApprovalMode(
     providers: config.providers,
     approvalMode,
     ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
+    ...(config.toolMarkerName === undefined ? {} : { toolMarkerName: config.toolMarkerName }),
     ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
     ...(config.layoutMode === undefined ? {} : { layoutMode: config.layoutMode }),
     ...(config.minimalMode === undefined ? {} : { minimalMode: config.minimalMode }),
@@ -204,6 +236,7 @@ export function selectConfiguredApprovalAllowlist(
     version: CONFIG_VERSION,
     providers: config.providers,
     ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
+    ...(config.toolMarkerName === undefined ? {} : { toolMarkerName: config.toolMarkerName }),
     ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
     approvalAllowlist,
     ...(config.layoutMode === undefined ? {} : { layoutMode: config.layoutMode }),
@@ -224,6 +257,7 @@ export function selectConfiguredLayoutMode(
     providers: config.providers,
     layoutMode,
     ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
+    ...(config.toolMarkerName === undefined ? {} : { toolMarkerName: config.toolMarkerName }),
     ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
     ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
     ...(config.minimalMode === undefined ? {} : { minimalMode: config.minimalMode }),
@@ -243,6 +277,7 @@ export function selectConfiguredMinimalMode(
     providers: config.providers,
     minimalMode,
     ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
+    ...(config.toolMarkerName === undefined ? {} : { toolMarkerName: config.toolMarkerName }),
     ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
     ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
     ...(config.layoutMode === undefined ? {} : { layoutMode: config.layoutMode }),
@@ -257,6 +292,7 @@ function parseRecodeConfigFile(value: unknown): RecodeConfigFile {
 
   const activeProviderId = readOptionalNonEmptyString(value, "activeProviderId");
   const themeName = readOptionalThemeName(value, "themeName");
+  const toolMarkerName = readOptionalToolMarkerName(value, "toolMarkerName");
   const approvalMode = readOptionalApprovalMode(value, "approvalMode");
   const approvalAllowlist = readOptionalApprovalAllowlist(value, "approvalAllowlist");
   const layoutMode = readOptionalLayoutMode(value, "layoutMode");
@@ -270,6 +306,7 @@ function parseRecodeConfigFile(value: unknown): RecodeConfigFile {
     version: CONFIG_VERSION,
     providers,
     ...(themeName === undefined ? {} : { themeName }),
+    ...(toolMarkerName === undefined ? {} : { toolMarkerName }),
     ...(approvalMode === undefined ? {} : { approvalMode }),
     ...(approvalAllowlist === undefined ? {} : { approvalAllowlist }),
     ...(layoutMode === undefined ? {} : { layoutMode }),
@@ -353,6 +390,11 @@ function readOptionalProviderKind(record: Record<string, unknown>, key: string):
 function readOptionalThemeName(record: Record<string, unknown>, key: string): ThemeName | undefined {
   const value = readOptionalNonEmptyString(record, key);
   return value !== undefined && isThemeName(value) ? value : undefined;
+}
+
+function readOptionalToolMarkerName(record: Record<string, unknown>, key: string): ToolMarkerName | undefined {
+  const value = readOptionalNonEmptyString(record, key);
+  return value !== undefined && isToolMarkerName(value) ? value : undefined;
 }
 
 function readOptionalApprovalMode(record: Record<string, unknown>, key: string): ApprovalMode | undefined {

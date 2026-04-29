@@ -41,7 +41,8 @@ import {
   selectConfiguredLayoutMode,
   selectConfiguredMinimalMode,
   selectConfiguredProviderModel,
-  selectConfiguredTheme
+  selectConfiguredTheme,
+  selectConfiguredToolMarker
 } from "../config/recode-config.ts";
 import { OperationAbortedError } from "../errors/recode-error.ts";
 import { exportConversationToHtml } from "../history/export-html.ts";
@@ -80,13 +81,17 @@ import {
 } from "./message-format.ts";
 import { Logo } from "./logo.tsx";
 import { createMarkdownSyntaxStyle } from "./markdown-style.ts";
-import { Spinner } from "./spinner.tsx";
+import { getSpinnerSegments, Spinner } from "./spinner.tsx";
 import {
   DEFAULT_LAYOUT_MODE,
+  DEFAULT_TOOL_MARKER_NAME,
   DEFAULT_THEME_NAME,
   getAvailableThemes,
+  getAvailableToolMarkers,
   getThemeDefinition,
+  getToolMarkerDefinition,
   getTheme,
+  type ToolMarkerName,
   type LayoutMode,
   type ThemeColors,
   type ThemeDefinition,
@@ -116,6 +121,18 @@ interface HistoryPickerItem extends SavedConversationMeta {
 
 interface ThemePickerItem extends ThemeDefinition {
   readonly active: boolean;
+}
+
+interface CustomizeRowOption {
+  readonly label: string;
+  readonly value: string;
+}
+
+interface CustomizeRow {
+  readonly id: "tool-marker" | "theme";
+  readonly label: string;
+  readonly option: CustomizeRowOption;
+  readonly description: string;
 }
 
 interface ApprovalModePickerItem {
@@ -150,6 +167,7 @@ export function TuiApp(props: TuiAppProps) {
 
   const [sessionRuntimeConfig, setSessionRuntimeConfig] = createSignal(props.runtimeConfig);
   const [themeName, setThemeName] = createSignal<ThemeName>(initialConfig.themeName ?? DEFAULT_THEME_NAME);
+  const [toolMarkerName, setToolMarkerName] = createSignal<ToolMarkerName>(initialConfig.toolMarkerName ?? DEFAULT_TOOL_MARKER_NAME);
   const [entries, setEntries] = createSignal<readonly UiEntry[]>([]);
   const [busy, setBusy] = createSignal(false);
   const [draft, setDraft] = createSignal("");
@@ -173,6 +191,8 @@ export function TuiApp(props: TuiAppProps) {
   const [themePickerOpen, setThemePickerOpen] = createSignal(false);
   const [themePickerQuery, setThemePickerQuery] = createSignal("");
   const [themePickerSelectedIndex, setThemePickerSelectedIndex] = createSignal(0);
+  const [customizePickerOpen, setCustomizePickerOpen] = createSignal(false);
+  const [customizePickerSelectedRow, setCustomizePickerSelectedRow] = createSignal(0);
   const [approvalMode, setApprovalMode] = createSignal<ApprovalMode>(props.runtimeConfig.approvalMode);
   const [approvalAllowlist, setApprovalAllowlist] = createSignal<readonly ToolApprovalScope[]>(props.runtimeConfig.approvalAllowlist);
   const [approvalModePickerOpen, setApprovalModePickerOpen] = createSignal(false);
@@ -207,6 +227,7 @@ export function TuiApp(props: TuiAppProps) {
     modelPickerOpen()
     || historyPickerOpen()
     || themePickerOpen()
+    || customizePickerOpen()
     || approvalModePickerOpen()
     || layoutPickerOpen()
     || activeApprovalRequest() !== undefined
@@ -218,7 +239,7 @@ export function TuiApp(props: TuiAppProps) {
     requestToolApproval
   }));
 
-  const statusMarquee = createMemo(() => buildStatusMarquee(statusTick()));
+  const statusMarquee = createMemo(() => buildStatusMarquee(themeName(), statusTick(), t()));
   const commandSuggestions = createMemo(() => findBuiltinCommands(draft()));
   const modelPickerOptions = createMemo(() => buildModelPickerOptions(
     modelPickerGroups(),
@@ -233,6 +254,8 @@ export function TuiApp(props: TuiAppProps) {
   const approvalModePickerItems = createMemo(() => buildApprovalModePickerItems(approvalMode()));
   const approvalModePickerTotalOptionCount = createMemo(() => approvalModePickerItems().length);
   const themeDefinition = createMemo(() => getThemeDefinition(themeName()));
+  const toolMarkerDefinition = createMemo(() => getToolMarkerDefinition(toolMarkerName()));
+  const customizeRows = createMemo(() => buildCustomizeRows(themeName(), toolMarkerName()));
   const layoutPickerItems = createMemo(() => buildLayoutPickerItems(layoutMode(), toolsCollapsed()));
   const layoutPickerTotalOptionCount = createMemo(() => layoutPickerItems().length);
   const commandPanel = createMemo(() => buildCommandPanelState(
@@ -567,6 +590,55 @@ export function TuiApp(props: TuiAppProps) {
       }
     }
 
+    if (customizePickerOpen()) {
+      switch (key.name) {
+        case "escape":
+          key.preventDefault();
+          closeCustomizePicker(inputRef, setCustomizePickerOpen, setCustomizePickerSelectedRow);
+          return;
+        case "up":
+          key.preventDefault();
+          setCustomizePickerSelectedRow((current) => moveBuiltinCommandSelectionIndex(current, customizeRows().length, -1));
+          return;
+        case "down":
+          key.preventDefault();
+          setCustomizePickerSelectedRow((current) => moveBuiltinCommandSelectionIndex(current, customizeRows().length, 1));
+          return;
+        case "left":
+          key.preventDefault();
+          cycleCustomizeSetting({
+            direction: -1,
+            rowIndex: customizePickerSelectedRow(),
+            configPath: sessionRuntimeConfig().configPath,
+            themeName,
+            setThemeName,
+            toolMarkerName,
+            setToolMarkerName
+          });
+          return;
+        case "right":
+        case "space":
+          key.preventDefault();
+          cycleCustomizeSetting({
+            direction: 1,
+            rowIndex: customizePickerSelectedRow(),
+            configPath: sessionRuntimeConfig().configPath,
+            themeName,
+            setThemeName,
+            toolMarkerName,
+            setToolMarkerName
+          });
+          return;
+        case "return":
+        case "enter":
+          key.preventDefault();
+          closeCustomizePicker(inputRef, setCustomizePickerOpen, setCustomizePickerSelectedRow);
+          return;
+        default:
+          return;
+      }
+    }
+
     if (themePickerOpen()) {
       switch (key.name) {
         case "escape":
@@ -886,6 +958,11 @@ export function TuiApp(props: TuiAppProps) {
         return;
       }
 
+      if (builtinCommand.name === "customize") {
+        openCustomizePicker(setCustomizePickerOpen, setCustomizePickerSelectedRow);
+        return;
+      }
+
       if (builtinCommand.name === "approval-mode") {
         openApprovalModePicker(setApprovalModePickerOpen, setApprovalModePickerSelectedIndex, approvalMode());
         return;
@@ -946,6 +1023,7 @@ export function TuiApp(props: TuiAppProps) {
         commandName: builtinCommand.name,
         runtimeConfig: sessionRuntimeConfig(),
         themeName: themeName(),
+        toolMarkerName: toolMarkerName(),
         entriesCount: entries().length,
         transcriptCount: previousMessages().length,
         appendEntry(entry) {
@@ -1188,7 +1266,7 @@ export function TuiApp(props: TuiAppProps) {
           <box flexDirection="column" flexGrow={1} paddingRight={1}>
             <box flexDirection="column" flexShrink={0}>
               <For each={renderVisibleEntries(entries(), toolsCollapsed())}>
-                {(entry) => renderEntry(entry, t, markdownStyle, streamingEntryId, streamingBody, layoutMode)}
+                {(entry) => renderEntry(entry, t, markdownStyle, streamingEntryId, streamingBody, layoutMode, () => toolMarkerDefinition().symbol)}
               </For>
             </box>
             {renderComposer()}
@@ -1199,7 +1277,7 @@ export function TuiApp(props: TuiAppProps) {
           <scrollbox flexGrow={1} flexShrink={1} minHeight={0} scrollY stickyScroll>
             <box flexDirection="column" flexShrink={0}>
               <For each={renderVisibleEntries(entries(), toolsCollapsed())}>
-                {(entry) => renderEntry(entry, t, markdownStyle, streamingEntryId, streamingBody, layoutMode)}
+                {(entry) => renderEntry(entry, t, markdownStyle, streamingEntryId, streamingBody, layoutMode, () => toolMarkerDefinition().symbol)}
               </For>
             </box>
           </scrollbox>
@@ -1251,7 +1329,7 @@ export function TuiApp(props: TuiAppProps) {
           </box>
           <Show
             when={!modelPickerBusy()}
-            fallback={<box marginTop={1}><Spinner verb="loading models" theme={t()} /></box>}
+            fallback={<box marginTop={1}><Spinner verb="loading models" theme={t()} themeName={themeName()} /></box>}
           >
             <Show
               when={modelPickerOptions().length > 0}
@@ -1325,7 +1403,7 @@ export function TuiApp(props: TuiAppProps) {
           </box>
           <Show
             when={!historyPickerBusy()}
-            fallback={<box marginTop={1}><Spinner verb="loading history" theme={t()} /></box>}
+            fallback={<box marginTop={1}><Spinner verb="loading history" theme={t()} themeName={themeName()} /></box>}
           >
             <Show
               when={filteredHistoryPickerItems().length > 0}
@@ -1428,6 +1506,49 @@ export function TuiApp(props: TuiAppProps) {
               </For>
             </scrollbox>
           </Show>
+        </box>
+      </Show>
+
+      <Show when={customizePickerOpen()}>
+        <box
+          flexDirection="column"
+          border
+          borderColor={t().brandShimmer}
+          marginLeft={3}
+          marginRight={3}
+          marginBottom={1}
+          paddingLeft={1}
+          paddingRight={1}
+          paddingTop={1}
+          paddingBottom={1}
+          flexShrink={0}
+        >
+          <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>Customize</text>
+          <text fg={t().hintText}>Use ↑/↓ to choose a row. Use ←/→ or Space to cycle. Press Enter or ESC to close.</text>
+          <box flexDirection="column" marginTop={1}>
+            <For each={customizeRows()}>
+              {(row, index) => {
+                const selected = () => index() === normalizeBuiltinCommandSelectionIndex(
+                  customizePickerSelectedRow(),
+                  customizeRows().length
+                );
+
+                return (
+                  <box flexDirection="column" marginBottom={1} paddingLeft={1} paddingRight={1}>
+                    <text
+                      fg={selected() ? t().brandShimmer : t().text}
+                      attributes={selected() ? TextAttributes.BOLD : TextAttributes.NONE}
+                    >
+                      {`${selected() ? "› " : "  "}${row.label.padEnd(12, " ")} < ${row.option.value === ""
+                        ? row.option.label
+                        : `${row.option.label} ${row.option.value}`} >`}
+                    </text>
+                    <text fg={t().hintText} attributes={TextAttributes.DIM}>{row.description}</text>
+                  </box>
+                );
+              }}
+            </For>
+          </box>
         </box>
       </Show>
 
@@ -1590,6 +1711,7 @@ interface BuiltinCommandHandlerOptions {
   readonly commandName: "help" | "status" | "config";
   readonly runtimeConfig: RuntimeConfig;
   readonly themeName: ThemeName;
+  readonly toolMarkerName: ToolMarkerName;
   readonly entriesCount: number;
   readonly transcriptCount: number;
   readonly appendEntry: (entry: UiEntry) => void;
@@ -1635,14 +1757,14 @@ async function handleBuiltinCommand(options: BuiltinCommandHandlerOptions): Prom
       options.appendEntry(createEntry(
         "assistant",
         "Recode",
-        buildBuiltinStatusBody(options.runtimeConfig, options.entriesCount, options.transcriptCount)
+        buildBuiltinStatusBody(options.runtimeConfig, options.toolMarkerName, options.entriesCount, options.transcriptCount)
       ));
       return;
     case "config":
       options.appendEntry(createEntry(
         "assistant",
         "Recode",
-        buildBuiltinConfigBody(options.runtimeConfig, options.themeName)
+        buildBuiltinConfigBody(options.runtimeConfig, options.themeName, options.toolMarkerName)
       ));
       return;
   }
@@ -1690,6 +1812,7 @@ function buildBuiltinHelpBody(): string {
 
 function buildBuiltinStatusBody(
   runtimeConfig: RuntimeConfig,
+  toolMarkerName: ToolMarkerName,
   entriesCount: number,
   transcriptCount: number
 ): string {
@@ -1700,6 +1823,7 @@ function buildBuiltinStatusBody(
     `- Provider kind: ${runtimeConfig.provider}`,
     `- Model: ${runtimeConfig.model}`,
     `- Base URL: \`${runtimeConfig.baseUrl}\``,
+    `- Tool marker: ${getToolMarkerDefinition(toolMarkerName).label} (\`${getToolMarkerDefinition(toolMarkerName).symbol}\`)`,
     `- Approval mode: \`${runtimeConfig.approvalMode}\``,
     `- Always-allowed scopes: ${runtimeConfig.approvalAllowlist.length === 0 ? "none" : runtimeConfig.approvalAllowlist.map((scope) => `\`${scope}\``).join(", ")}`,
     `- Config path: \`${runtimeConfig.configPath}\``,
@@ -1708,13 +1832,18 @@ function buildBuiltinStatusBody(
   ].join("\n");
 }
 
-function buildBuiltinConfigBody(runtimeConfig: RuntimeConfig, activeThemeName: ThemeName): string {
+function buildBuiltinConfigBody(
+  runtimeConfig: RuntimeConfig,
+  activeThemeName: ThemeName,
+  toolMarkerName: ToolMarkerName
+): string {
   const config = loadRecodeConfigFile(runtimeConfig.configPath);
   const lines = [
     "## Recode Configuration",
     "",
     `- Config path: \`${runtimeConfig.configPath}\``,
     `- Theme: ${getThemeDefinition(activeThemeName).label} (\`${activeThemeName}\`)`,
+    `- Tool marker: ${getToolMarkerDefinition(toolMarkerName).label} (\`${getToolMarkerDefinition(toolMarkerName).symbol}\`)`,
     `- Active provider: ${runtimeConfig.providerName} (\`${runtimeConfig.providerId}\`)`,
     `- Active model: \`${runtimeConfig.model}\``,
     `- Base URL: \`${runtimeConfig.baseUrl}\``,
@@ -2405,6 +2534,96 @@ function persistSelectedTheme(configPath: string, themeName: ThemeName): void {
   saveRecodeConfigFile(configPath, nextConfig);
 }
 
+function persistSelectedToolMarker(configPath: string, toolMarkerName: ToolMarkerName): void {
+  const config = loadRecodeConfigFile(configPath);
+  const nextConfig = selectConfiguredToolMarker(config, toolMarkerName);
+  saveRecodeConfigFile(configPath, nextConfig);
+}
+
+function buildCustomizeRows(
+  activeThemeName: ThemeName,
+  activeToolMarkerName: ToolMarkerName
+): readonly CustomizeRow[] {
+  const toolMarker = getToolMarkerDefinition(activeToolMarkerName);
+  const theme = getThemeDefinition(activeThemeName);
+
+  return [
+    {
+      id: "tool-marker",
+      label: "Tool Marker",
+      option: {
+        label: toolMarker.label,
+        value: toolMarker.symbol
+      },
+      description: "Controls the marker shown before tool activity lines."
+    },
+    {
+      id: "theme",
+      label: "Theme",
+      option: {
+        label: theme.label,
+        value: ""
+      },
+      description: "Switches the active color theme immediately."
+    }
+  ];
+}
+
+function openCustomizePicker(
+  setOpen: (value: boolean) => void,
+  setSelectedRow: (value: number) => void
+): void {
+  setOpen(true);
+  setSelectedRow(0);
+}
+
+function closeCustomizePicker(
+  input: InputRenderable | undefined,
+  setOpen: (value: boolean) => void,
+  setSelectedRow: (value: number) => void
+): void {
+  setOpen(false);
+  setSelectedRow(0);
+  input?.focus();
+}
+
+interface CycleCustomizeSettingOptions {
+  readonly direction: -1 | 1;
+  readonly rowIndex: number;
+  readonly configPath: string;
+  readonly themeName: () => ThemeName;
+  readonly setThemeName: (value: ThemeName) => void;
+  readonly toolMarkerName: () => ToolMarkerName;
+  readonly setToolMarkerName: (value: ToolMarkerName) => void;
+}
+
+function cycleCustomizeSetting(options: CycleCustomizeSettingOptions): void {
+  const rowId = (options.rowIndex % 2 + 2) % 2 === 0 ? "tool-marker" : "theme";
+
+  if (rowId === "tool-marker") {
+    const markers = getAvailableToolMarkers();
+    const currentIndex = markers.findIndex((marker) => marker.name === options.toolMarkerName());
+    const nextIndex = (Math.max(0, currentIndex) + options.direction + markers.length) % markers.length;
+    const nextMarker = markers[nextIndex];
+    if (nextMarker === undefined) {
+      return;
+    }
+    options.setToolMarkerName(nextMarker.name);
+    persistSelectedToolMarker(options.configPath, nextMarker.name);
+    return;
+  }
+
+  const themes = getAvailableThemes();
+  const currentIndex = themes.findIndex((theme) => theme.name === options.themeName());
+  const nextIndex = (Math.max(0, currentIndex) + options.direction + themes.length) % themes.length;
+  const nextTheme = themes[nextIndex];
+  if (nextTheme === undefined) {
+    return;
+  }
+  options.setThemeName(nextTheme.name);
+  persistSelectedTheme(options.configPath, nextTheme.name);
+}
+
 interface ModelPickerRenderedLine {
   readonly kind: "group" | "option";
   readonly text: string;
@@ -2559,7 +2778,8 @@ function renderEntry(
   mdStyle: () => SyntaxStyle,
   currentStreamingId: () => string | undefined,
   currentStreamingBody: () => string,
-  layout: () => LayoutMode
+  layout: () => LayoutMode,
+  toolMarker: () => string
 ) {
   const compact = () => layout() === "compact";
   const userMarginY = () => compact() ? 0 : 1;
@@ -2627,7 +2847,7 @@ function renderEntry(
     case "tool":
       return (
         <box flexDirection="row" paddingLeft={4} marginTop={0} marginBottom={0}>
-          <text fg={t().tool} attributes={TextAttributes.DIM}>⊰ </text>
+          <text fg={t().tool} attributes={TextAttributes.DIM}>{toolMarker()} </text>
           <text fg={t().tool} attributes={TextAttributes.DIM}>{entry.body}</text>
         </box>
       );
@@ -2635,7 +2855,7 @@ function renderEntry(
     case "tool-group":
       return (
         <box flexDirection="row" paddingLeft={4} marginTop={0} marginBottom={0}>
-          <text fg={t().tool} attributes={TextAttributes.DIM}>⊰ </text>
+          <text fg={t().tool} attributes={TextAttributes.DIM}>{toolMarker()} </text>
           <text fg={t().tool} attributes={TextAttributes.DIM}>{entry.body}</text>
         </box>
       );
@@ -2727,34 +2947,12 @@ interface MarqueeSegment {
   readonly color: string;
 }
 
-function buildStatusMarquee(tick: number): readonly MarqueeSegment[] {
-  const barWidth = 7;
-  const period = barWidth * 2 - 2;
-  const raw = tick % period;
-  // Triangle wave: 0->6->0, creating a gentle back-and-forth motion.
-  const head = raw <= barWidth - 1 ? raw : period - raw;
-
-  // Warm lantern trail: gold -> orange -> peach -> red-brown -> dark umber.
-  const trail = [
-    { distance: 0, color: "#ffd27a", glyph: "●" },
-    { distance: 1, color: "#ffb347", glyph: "◉" },
-    { distance: 2, color: "#f2966b", glyph: "◎" },
-    { distance: 3, color: "#e07060", glyph: "○" },
-    { distance: 4, color: "#a04840", glyph: "◌" },
-    { distance: 5, color: "#602a24", glyph: "·" },
-  ] as const;
-
-  const bars = Array.from({ length: barWidth }, (_, index) => {
-    const distance = Math.abs(head - index);
-    const segment = trail.find((item) => item.distance === distance);
-    if (segment !== undefined) {
-      return { text: segment.glyph, color: segment.color };
-    }
-
-    return { text: " ", color: "#40201a" };
-  });
-
-  return bars;
+function buildStatusMarquee(
+  themeName: ThemeName,
+  tick: number,
+  theme: ThemeColors
+): readonly MarqueeSegment[] {
+  return getSpinnerSegments(themeName, tick, theme);
 }
 
 // ── Layout Picker ──

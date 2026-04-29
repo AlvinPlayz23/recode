@@ -29,6 +29,7 @@ describe("tui message format", () => {
     expect(parseBuiltinCommand("/config")).toEqual({ name: "config", raw: "/config" });
     expect(parseBuiltinCommand("/models")).toEqual({ name: "models", raw: "/models" });
     expect(parseBuiltinCommand("/theme")).toEqual({ name: "theme", raw: "/theme" });
+    expect(parseBuiltinCommand("/customize")).toEqual({ name: "customize", raw: "/customize" });
     expect(parseBuiltinCommand("/approval-mode")).toEqual({ name: "approval-mode", raw: "/approval-mode" });
     expect(parseBuiltinCommand("/export")).toEqual({ name: "export", raw: "/export" });
     expect(parseBuiltinCommand("/history")).toEqual({ name: "history", raw: "/history" });
@@ -46,6 +47,7 @@ describe("tui message format", () => {
       { name: "config", command: "/config", description: "Show the current Recode configuration" },
       { name: "models", command: "/models", description: "Open the model selector" },
       { name: "theme", command: "/theme", description: "Open the theme selector" },
+      { name: "customize", command: "/customize", description: "Customize theme and tool marker" },
       { name: "approval-mode", command: "/approval-mode", description: "Open the approval mode selector" },
       { name: "export", command: "/export", description: "Export the current conversation to HTML" },
       { name: "history", command: "/history", description: "Open the conversation history" },
@@ -65,6 +67,7 @@ describe("tui message format", () => {
       "/config",
       "/models",
       "/theme",
+      "/customize",
       "/approval-mode",
       "/export",
       "/history",

@@ -14,7 +14,7 @@ The project keeps a light Senren-inspired aesthetic in the UI, but the focus is 
 - Internal AI transport layer with support for OpenAI Responses, OpenAI Chat Completions, and Anthropic Messages
 - Global provider/model config in `~/.recode/config.json`
 - Persistent conversation history in `~/.recode/history/`
-- Built-in model picker, theme picker, approval-mode picker, and history picker
+- Built-in model picker, theme picker, customize popup, approval-mode picker, and history picker
 - Paste mode for compact multi-line paste placeholders in the composer
 - Session export to standalone HTML
 - Built-in tools: `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`
@@ -61,6 +61,7 @@ recode -v, --version Show version
 | `/config` | Show current config, theme, provider, model, and approval settings |
 | `/models` | Open the model selector |
 | `/theme` | Open the theme selector |
+| `/customize` | Open the compact customize popup for theme and tool marker |
 | `/approval-mode` | Open the approval-mode selector |
 | `/export` | Export the current conversation to HTML |
 | `/history` | Open the conversation history |
@@ -90,8 +91,37 @@ Each configured provider can define:
 The global config can also store:
 - active provider ID
 - active TUI theme
+- selected tool marker
 - approval mode
 - persistent approval allowlist
+- layout mode
+- minimal mode
+
+## Customize Popup
+
+Use `/customize` to open a compact in-TUI settings popup for quick appearance changes.
+
+It currently supports:
+- `Tool Marker`
+- `Theme`
+
+Controls:
+- `↑` / `↓` choose the row
+- `←` / `→` cycle values
+- `Space` also cycles the selected row
+- `Enter` or `Esc` closes the popup
+
+Changes apply immediately and are persisted to `~/.recode/config.json`.
+
+Available tool markers:
+- `→`
+- `↳`
+- `➜`
+- `▸`
+- `›`
+- `⇢`
+
+Spinner animations are theme-driven and are intentionally not part of `/customize`.
 
 ## Sessions And History
 
@@ -144,6 +174,15 @@ When a tool needs approval, Recode opens a popup with:
 - deny
 
 “Always allow” is persisted in the global config allowlist.
+
+## Themes And Loaders
+
+Themes affect more than static colors. Recode also ties several visual details to the active theme:
+- prompt marker
+- tool marker defaults if you do not override them
+- loading spinner / busy animation style
+
+The current loading animations are theme-specific, so different themes can feel distinct without requiring a separate spinner picker.
 
 ## Paste Mode
 

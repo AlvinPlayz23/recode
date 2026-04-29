@@ -17,6 +17,7 @@ import {
   selectConfiguredApprovalMode,
   selectConfiguredProviderModel,
   selectConfiguredTheme,
+  selectConfiguredToolMarker,
   upsertConfiguredProvider
 } from "./recode-config.ts";
 
@@ -51,8 +52,9 @@ describe("recode config", () => {
       true
     );
     const themedConfig = selectConfiguredTheme(nextConfig, "matcha-night");
+    const markerConfig = selectConfiguredToolMarker(themedConfig, "triangle");
     const approvalConfig = selectConfiguredApprovalAllowlist(
-      selectConfiguredApprovalMode(themedConfig, "auto-edits"),
+      selectConfiguredApprovalMode(markerConfig, "auto-edits"),
       ["edit"]
     );
 
@@ -61,6 +63,7 @@ describe("recode config", () => {
     const rawText = readFileSync(configPath, "utf8");
     expect(rawText).toContain("\"openai-main\"");
     expect(rawText).toContain("\"matcha-night\"");
+    expect(rawText).toContain("\"triangle\"");
     expect(rawText).toContain("\"auto-edits\"");
 
     expect(loadRecodeConfigFile(configPath)).toEqual(approvalConfig);
@@ -93,6 +96,11 @@ describe("recode config", () => {
   it("updates the configured theme", () => {
     const config = selectConfiguredTheme(createEmptyConfig(), "paper-lantern");
     expect(config.themeName).toBe("paper-lantern");
+  });
+
+  it("updates the configured tool marker", () => {
+    const config = selectConfiguredToolMarker(createEmptyConfig(), "hook");
+    expect(config.toolMarkerName).toBe("hook");
   });
 
   it("updates approval settings", () => {

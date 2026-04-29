@@ -69,11 +69,17 @@ export interface ThemeColors {
 /** Named theme identifiers. */
 export type ThemeName = "senren-dusk" | "paper-lantern" | "matcha-night" | "midnight-ink" | "amber-terminal" | "frost-glass" | "sakura-bloom";
 
+/** Named tool marker identifiers. */
+export type ToolMarkerName = "arrow" | "hook" | "fancy" | "triangle" | "minimal" | "stylized";
+
 /** Layout density mode. */
 export type LayoutMode = "compact" | "comfortable";
 
 /** Default layout mode. */
 export const DEFAULT_LAYOUT_MODE: LayoutMode = "comfortable";
+
+/** Default tool marker. */
+export const DEFAULT_TOOL_MARKER_NAME: ToolMarkerName = "arrow";
 
 /** One selectable theme definition. */
 export interface ThemeDefinition {
@@ -82,6 +88,13 @@ export interface ThemeDefinition {
   readonly description: string;
   readonly colors: ThemeColors;
   readonly promptMarker: string;
+}
+
+/** One selectable tool marker definition. */
+export interface ToolMarkerDefinition {
+  readonly name: ToolMarkerName;
+  readonly label: string;
+  readonly symbol: string;
 }
 
 /** Default theme name. */
@@ -267,7 +280,7 @@ export const FROST_GLASS_THEME: ThemeColors = {
   active: "#2196f3",
   user: "#c06000",
   assistantLabel: "#1565c0",
-  assistantBody: "#1a2a3a",
+  assistantBody: "#e8f4ff",
   tool: "#3a7ab0",
   diffAdded: "#d4edda",
   diffRemoved: "#f8d7da",
@@ -356,6 +369,15 @@ const THEMES: readonly ThemeDefinition[] = [
   }
 ] as const;
 
+const TOOL_MARKERS: readonly ToolMarkerDefinition[] = [
+  { name: "arrow", label: "Arrow", symbol: "→" },
+  { name: "hook", label: "Hook", symbol: "↳" },
+  { name: "fancy", label: "Fancy", symbol: "➜" },
+  { name: "triangle", label: "Triangle", symbol: "▸" },
+  { name: "minimal", label: "Minimal", symbol: "›" },
+  { name: "stylized", label: "Stylized", symbol: "⇢" }
+] as const;
+
 /**
  * Return all available themes.
  *
@@ -363,6 +385,15 @@ const THEMES: readonly ThemeDefinition[] = [
  */
 export function getAvailableThemes(): readonly ThemeDefinition[] {
   return THEMES;
+}
+
+/**
+ * Return all available tool markers.
+ *
+ * @returns Tool marker definitions
+ */
+export function getAvailableToolMarkers(): readonly ToolMarkerDefinition[] {
+  return TOOL_MARKERS;
 }
 
 /**
@@ -376,6 +407,16 @@ export function isThemeName(value: string): value is ThemeName {
 }
 
 /**
+ * Check whether a tool marker name is valid.
+ *
+ * @param value Candidate tool marker name
+ * @returns Whether the marker exists
+ */
+export function isToolMarkerName(value: string): value is ToolMarkerName {
+  return TOOL_MARKERS.some((marker) => marker.name === value);
+}
+
+/**
  * Resolve a theme definition by name.
  *
  * @param name Theme name
@@ -383,6 +424,16 @@ export function isThemeName(value: string): value is ThemeName {
  */
 export function getThemeDefinition(name: ThemeName): ThemeDefinition {
   return THEMES.find((theme) => theme.name === name) ?? THEMES[0]!;
+}
+
+/**
+ * Resolve a tool marker definition by name.
+ *
+ * @param name Tool marker name
+ * @returns Tool marker definition
+ */
+export function getToolMarkerDefinition(name: ToolMarkerName): ToolMarkerDefinition {
+  return TOOL_MARKERS.find((marker) => marker.name === name) ?? TOOL_MARKERS[0]!;
 }
 
 /**

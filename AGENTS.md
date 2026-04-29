@@ -59,6 +59,7 @@ recode -v --version  Show version
 - `/config`
 - `/models`
 - `/theme`
+- `/customize`
 - `/approval-mode`
 - `/export`
 - `/history`
@@ -76,8 +77,11 @@ The config currently stores:
 - active provider
 - selected model
 - theme
+- tool marker
 - approval mode
 - approval allowlist
+- layout mode
+- minimal mode
 
 The history layer currently stores:
 - conversation metadata
@@ -198,8 +202,13 @@ Important files:
 - As content grows, the prompt is pushed downward
 - Once the screen fills, the prompt behaves like a docked composer
 - Slash mode changes the prompt marker from `◈` to `/`
-- `/models`, `/theme`, `/history`, `/approval-mode` use picker-style overlays
+- `/models`, `/theme`, `/customize`, `/history`, `/approval-mode` use picker-style overlays or popups
 - `Ctrl+C` is a two-step exit in TUI and one-shot CLI
+
+Current appearance customization:
+- theme is persistent and can be changed from `/theme` or `/customize`
+- tool marker is persistent and can be changed from `/customize`
+- spinner/loading animation is tied to the active theme and is not separately user-configurable
 
 If a task touches the TUI, be careful not to accidentally regress:
 - prompt docking
@@ -320,4 +329,3 @@ A task is done when:
 - the change matches repo style
 - verification is complete for the kind of change made
 - risks or remaining live-runtime unknowns are stated clearly
-
