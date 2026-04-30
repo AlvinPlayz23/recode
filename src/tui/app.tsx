@@ -20,8 +20,6 @@
  * @author dev
  */
 
-import { readdirSync } from "node:fs";
-import { join, relative, sep } from "node:path";
 import {
   decodePasteBytes,
   type PasteEvent,
@@ -40,14 +38,12 @@ import type { AiModel } from "../ai/types.ts";
 import {
   DEFAULT_FALLBACK_CONTEXT_WINDOW_TOKENS,
   assertConversationFitsContextWindow,
-  calculateReservedContextTokens,
   compactConversation,
   estimateConversationContextTokens,
   evaluateAutoCompaction,
   type ContextTokenEstimate
 } from "../agent/compact-conversation.ts";
 import type { AgentRunResult, TextDeltaObserver } from "../agent/run-agent-loop.ts";
-import { addStepTokenUsage } from "../agent/step-stats.ts";
 import { runAgentLoop } from "../agent/run-agent-loop.ts";
 import {
   loadRecodeConfigFile,
@@ -57,21 +53,13 @@ import {
   selectConfiguredLayoutMode,
   selectConfiguredMinimalMode,
   setConfiguredModelContextWindow,
-  selectConfiguredProviderModel,
   selectConfiguredTheme,
   selectConfiguredToolMarker
 } from "../config/recode-config.ts";
 import { OperationAbortedError } from "../errors/recode-error.ts";
 import { exportConversationToHtml } from "../history/export-html.ts";
 import {
-  createConversationRecord,
-  listHistoryForWorkspace,
-  loadConversation,
-  loadHistoryIndex,
-  markConversationAsCurrent,
   resolveHistoryRoot,
-  saveConversation,
-  type SavedConversationMeta,
   type SavedConversationRecord
 } from "../history/recode-history.ts";
 import {
@@ -103,12 +91,41 @@ import type {
 import { ToolRegistry } from "../tools/tool-registry.ts";
 import {
   findBuiltinCommands,
-  getBuiltinCommands,
   moveBuiltinCommandSelectionIndex,
   normalizeBuiltinCommandSelectionIndex,
   parseBuiltinCommand,
   toDisplayLines
 } from "./message-format.ts";
+import {
+  buildBuiltinConfigBody,
+  buildBuiltinHelpBody,
+  buildBuiltinStatusBody,
+  buildContextWindowFallbackKey,
+  buildContextWindowStatusSnapshot,
+  type ContextWindowStatusSnapshot
+} from "./builtin-command-content.ts";
+import {
+  createDraftConversation,
+  persistConversationSession,
+  persistSelectedModelSelection
+} from "./conversation-session.ts";
+import {
+  buildHistoryPickerItems,
+  closeHistoryPicker,
+  formatRelativeTimestamp,
+  openHistoryPicker,
+  submitSelectedHistoryPickerItem,
+  type HistoryPickerItem
+} from "./history-picker.ts";
+import {
+  applyFileSuggestionDraftValue,
+  buildFileSuggestionPanelState,
+  getFileSuggestionQuery,
+  invalidateWorkspaceFileSuggestionCache,
+  loadWorkspaceFileSuggestions,
+  type FileSuggestionItem,
+  type FileSuggestionPanelState
+} from "./file-suggestions.ts";
 import { Logo } from "./logo.tsx";
 import { createMarkdownSyntaxStyle } from "./markdown-style.ts";
 import { filterToolsForSessionMode, getSessionModeLabel, type SessionMode } from "./session-mode.ts";
@@ -148,10 +165,6 @@ interface ModelPickerOption {
   readonly custom: boolean;
 }
 
-interface HistoryPickerItem extends SavedConversationMeta {
-  readonly current: boolean;
-}
-
 interface ThemePickerItem extends ThemeDefinition {
   readonly active: boolean;
 }
@@ -180,11 +193,6 @@ interface PendingPaste {
   readonly text: string;
 }
 
-interface FileSuggestionItem {
-  readonly displayPath: string;
-  readonly directory: boolean;
-}
-
 interface ActiveApprovalRequest extends ToolApprovalRequest {
   readonly selectedIndex: number;
   readonly resolve: (decision: ToolApprovalDecision) => void;
@@ -201,21 +209,6 @@ interface ActiveToast {
   readonly message: string;
 }
 
-interface FileSuggestionPanelState {
-  readonly items: readonly FileSuggestionItem[];
-  readonly hasMore: boolean;
-  readonly selectedIndex: number;
-  readonly selectedItem: FileSuggestionItem | undefined;
-}
-
-interface ContextWindowStatusSnapshot {
-  readonly contextWindowTokens: number;
-  readonly source: "configured" | "fallback";
-  readonly reservedTokens: number;
-  readonly lastEstimate?: ContextTokenEstimate;
-  readonly autoCompactionActive: boolean;
-}
-
 type PromptRenderable = InputRenderable | TextareaRenderable;
 
 const PROMPT_TEXTAREA_KEY_BINDINGS: TextareaKeyBinding[] = [
@@ -229,6 +222,8 @@ const PROMPT_TEXTAREA_KEY_BINDINGS: TextareaKeyBinding[] = [
     || binding.super === true
   )
 ];
+
+const HISTORY_PICKER_ITEM_ROW_HEIGHT = 4;
 
 export interface TuiAppProps {
   readonly systemPrompt: string;
@@ -260,6 +255,8 @@ export function TuiApp(props: TuiAppProps) {
   const [streamingBody, setStreamingBody] = createSignal("");
   const [commandSelectionIndex, setCommandSelectionIndex] = createSignal(0);
   const [fileSuggestionSelectionIndex, setFileSuggestionSelectionIndex] = createSignal(0);
+  const [workspaceFiles, setWorkspaceFiles] = createSignal<readonly FileSuggestionItem[]>([]);
+  const [workspaceFilesLoading, setWorkspaceFilesLoading] = createSignal(false);
   const [modelPickerOpen, setModelPickerOpen] = createSignal(false);
   const [modelPickerBusy, setModelPickerBusy] = createSignal(false);
   const [modelPickerQuery, setModelPickerQuery] = createSignal("");
@@ -349,14 +346,10 @@ export function TuiApp(props: TuiAppProps) {
 
   const statusMarquee = createMemo(() => buildStatusMarquee(themeName(), statusTick(), t(), busyPhase()));
   const commandSuggestions = createMemo(() => findBuiltinCommands(draft()));
-  const workspaceFiles = createMemo(() => {
-    fileSuggestionVersion();
-    return collectWorkspaceFiles(sessionRuntimeConfig().workspaceRoot);
-  });
   const fileSuggestionPanel = createMemo(() => buildFileSuggestionPanelState(
     draft(),
     workspaceFiles(),
-    busy() || modalOpen(),
+    busy() || modalOpen() || workspaceFilesLoading(),
     fileSuggestionSelectionIndex()
   ));
   const modelPickerOptions = createMemo(() => buildModelPickerOptions(
@@ -499,6 +492,36 @@ export function TuiApp(props: TuiAppProps) {
     queueMicrotask(() => {
       headerRefreshScheduled = false;
       setHeaderVisible(true);
+    });
+  });
+
+  createEffect(() => {
+    const query = getFileSuggestionQuery(draft());
+    const workspaceRoot = sessionRuntimeConfig().workspaceRoot;
+    fileSuggestionVersion();
+
+    if (query === undefined) {
+      setWorkspaceFilesLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setWorkspaceFilesLoading(true);
+
+    void loadWorkspaceFileSuggestions(workspaceRoot)
+      .then((nextFiles) => {
+        if (!cancelled) {
+          setWorkspaceFiles(nextFiles);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setWorkspaceFilesLoading(false);
+        }
+      });
+
+    onCleanup(() => {
+      cancelled = true;
     });
   });
 
@@ -749,7 +772,7 @@ export function TuiApp(props: TuiAppProps) {
     }
 
     setPreviousMessages(compacted.transcript);
-    const persistedConversation = persistConversation(
+    const persistedConversation = persistConversationSession(
       historyRoot(),
       sessionRuntimeConfig(),
       compacted.transcript,
@@ -779,15 +802,11 @@ export function TuiApp(props: TuiAppProps) {
   onMount(() => {
     inputRef?.focus();
     applyInputCursorStyle(inputRef, t().brandShimmer);
-    void startFreshConversation({
-      historyRoot: historyRoot(),
-      runtimeConfig: sessionRuntimeConfig(),
-      setConversation: setCurrentConversation,
-      setEntries,
-      setPreviousMessages,
-      setLastContextEstimate,
-      setSessionMode
-    });
+    setCurrentConversation(createDraftConversation(sessionRuntimeConfig(), "build"));
+    setEntries([]);
+    setPreviousMessages([]);
+    setLastContextEstimate(undefined);
+    setSessionMode("build");
   });
 
   createEffect(() => {
@@ -808,6 +827,19 @@ export function TuiApp(props: TuiAppProps) {
     }
 
     scrollBox.scrollTo(windowStart);
+  });
+
+  createEffect(() => {
+    historyPickerQuery();
+    const scrollBox = historyPickerScrollBox();
+
+    if (!historyPickerOpen() || scrollBox === undefined) {
+      return;
+    }
+
+    if (historyPickerSelectedIndex() === 0 && historyPickerWindowStart() === 0) {
+      scrollBox.scrollTo(0);
+    }
   });
 
   createEffect(() => {
@@ -1244,7 +1276,13 @@ export function TuiApp(props: TuiAppProps) {
       switch (key.name) {
         case "escape":
           key.preventDefault();
-          closeHistoryPicker(inputRef, setHistoryPickerOpen, setHistoryPickerQuery, setHistoryPickerSelectedIndex, setHistoryPickerWindowStart);
+          closeHistoryPicker(
+            setHistoryPickerOpen,
+            setHistoryPickerQuery,
+            setHistoryPickerSelectedIndex,
+            setHistoryPickerWindowStart,
+            () => inputRef?.focus()
+          );
           return;
         case "up":
           if (historyPickerTotalOptionCount() <= 0) {
@@ -1287,16 +1325,23 @@ export function TuiApp(props: TuiAppProps) {
             runtimeConfig: sessionRuntimeConfig(),
             selectedIndex: historyPickerSelectedIndex(),
             items: filteredHistoryPickerItems(),
-          setBusy: setHistoryPickerBusy,
-          setRuntimeConfig: setSessionRuntimeConfig,
-          setConversation: setCurrentConversation,
-          setEntries,
-          setPreviousMessages,
-          setLastContextEstimate,
-          close() {
-            closeHistoryPicker(inputRef, setHistoryPickerOpen, setHistoryPickerQuery, setHistoryPickerSelectedIndex, setHistoryPickerWindowStart);
-          }
-        });
+            setBusy: setHistoryPickerBusy,
+            setRuntimeConfig: setSessionRuntimeConfig,
+            setConversation: setCurrentConversation,
+            setEntries,
+            setPreviousMessages,
+            setLastContextEstimate,
+            rehydrateEntries: rehydrateEntriesFromTranscript,
+            close() {
+              closeHistoryPicker(
+                setHistoryPickerOpen,
+                setHistoryPickerQuery,
+                setHistoryPickerSelectedIndex,
+                setHistoryPickerWindowStart,
+                () => inputRef?.focus()
+              );
+            }
+          });
           return;
         default:
           return;
@@ -1728,8 +1773,8 @@ export function TuiApp(props: TuiAppProps) {
           setQuery: setHistoryPickerQuery,
           setSelectedIndex: setHistoryPickerSelectedIndex,
           setWindowStart: setHistoryPickerWindowStart,
-          appendEntry(entry) {
-            appendEntry(setEntries, entry);
+          onError(message) {
+            appendEntry(setEntries, createEntry("error", "error", message));
           }
         });
         queueMicrotask(() => {
@@ -1797,7 +1842,7 @@ export function TuiApp(props: TuiAppProps) {
       }
 
       if (builtinCommand.name === "new" || builtinCommand.name === "clear") {
-        const conversation = startNewConversation(historyRoot(), sessionRuntimeConfig(), sessionMode());
+        const conversation = createDraftConversation(sessionRuntimeConfig(), sessionMode());
         setCurrentConversation(conversation);
         setEntries([createEntry("status", "status", "Started a new conversation")]);
         setPreviousMessages([]);
@@ -1825,7 +1870,7 @@ export function TuiApp(props: TuiAppProps) {
 
           setPreviousMessages(compacted.transcript);
           setLastContextEstimate(estimateConversationContextTokens(compacted.transcript));
-          const persistedConversation = persistConversation(
+          const persistedConversation = persistConversationSession(
             historyRoot(),
             sessionRuntimeConfig(),
             compacted.transcript,
@@ -1860,7 +1905,7 @@ export function TuiApp(props: TuiAppProps) {
         }
 
         setSessionMode(nextMode);
-        const persistedConversation = persistConversation(
+        const persistedConversation = persistConversationSession(
           historyRoot(),
           sessionRuntimeConfig(),
           previousMessages(),
@@ -1961,6 +2006,7 @@ export function TuiApp(props: TuiAppProps) {
         },
         onToolResult(toolResult) {
           setBusyPhase("thinking");
+          invalidateWorkspaceFileSuggestionCache(sessionRuntimeConfig().workspaceRoot);
           setFileSuggestionVersion((value) => value + 1);
           const toolResultEntry = createToolResultEntry(toolResult.toolName, toolResult.content, toolResult.metadata);
           if (toolResultEntry !== undefined) {
@@ -1992,7 +2038,7 @@ export function TuiApp(props: TuiAppProps) {
       setPreviousMessages(result.transcript);
       setLastContextEstimate(estimateConversationContextTokens(result.transcript));
       setBusyPhase("saving-history");
-      const persistedConversation = persistConversation(
+      const persistedConversation = persistConversationSession(
         historyRoot(),
         sessionRuntimeConfig(),
         result.transcript,
@@ -3166,31 +3212,6 @@ interface CommandPanelState {
   readonly selectedCommand: { readonly command: string; readonly description: string } | undefined;
 }
 
-function buildFileSuggestionPanelState(
-  draft: string,
-  files: readonly FileSuggestionItem[],
-  busy: boolean,
-  selectedIndex: number
-): FileSuggestionPanelState | undefined {
-  const query = getFileSuggestionQuery(draft);
-
-  if (busy || query === undefined) {
-    return undefined;
-  }
-
-  const normalizedQuery = normalizePathForSuggestion(query).toLowerCase();
-  const matchingItems = files.filter((item) => normalizedQuery === "" || item.displayPath.toLowerCase().includes(normalizedQuery));
-  const visibleItems = matchingItems.slice(0, 6);
-  const normalizedSelectedIndex = normalizeBuiltinCommandSelectionIndex(selectedIndex, visibleItems.length);
-
-  return {
-    items: visibleItems,
-    hasMore: matchingItems.length > visibleItems.length,
-    selectedIndex: normalizedSelectedIndex,
-    selectedItem: visibleItems[normalizedSelectedIndex]
-  };
-}
-
 function buildCommandPanelState(
   draft: string,
   commands: readonly { readonly command: string; readonly description: string }[],
@@ -3214,11 +3235,6 @@ function buildCommandPanelState(
   };
 }
 
-function getFileSuggestionQuery(value: string): string | undefined {
-  const match = /(?:^|\s)@([^\n\r\t ]*)$/.exec(value);
-  return match?.[1];
-}
-
 function applyFileSuggestionDraft(
   input: PromptRenderable | undefined,
   currentDraft: string,
@@ -3226,233 +3242,13 @@ function applyFileSuggestionDraft(
   setSelectionIndex: (value: number) => void,
   item: FileSuggestionItem
 ): void {
-  const suffix = item.directory ? "" : " ";
-  const nextDraft = currentDraft.replace(/(^|\s)@([^\n\r\t ]*)$/, `$1@${item.displayPath}${suffix}`);
+  const nextDraft = applyFileSuggestionDraftValue(currentDraft, item);
   setDraft(nextDraft);
   setSelectionIndex(0);
   if (input !== undefined) {
     setRenderableText(input, toVisibleDraft(nextDraft));
     input.focus();
   }
-}
-
-function collectWorkspaceFiles(workspaceRoot: string, limit = 400): readonly FileSuggestionItem[] {
-  const results: FileSuggestionItem[] = [];
-  const stack = [workspaceRoot];
-
-  while (stack.length > 0 && results.length < limit) {
-    const currentDirectory = stack.pop();
-    if (currentDirectory === undefined) {
-      continue;
-    }
-
-    let entries: ReturnType<typeof readdirSync>;
-    try {
-      entries = readdirSync(currentDirectory, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-
-    for (const entry of entries) {
-      if (shouldSkipWorkspaceSuggestionEntry(entry.name)) {
-        continue;
-      }
-
-      const absolutePath = join(currentDirectory, entry.name);
-      const relativePath = normalizePathForSuggestion(relative(workspaceRoot, absolutePath));
-      if (relativePath === "") {
-        continue;
-      }
-
-      const directory = entry.isDirectory();
-      results.push({
-        displayPath: directory ? `${relativePath}/` : relativePath,
-        directory
-      });
-
-      if (directory && results.length < limit) {
-        stack.push(absolutePath);
-      }
-
-      if (results.length >= limit) {
-        break;
-      }
-    }
-  }
-
-  return results.sort((left, right) => left.displayPath.localeCompare(right.displayPath));
-}
-
-function shouldSkipWorkspaceSuggestionEntry(name: string): boolean {
-  return name === ".git"
-    || name === "node_modules"
-    || name === "refs"
-    || name === ".recode";
-}
-
-function normalizePathForSuggestion(value: string): string {
-  return value.split(sep).join("/");
-}
-
-function buildBuiltinHelpBody(): string {
-  const lines = ["## Available Commands", ""];
-
-  for (const command of getBuiltinCommands()) {
-    lines.push(`- \`${command.command}\`: ${command.description}`);
-  }
-
-  return lines.join("\n");
-}
-
-function buildBuiltinStatusBody(
-  runtimeConfig: RuntimeConfig,
-  toolMarkerName: ToolMarkerName,
-  sessionMode: SessionMode,
-  entriesCount: number,
-  transcriptCount: number,
-  transcript: readonly ConversationMessage[],
-  contextWindowStatus: ContextWindowStatusSnapshot
-): string {
-  const stepSummary = summarizeTranscriptSteps(transcript);
-  const providerControls = [
-    runtimeConfig.maxOutputTokens === undefined ? undefined : `max output ${runtimeConfig.maxOutputTokens}`,
-    runtimeConfig.temperature === undefined ? undefined : `temp ${runtimeConfig.temperature}`,
-    runtimeConfig.toolChoice === undefined ? undefined : `tool choice ${runtimeConfig.toolChoice}`
-  ].filter((value): value is string => value !== undefined);
-
-  return [
-    "## Current Status",
-    "",
-    `- Provider: ${runtimeConfig.providerName} (\`${runtimeConfig.providerId}\`)`,
-    `- Provider kind: ${runtimeConfig.provider}`,
-    `- Model: ${runtimeConfig.model}`,
-    `- Session mode: \`${getSessionModeLabel(sessionMode)}\``,
-    `- Base URL: \`${runtimeConfig.baseUrl}\``,
-    `- Provider controls: ${providerControls.length === 0 ? "defaults" : providerControls.join(" · ")}`,
-    `- Tool marker: ${getToolMarkerDefinition(toolMarkerName).label} (\`${getToolMarkerDefinition(toolMarkerName).symbol}\`)`,
-    `- Approval mode: \`${runtimeConfig.approvalMode}\``,
-    `- Always-allowed scopes: ${runtimeConfig.approvalAllowlist.length === 0 ? "none" : runtimeConfig.approvalAllowlist.map((scope) => `\`${scope}\``).join(", ")}`,
-    `- Config path: \`${runtimeConfig.configPath}\``,
-    `- Context window: ${contextWindowStatus.contextWindowTokens.toLocaleString()} tokens (${contextWindowStatus.source})`,
-    `- Reserved compaction buffer: ${contextWindowStatus.reservedTokens.toLocaleString()} tokens`,
-    `- Last estimated context usage: ${contextWindowStatus.lastEstimate === undefined ? "n/a" : `${contextWindowStatus.lastEstimate.estimatedTokens.toLocaleString()} tokens (${contextWindowStatus.lastEstimate.source})`}`,
-    `- Auto-compaction: ${contextWindowStatus.autoCompactionActive ? "enabled" : "disabled"}`,
-    `- Visible UI entries: ${entriesCount}`,
-    `- Conversation messages: ${transcriptCount}`,
-    `- Completed assistant steps: ${stepSummary.stepCount}`,
-    `- Total tool calls: ${stepSummary.totalToolCalls}`,
-    `- Total tokens: ${formatTotalTokens(stepSummary.totalTokens)}`,
-    `- Last finish reason: \`${stepSummary.lastFinishReason ?? "n/a"}\``,
-    `- Last step duration: ${stepSummary.lastDurationMs === undefined ? "n/a" : `${stepSummary.lastDurationMs} ms`}`
-  ].join("\n");
-}
-
-function buildContextWindowStatusSnapshot(
-  runtimeConfig: RuntimeConfig,
-  fallbackContexts: Readonly<Record<string, number>>,
-  lastEstimate: ContextTokenEstimate | undefined
-): ContextWindowStatusSnapshot {
-  const configuredContextWindowTokens = runtimeConfig.contextWindowTokens;
-  const fallbackContextWindowTokens = fallbackContexts[buildContextWindowFallbackKey(runtimeConfig.providerId, runtimeConfig.model)];
-  const contextWindowTokens = configuredContextWindowTokens
-    ?? fallbackContextWindowTokens
-    ?? DEFAULT_FALLBACK_CONTEXT_WINDOW_TOKENS;
-
-  return {
-    contextWindowTokens,
-    source: configuredContextWindowTokens === undefined ? "fallback" : "configured",
-    reservedTokens: calculateReservedContextTokens(runtimeConfig.maxOutputTokens),
-    autoCompactionActive: true,
-    ...(lastEstimate === undefined ? {} : { lastEstimate })
-  };
-}
-
-function summarizeTranscriptSteps(transcript: readonly ConversationMessage[]): {
-  stepCount: number;
-  totalToolCalls: number;
-  totalTokens: number;
-  lastFinishReason?: string;
-  lastDurationMs?: number;
-} {
-  let stepCount = 0;
-  let totalToolCalls = 0;
-  let totalUsage = undefined;
-  let lastFinishReason: string | undefined;
-  let lastDurationMs: number | undefined;
-
-  for (const message of transcript) {
-    if (message.role !== "assistant") {
-      continue;
-    }
-
-    const stepStats = message.stepStats;
-    if (stepStats === undefined) {
-      continue;
-    }
-
-    stepCount += 1;
-    totalToolCalls += stepStats.toolCallCount;
-    totalUsage = addStepTokenUsage(totalUsage, stepStats.tokenUsage);
-    lastFinishReason = stepStats.finishReason;
-    lastDurationMs = stepStats.durationMs;
-  }
-
-  return {
-    stepCount,
-    totalToolCalls,
-    totalTokens: totalUsage === undefined
-      ? 0
-      : totalUsage.input + totalUsage.output + totalUsage.reasoning + totalUsage.cacheRead + totalUsage.cacheWrite,
-    ...(lastFinishReason === undefined ? {} : { lastFinishReason }),
-    ...(lastDurationMs === undefined ? {} : { lastDurationMs })
-  };
-}
-
-function formatTotalTokens(totalTokens: number): string {
-  return totalTokens.toLocaleString();
-}
-
-function buildBuiltinConfigBody(
-  runtimeConfig: RuntimeConfig,
-  activeThemeName: ThemeName,
-  toolMarkerName: ToolMarkerName
-): string {
-  const config = loadRecodeConfigFile(runtimeConfig.configPath);
-  const lines = [
-    "## Recode Configuration",
-    "",
-    `- Config path: \`${runtimeConfig.configPath}\``,
-    `- Theme: ${getThemeDefinition(activeThemeName).label} (\`${activeThemeName}\`)`,
-    `- Tool marker: ${getToolMarkerDefinition(toolMarkerName).label} (\`${getToolMarkerDefinition(toolMarkerName).symbol}\`)`,
-    `- Active provider: ${runtimeConfig.providerName} (\`${runtimeConfig.providerId}\`)`,
-    `- Active model: \`${runtimeConfig.model}\``,
-    `- Base URL: \`${runtimeConfig.baseUrl}\``,
-    `- Approval mode: \`${runtimeConfig.approvalMode}\``,
-    `- Always-allowed scopes: ${runtimeConfig.approvalAllowlist.length === 0 ? "none" : runtimeConfig.approvalAllowlist.map((scope) => `\`${scope}\``).join(", ")}`,
-    "",
-    "## Providers",
-    ""
-  ];
-
-  if (config.providers.length === 0) {
-    lines.push("- No saved providers yet. Run `recode setup`.");
-    return lines.join("\n");
-  }
-
-  for (const provider of config.providers) {
-    const activeMarker = provider.id === runtimeConfig.providerId ? " (active)" : "";
-    lines.push(`- ${provider.name} (\`${provider.id}\`)${activeMarker}`);
-    lines.push(`  - Kind: ${provider.kind}`);
-    lines.push(`  - Base URL: \`${provider.baseUrl}\``);
-    lines.push(`  - Default model: \`${provider.defaultModelId ?? provider.models[0]?.id ?? "unset"}\``);
-    lines.push(`  - Saved models: ${provider.models.length === 0 ? "none" : provider.models.map((model) =>
-      model.contextWindowTokens === undefined
-        ? `\`${model.id}\``
-        : `\`${model.id}\` (${model.contextWindowTokens.toLocaleString()} ctx)`
-    ).join(", ")}`);
-  }
-
-  return lines.join("\n");
 }
 
 function createToolRegistryForMode(baseRegistry: ToolRegistry, mode: SessionMode): ToolRegistry {
@@ -3483,71 +3279,6 @@ function normalizeDraftInput(previousDraft: string, nextValue: string): string {
   }
 
   return nextValue;
-}
-
-interface RestoreConversationOptions {
-  readonly historyRoot: string;
-  readonly runtimeConfig: RuntimeConfig;
-  readonly setConversation: (value: SavedConversationRecord) => void;
-  readonly setEntries: (value: readonly UiEntry[]) => void;
-  readonly setPreviousMessages: (value: readonly ConversationMessage[]) => void;
-  readonly setLastContextEstimate: (value: ContextTokenEstimate | undefined) => void;
-  readonly setSessionMode: (value: SessionMode) => void;
-}
-
-async function startFreshConversation(options: RestoreConversationOptions): Promise<void> {
-  const nextConversation = startNewConversation(options.historyRoot, options.runtimeConfig, "build");
-  options.setConversation(nextConversation);
-  options.setEntries([]);
-  options.setPreviousMessages([]);
-  options.setLastContextEstimate(undefined);
-  options.setSessionMode("build");
-}
-
-function startNewConversation(
-  historyRoot: string,
-  runtimeConfig: RuntimeConfig,
-  mode: SessionMode
-): SavedConversationRecord {
-  const conversation = createConversationRecord(runtimeConfig, [], mode);
-  saveConversation(historyRoot, conversation, true);
-  return conversation;
-}
-
-function persistConversation(
-  historyRoot: string,
-  runtimeConfig: RuntimeConfig,
-  transcript: readonly ConversationMessage[],
-  currentConversation: SavedConversationRecord | undefined,
-  mode: SessionMode
-): SavedConversationRecord {
-  const conversation = createConversationRecord(
-    runtimeConfig,
-    transcript,
-    mode,
-    currentConversation === undefined
-      ? undefined
-      : { id: currentConversation.id, createdAt: currentConversation.createdAt }
-  );
-  saveConversation(historyRoot, conversation, true);
-  return conversation;
-}
-
-function restoreConversationRuntime(
-  runtimeConfig: RuntimeConfig,
-  conversation: Pick<SavedConversationRecord, "providerId" | "model">
-): RuntimeConfig {
-  const providerExists = runtimeConfig.providers.some((provider) => provider.id === conversation.providerId);
-  if (!providerExists) {
-    return runtimeConfig;
-  }
-
-  if (runtimeConfig.providerId === conversation.providerId && runtimeConfig.model === conversation.model) {
-    return runtimeConfig;
-  }
-
-  persistSelectedModel(runtimeConfig, conversation.providerId, conversation.model);
-  return selectRuntimeProviderModel(runtimeConfig, conversation.providerId, conversation.model);
 }
 
 function rehydrateEntriesFromTranscript(transcript: readonly ConversationMessage[]): readonly UiEntry[] {
@@ -3583,119 +3314,6 @@ function rehydrateEntriesFromTranscript(transcript: readonly ConversationMessage
   }
 
   return entries;
-}
-
-interface OpenHistoryPickerOptions {
-  readonly historyRoot: string;
-  readonly workspaceRoot: string;
-  readonly currentConversationId: string | undefined;
-  readonly setBusy: (value: boolean) => void;
-  readonly setItems: (value: readonly HistoryPickerItem[]) => void;
-  readonly setOpen: (value: boolean) => void;
-  readonly setQuery: (value: string) => void;
-  readonly setSelectedIndex: (value: number) => void;
-  readonly setWindowStart: (value: number) => void;
-  readonly appendEntry: (entry: UiEntry) => void;
-}
-
-async function openHistoryPicker(options: OpenHistoryPickerOptions): Promise<void> {
-  options.setOpen(true);
-  options.setBusy(true);
-  options.setQuery("");
-  options.setSelectedIndex(0);
-  options.setWindowStart(0);
-
-  try {
-    const items = listHistoryForWorkspace(loadHistoryIndex(options.historyRoot), options.workspaceRoot);
-    options.setItems(items.map((item) => ({
-      ...item,
-      current: item.id === options.currentConversationId
-    })));
-  } catch (error) {
-    options.appendEntry(createEntry("error", "error", toErrorMessage(error)));
-    options.setOpen(false);
-  } finally {
-    options.setBusy(false);
-  }
-}
-
-function closeHistoryPicker(
-  input: PromptRenderable | undefined,
-  setOpen: (value: boolean) => void,
-  setQuery: (value: string) => void,
-  setSelectedIndex: (value: number) => void,
-  setWindowStart: (value: number) => void
-): void {
-  setOpen(false);
-  setQuery("");
-  setSelectedIndex(0);
-  setWindowStart(0);
-  input?.focus();
-}
-
-function buildHistoryPickerItems(
-  items: readonly HistoryPickerItem[],
-  query: string
-): readonly HistoryPickerItem[] {
-  const normalizedQuery = query.trim().toLowerCase();
-
-  if (normalizedQuery === "") {
-    return items;
-  }
-
-  return items.filter((item) => {
-    const haystack = `${item.title} ${item.preview} ${item.providerName} ${item.providerId} ${item.model}`.toLowerCase();
-    return haystack.includes(normalizedQuery);
-  });
-}
-
-interface SubmitHistoryPickerSelectionOptions {
-  readonly historyRoot: string;
-  readonly runtimeConfig: RuntimeConfig;
-  readonly selectedIndex: number;
-  readonly items: readonly HistoryPickerItem[];
-  readonly setBusy: (value: boolean) => void;
-  readonly setRuntimeConfig: (value: RuntimeConfig) => void;
-  readonly setConversation: (value: SavedConversationRecord) => void;
-  readonly setEntries: (value: readonly UiEntry[]) => void;
-  readonly setPreviousMessages: (value: readonly ConversationMessage[]) => void;
-  readonly setLastContextEstimate: (value: ContextTokenEstimate | undefined) => void;
-  readonly close: () => void;
-}
-
-async function submitSelectedHistoryPickerItem(options: SubmitHistoryPickerSelectionOptions): Promise<void> {
-  const selectedItem = options.items[options.selectedIndex];
-  if (selectedItem === undefined) {
-    return;
-  }
-
-  options.setBusy(true);
-
-  try {
-    const conversation = loadConversation(options.historyRoot, selectedItem.id);
-    if (conversation === undefined) {
-      throw new Error("The selected conversation could not be loaded.");
-    }
-
-    markConversationAsCurrent(options.historyRoot, conversation.id);
-    options.setRuntimeConfig(restoreConversationRuntime(options.runtimeConfig, conversation));
-    options.setConversation(conversation);
-    options.setEntries(rehydrateEntriesFromTranscript(conversation.transcript));
-    options.setPreviousMessages(conversation.transcript);
-    options.setLastContextEstimate(estimateConversationContextTokens(conversation.transcript));
-    options.close();
-  } finally {
-    options.setBusy(false);
-  }
-}
-
-function formatRelativeTimestamp(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) {
-    return value;
-  }
-
-  return date.toLocaleString();
 }
 
 function buildThemePickerItems(activeThemeName: ThemeName, query: string): readonly ThemePickerItem[] {
@@ -4140,14 +3758,14 @@ async function submitSelectedModelPickerOption(options: SubmitModelPickerSelecti
   options.setBusy(true);
 
   try {
-    persistSelectedModel(options.runtimeConfig, selectedOption.providerId, selectedOption.modelId);
+    persistSelectedModelSelection(options.runtimeConfig, selectedOption.providerId, selectedOption.modelId);
     const nextRuntimeConfig = selectRuntimeProviderModel(
       options.runtimeConfig,
       selectedOption.providerId,
       selectedOption.modelId
     );
     options.setRuntimeConfig(nextRuntimeConfig);
-    const nextConversation = persistConversation(
+    const nextConversation = persistConversationSession(
       options.historyRoot,
       nextRuntimeConfig,
       options.transcript,
@@ -4166,16 +3784,6 @@ async function submitSelectedModelPickerOption(options: SubmitModelPickerSelecti
   } finally {
     options.setBusy(false);
   }
-}
-
-function persistSelectedModel(runtimeConfig: RuntimeConfig, providerId: string, modelId: string): void {
-  const config = loadRecodeConfigFile(runtimeConfig.configPath);
-  const nextConfig = selectConfiguredProviderModel(config, providerId, modelId);
-  saveRecodeConfigFile(runtimeConfig.configPath, nextConfig);
-}
-
-function buildContextWindowFallbackKey(providerId: string, modelId: string): string {
-  return `${providerId}::${modelId}`;
 }
 
 function persistSelectedTheme(configPath: string, themeName: ThemeName): void {
@@ -4447,7 +4055,7 @@ function getHistoryPickerPopupRowBudget(terminalHeight: number): number {
 }
 
 function getHistoryPickerVisibleCount(terminalHeight: number): number {
-  return Math.max(1, Math.floor(getHistoryPickerPopupRowBudget(terminalHeight) / 4));
+  return Math.max(1, Math.floor(getHistoryPickerPopupRowBudget(terminalHeight) / HISTORY_PICKER_ITEM_ROW_HEIGHT));
 }
 
 function getThemePickerPopupRowBudget(terminalHeight: number): number {
