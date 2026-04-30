@@ -8,6 +8,7 @@ import { joinUrl, readErrorMessage } from "../http.ts";
 import { parseProviderToolArguments } from "../json.ts";
 import { iterateSseMessages } from "../sse.ts";
 import type { AiModel, AiStreamPart } from "../types.ts";
+import { createEmptyStepTokenUsage, type StepTokenUsage } from "../../agent/step-stats.ts";
 
 interface PendingChatToolCall {
   id: string;
@@ -33,7 +34,7 @@ export async function* streamOpenAiChat(
         "content-type": "application/json",
         authorization: `Bearer ${model.apiKey}`
       },
-      body: JSON.stringify(buildChatCompletionsRequestBody(model.modelId, systemPrompt, messages, tools)),
+      body: JSON.stringify(buildChatCompletionsRequestBody(model, systemPrompt, messages, tools)),
       ...(abortSignal === undefined ? {} : { signal: abortSignal })
     });
 
@@ -46,6 +47,8 @@ export async function* streamOpenAiChat(
     }
 
     const pendingToolCalls = new Map<number, PendingChatToolCall>();
+    let finishReason: string | undefined;
+    let tokenUsage: StepTokenUsage | undefined;
 
     for await (const sse of iterateSseMessages(response.body, abortSignal)) {
       if (sse.data === "[DONE]") {
@@ -68,7 +71,25 @@ export async function* streamOpenAiChat(
         continue;
       }
 
-      const delta = readOptionalRecord(choice as Record<string, unknown>, "delta");
+      const choiceRecord = choice as Record<string, unknown>;
+      const nextFinishReason = readOptionalString(choiceRecord, "finish_reason");
+      if (nextFinishReason !== undefined && nextFinishReason !== "") {
+        finishReason = nextFinishReason;
+      }
+
+      const usageRecord = readOptionalRecord(chunk, "usage");
+      if (usageRecord !== undefined) {
+        tokenUsage = {
+          ...createEmptyStepTokenUsage(),
+          input: readOptionalNumber(usageRecord, "prompt_tokens") ?? 0,
+          output: readOptionalNumber(usageRecord, "completion_tokens") ?? 0,
+          reasoning: readOptionalNumber(usageRecord, "completion_tokens_details.reasoning_tokens") ?? 0,
+          cacheRead: readOptionalNumber(usageRecord, "prompt_tokens_details.cached_tokens") ?? 0,
+          cacheWrite: 0
+        };
+      }
+
+      const delta = readOptionalRecord(choiceRecord, "delta");
       if (delta !== undefined) {
         const content = readOptionalString(delta, "content");
         if (content !== undefined && content !== "") {
@@ -129,7 +150,13 @@ export async function* streamOpenAiChat(
       return;
     }
 
-    yield { type: "finish-step" };
+    yield {
+      type: "finish-step",
+      info: {
+        ...(finishReason === undefined ? {} : { finishReason }),
+        ...(tokenUsage === undefined ? {} : { tokenUsage })
+      }
+    };
     yield { type: "finish" };
   } catch (error) {
     if (abortSignal?.aborted ?? false) {
@@ -142,17 +169,26 @@ export async function* streamOpenAiChat(
 }
 
 function buildChatCompletionsRequestBody(
-  modelId: string,
+  model: AiModel,
   systemPrompt: string,
   messages: readonly ConversationMessage[],
   tools: readonly ToolDefinition[]
 ): Record<string, unknown> {
   return {
-    model: modelId,
+    model: model.modelId,
     messages: messagesToChatMessages(systemPrompt, messages),
     ...(tools.length === 0 ? {} : { tools: toolsToChatTools(tools) }),
+    ...(model.maxOutputTokens === undefined ? {} : { max_tokens: model.maxOutputTokens }),
+    ...(model.temperature === undefined ? {} : { temperature: model.temperature }),
+    ...(model.toolChoice === undefined ? {} : { tool_choice: model.toolChoice }),
+    ...(supportsUsageStreaming(model) ? { stream_options: { include_usage: true } } : {}),
     stream: true
   };
+}
+
+function supportsUsageStreaming(model: AiModel): boolean {
+  const baseUrl = (model.baseUrl ?? "https://api.openai.com/v1").toLowerCase();
+  return baseUrl.includes("api.openai.com");
 }
 
 function messagesToChatMessages(systemPrompt: string, messages: readonly ConversationMessage[]): readonly Record<string, unknown>[] {
@@ -238,4 +274,18 @@ function readNumber(record: Record<string, unknown>, key: string): number {
     throw new Error(`Expected '${key}' to be a number.`);
   }
   return value;
+}
+
+function readOptionalNumber(record: Record<string, unknown>, key: string): number | undefined {
+  if (key.includes(".")) {
+    const [head, ...tail] = key.split(".");
+    const next = head === undefined ? undefined : record[head];
+    if (tail.length === 0 || next === undefined || next === null || typeof next !== "object" || Array.isArray(next)) {
+      return undefined;
+    }
+    return readOptionalNumber(next as Record<string, unknown>, tail.join("."));
+  }
+
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }

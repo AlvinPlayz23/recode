@@ -34,6 +34,9 @@ export interface RuntimeConfig {
   readonly approvalAllowlist: readonly ToolApprovalScope[];
   readonly apiKey?: string;
   readonly baseUrl: string;
+  readonly maxOutputTokens?: number;
+  readonly temperature?: number;
+  readonly toolChoice?: "auto" | "required";
 }
 
 /**
@@ -70,6 +73,9 @@ export function selectRuntimeProviderModel(
     workspaceRoot: runtimeConfig.workspaceRoot,
     configPath: runtimeConfig.configPath,
     baseUrl: selectedProvider.baseUrl,
+    ...(selectedProvider.maxOutputTokens === undefined ? {} : { maxOutputTokens: selectedProvider.maxOutputTokens }),
+    ...(selectedProvider.temperature === undefined ? {} : { temperature: selectedProvider.temperature }),
+    ...(selectedProvider.toolChoice === undefined ? {} : { toolChoice: selectedProvider.toolChoice }),
     ...(selectedProvider.apiKey === undefined ? {} : { apiKey: selectedProvider.apiKey })
   };
 }
@@ -85,6 +91,9 @@ export function loadRuntimeConfig(workspaceRoot: string): RuntimeConfig {
   const envApiKey = readOptionalEnv("RECODE_API_KEY");
   const envBaseUrl = readOptionalEnv("RECODE_BASE_URL");
   const envModel = readOptionalEnv("RECODE_MODEL");
+  const envMaxOutputTokens = readOptionalPositiveIntegerEnv("RECODE_MAX_OUTPUT_TOKENS");
+  const envTemperature = readOptionalFiniteNumberEnv("RECODE_TEMPERATURE");
+  const envToolChoice = parseToolChoice(readOptionalEnv("RECODE_TOOL_CHOICE"));
 
   const selectedConfiguredProvider = resolveSelectedConfiguredProvider(config.providers, envActiveProviderId ?? config.activeProviderId);
   const fallbackProviderKind = selectedConfiguredProvider?.kind ?? "openai";
@@ -101,6 +110,12 @@ export function loadRuntimeConfig(workspaceRoot: string): RuntimeConfig {
     ?? selectedConfiguredProvider?.models[0]?.id;
   const apiKey = envApiKey
     ?? selectedConfiguredProvider?.apiKey;
+  const maxOutputTokens = envMaxOutputTokens
+    ?? selectedConfiguredProvider?.maxOutputTokens;
+  const temperature = envTemperature
+    ?? selectedConfiguredProvider?.temperature;
+  const toolChoice = envToolChoice
+    ?? selectedConfiguredProvider?.toolChoice;
 
   if (baseUrl === undefined || baseUrl === "") {
     throw new Error("Missing provider base URL. Run `recode setup` or set RECODE_BASE_URL.");
@@ -110,7 +125,18 @@ export function loadRuntimeConfig(workspaceRoot: string): RuntimeConfig {
     throw new Error("Missing model ID. Run `recode setup` or set RECODE_MODEL.");
   }
 
-  const providers = buildRuntimeProviders(config.providers, envProviderKind, envBaseUrl, envApiKey, envModel, providerId, providerName);
+  const providers = buildRuntimeProviders(
+    config.providers,
+    envProviderKind,
+    envBaseUrl,
+    envApiKey,
+    envModel,
+    envMaxOutputTokens,
+    envTemperature,
+    envToolChoice,
+    providerId,
+    providerName
+  );
 
   return {
     workspaceRoot,
@@ -123,6 +149,9 @@ export function loadRuntimeConfig(workspaceRoot: string): RuntimeConfig {
     providers,
     approvalMode: config.approvalMode ?? "approval",
     approvalAllowlist: config.approvalAllowlist ?? [],
+    ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+    ...(temperature === undefined ? {} : { temperature }),
+    ...(toolChoice === undefined ? {} : { toolChoice }),
     ...(apiKey === undefined ? {} : { apiKey })
   };
 }
@@ -147,6 +176,30 @@ function readOptionalEnv(key: string): string | undefined {
   return value === undefined || value === "" ? undefined : value;
 }
 
+function readOptionalPositiveIntegerEnv(key: string): number | undefined {
+  const value = readOptionalEnv(key);
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function readOptionalFiniteNumberEnv(key: string): number | undefined {
+  const value = readOptionalEnv(key);
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function parseToolChoice(value: string | undefined): "auto" | "required" | undefined {
+  return value === "auto" || value === "required" ? value : undefined;
+}
+
 function resolveSelectedConfiguredProvider(
   providers: readonly ConfiguredProvider[],
   activeProviderId: string | undefined
@@ -167,6 +220,9 @@ function buildRuntimeProviders(
   envBaseUrl: string | undefined,
   envApiKey: string | undefined,
   envModel: string | undefined,
+  envMaxOutputTokens: number | undefined,
+  envTemperature: number | undefined,
+  envToolChoice: "auto" | "required" | undefined,
   activeProviderId: string,
   activeProviderName: string
 ): readonly RuntimeProviderConfig[] {
@@ -192,6 +248,15 @@ function buildRuntimeProviders(
     ...(envModel === undefined
       ? (existingProvider?.defaultModelId === undefined ? {} : { defaultModelId: existingProvider.defaultModelId })
       : { defaultModelId: envModel }),
+    ...(envMaxOutputTokens === undefined
+      ? (existingProvider?.maxOutputTokens === undefined ? {} : { maxOutputTokens: existingProvider.maxOutputTokens })
+      : { maxOutputTokens: envMaxOutputTokens }),
+    ...(envTemperature === undefined
+      ? (existingProvider?.temperature === undefined ? {} : { temperature: existingProvider.temperature })
+      : { temperature: envTemperature }),
+    ...(envToolChoice === undefined
+      ? (existingProvider?.toolChoice === undefined ? {} : { toolChoice: existingProvider.toolChoice })
+      : { toolChoice: envToolChoice }),
     ...(envApiKey === undefined ? {} : { apiKey: envApiKey }),
     source: "env"
   };

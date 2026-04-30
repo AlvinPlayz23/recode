@@ -88,6 +88,20 @@ async function promptForProvider(
   const providerName = await askRequired(rl, "Provider name", existingProvider?.name ?? defaultProviderName(providerId));
   const baseUrl = await askRequired(rl, "Base URL", existingProvider?.baseUrl ?? defaultBaseUrl(providerKind));
   const apiKey = await askOptional(rl, "API key (leave blank if not required)", existingProvider?.apiKey);
+  const maxOutputTokens = await askOptionalPositiveInteger(
+    rl,
+    "Max output tokens (leave blank for provider default)",
+    existingProvider?.maxOutputTokens
+  );
+  const temperature = await askOptionalNumber(
+    rl,
+    "Temperature (leave blank for provider default)",
+    existingProvider?.temperature
+  );
+  const toolChoice = await askOptionalToolChoice(
+    rl,
+    existingProvider?.toolChoice
+  );
   const shouldFetchModels = providerKind === "anthropic"
     ? false
     : await promptBooleanSelect(rl, "How should models be added?", true, "Fetch from /models", "Enter model IDs manually");
@@ -150,6 +164,9 @@ async function promptForProvider(
       baseUrl,
       models,
       defaultModelId,
+      ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+      ...(temperature === undefined ? {} : { temperature }),
+      ...(toolChoice === undefined ? {} : { toolChoice }),
       ...(apiKey === undefined || apiKey === "" ? {} : { apiKey })
     },
     makeActive
@@ -244,6 +261,66 @@ async function askYesNo(
   defaultValue: boolean
 ): Promise<boolean> {
   return await promptBooleanSelect(rl, label, defaultValue);
+}
+
+async function askOptionalPositiveInteger(
+  rl: Interface,
+  label: string,
+  defaultValue?: number
+): Promise<number | undefined> {
+  while (true) {
+    const answer = await askOptional(rl, label, defaultValue?.toString());
+    if (answer === undefined || answer.trim() === "") {
+      return undefined;
+    }
+
+    const parsed = Number.parseInt(answer, 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+
+    console.log(`${label} must be a positive integer.`);
+  }
+}
+
+async function askOptionalNumber(
+  rl: Interface,
+  label: string,
+  defaultValue?: number
+): Promise<number | undefined> {
+  while (true) {
+    const answer = await askOptional(rl, label, defaultValue?.toString());
+    if (answer === undefined || answer.trim() === "") {
+      return undefined;
+    }
+
+    const parsed = Number.parseFloat(answer);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+
+    console.log(`${label} must be a number.`);
+  }
+}
+
+async function askOptionalToolChoice(
+  rl: Interface,
+  defaultValue?: "auto" | "required"
+): Promise<"auto" | "required" | undefined> {
+  const defaultOptionValue = "__default__" as const;
+  const promptDefault = defaultValue ?? defaultOptionValue;
+  const selection = await promptSelect<"auto" | "required" | typeof defaultOptionValue>(
+    rl,
+    "Preferred tool choice mode",
+    [
+      { label: "Provider default", value: defaultOptionValue, hint: "Do not force a tool-choice mode" },
+      { label: "Auto", value: "auto", hint: "Let the model decide when to call tools" },
+      { label: "Required", value: "required", hint: "Prefer tool-calling when tools are available" }
+    ],
+    promptDefault
+  );
+
+  return selection === defaultOptionValue ? undefined : selection;
 }
 
 function parseManualModels(value: string | undefined): readonly ConfiguredModel[] {

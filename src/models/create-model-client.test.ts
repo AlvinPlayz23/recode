@@ -20,11 +20,17 @@ describe("createLanguageModel", () => {
       approvalMode: "approval",
       approvalAllowlist: [],
       apiKey: "sk-test",
-      baseUrl: "https://api.openai.com/v1"
+      baseUrl: "https://api.openai.com/v1",
+      maxOutputTokens: 2048,
+      temperature: 0.2,
+      toolChoice: "required"
     });
 
     expect(model.api).toBe("openai-responses");
     expect(model.modelId).toBe("gpt-4.1");
+    expect(model.maxOutputTokens).toBe(2048);
+    expect(model.temperature).toBe(0.2);
+    expect(model.toolChoice).toBe("required");
   });
 
   it("maps openai-chat to the chat completions adapter", () => {

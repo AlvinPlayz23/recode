@@ -6,6 +6,7 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import type { StepStats, StepTokenUsage } from "../agent/step-stats.ts";
 import type { RuntimeConfig } from "../runtime/runtime-config.ts";
 import { isRecord } from "../shared/is-record.ts";
 import type { AssistantMessage, ConversationMessage, ToolCall, ToolResultMessage, UserMessage } from "../messages/message.ts";
@@ -359,6 +360,7 @@ function parseAssistantMessage(value: Record<string, unknown>): AssistantMessage
   const toolCalls = Array.isArray(toolCallsValue)
     ? toolCallsValue.map(parseToolCall).filter((item) => item !== undefined)
     : [];
+  const stepStats = parseStepStats(value["stepStats"]);
 
   if (content === undefined) {
     return undefined;
@@ -367,7 +369,8 @@ function parseAssistantMessage(value: Record<string, unknown>): AssistantMessage
   return {
     role: "assistant",
     content,
-    toolCalls
+    toolCalls,
+    ...(stepStats === undefined ? {} : { stepStats })
   };
 }
 
@@ -457,9 +460,74 @@ function summarizeText(value: string, maxLength: number): string {
     : `${normalized.slice(0, maxLength - 1)}…`;
 }
 
+function parseStepStats(value: unknown): StepStats | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const finishReason = readOptionalString(value, "finishReason");
+  const durationMs = typeof value["durationMs"] === "number" && Number.isFinite(value["durationMs"])
+    ? Math.max(0, Math.trunc(value["durationMs"]))
+    : undefined;
+  const toolCallCount = typeof value["toolCallCount"] === "number" && Number.isFinite(value["toolCallCount"])
+    ? Math.max(0, Math.trunc(value["toolCallCount"]))
+    : undefined;
+  const costUsd = typeof value["costUsd"] === "number" && Number.isFinite(value["costUsd"])
+    ? value["costUsd"]
+    : undefined;
+  const tokenUsage = parseStepTokenUsage(value["tokenUsage"]);
+
+  if (finishReason === undefined || durationMs === undefined || toolCallCount === undefined) {
+    return undefined;
+  }
+
+  return {
+    finishReason,
+    durationMs,
+    toolCallCount,
+    ...(costUsd === undefined ? {} : { costUsd }),
+    ...(tokenUsage === undefined ? {} : { tokenUsage })
+  };
+}
+
+function parseStepTokenUsage(value: unknown): StepTokenUsage | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const input = readRequiredFiniteNumber(value, "input");
+  const output = readRequiredFiniteNumber(value, "output");
+  const reasoning = readRequiredFiniteNumber(value, "reasoning");
+  const cacheRead = readRequiredFiniteNumber(value, "cacheRead");
+  const cacheWrite = readRequiredFiniteNumber(value, "cacheWrite");
+
+  if (
+    input === undefined
+    || output === undefined
+    || reasoning === undefined
+    || cacheRead === undefined
+    || cacheWrite === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    input,
+    output,
+    reasoning,
+    cacheRead,
+    cacheWrite
+  };
+}
+
 function readOptionalString(record: Record<string, unknown>, key: string): string | undefined {
   const value = record[key];
   return typeof value === "string" && value.trim() !== "" ? value : undefined;
+}
+
+function readRequiredFiniteNumber(record: Record<string, unknown>, key: string): number | undefined {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function isMissingFileError(error: unknown): boolean {

@@ -17,7 +17,10 @@ describe("loadRuntimeConfig", () => {
         RECODE_PROVIDER: "openai",
         RECODE_API_KEY: "sk-test",
         RECODE_BASE_URL: "https://api.openai.com/v1",
-        RECODE_MODEL: "gpt-4"
+        RECODE_MODEL: "gpt-4",
+        RECODE_MAX_OUTPUT_TOKENS: "4096",
+        RECODE_TEMPERATURE: "0.3",
+        RECODE_TOOL_CHOICE: "required"
       },
       () => {
         const config = loadRuntimeConfig("/workspace");
@@ -28,6 +31,9 @@ describe("loadRuntimeConfig", () => {
         expect(config.apiKey).toBe("sk-test");
         expect(config.baseUrl).toBe("https://api.openai.com/v1");
         expect(config.model).toBe("gpt-4");
+        expect(config.maxOutputTokens).toBe(4096);
+        expect(config.temperature).toBe(0.3);
+        expect(config.toolChoice).toBe("required");
       }
     );
   });
@@ -43,7 +49,10 @@ describe("loadRuntimeConfig", () => {
           baseUrl: "https://openrouter.ai/api/v1",
           apiKey: "or-key",
           models: [{ id: "openai/gpt-4.1-mini" }],
-          defaultModelId: "openai/gpt-4.1-mini"
+          defaultModelId: "openai/gpt-4.1-mini",
+          maxOutputTokens: 1024,
+          temperature: 0.1,
+          toolChoice: "auto"
         }
       ]
     });
@@ -58,6 +67,9 @@ describe("loadRuntimeConfig", () => {
       expect(config.apiKey).toBe("or-key");
       expect(config.model).toBe("openai/gpt-4.1-mini");
       expect(config.providers).toHaveLength(1);
+      expect(config.maxOutputTokens).toBe(1024);
+      expect(config.temperature).toBe(0.1);
+      expect(config.toolChoice).toBe("auto");
     });
   });
 
@@ -134,6 +146,9 @@ interface EnvOverrides {
   readonly RECODE_API_KEY?: string;
   readonly RECODE_BASE_URL?: string;
   readonly RECODE_MODEL?: string;
+  readonly RECODE_MAX_OUTPUT_TOKENS?: string;
+  readonly RECODE_TEMPERATURE?: string;
+  readonly RECODE_TOOL_CHOICE?: string;
 }
 
 function withEnv(overrides: EnvOverrides, fn: () => void): void {
@@ -143,7 +158,10 @@ function withEnv(overrides: EnvOverrides, fn: () => void): void {
     "RECODE_PROVIDER",
     "RECODE_API_KEY",
     "RECODE_BASE_URL",
-    "RECODE_MODEL"
+    "RECODE_MODEL",
+    "RECODE_MAX_OUTPUT_TOKENS",
+    "RECODE_TEMPERATURE",
+    "RECODE_TOOL_CHOICE"
   ] as const;
   const originals = new Map<string, string | undefined>();
 

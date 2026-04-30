@@ -8,6 +8,7 @@ import { joinUrl, readErrorMessage } from "../http.ts";
 import { parseProviderToolArguments } from "../json.ts";
 import { iterateSseMessages } from "../sse.ts";
 import type { AiModel, AiStreamPart } from "../types.ts";
+import { createEmptyStepTokenUsage, type StepTokenUsage } from "../../agent/step-stats.ts";
 
 interface PendingAnthropicToolUse {
   readonly index: number;
@@ -34,7 +35,7 @@ export async function* streamAnthropicMessages(
         "x-api-key": model.apiKey,
         "anthropic-version": "2023-06-01"
       },
-      body: JSON.stringify(buildAnthropicRequestBody(model.modelId, systemPrompt, messages, tools)),
+      body: JSON.stringify(buildAnthropicRequestBody(model, systemPrompt, messages, tools)),
       ...(abortSignal === undefined ? {} : { signal: abortSignal })
     });
 
@@ -47,6 +48,12 @@ export async function* streamAnthropicMessages(
     }
 
     const pendingToolUses = new Map<number, PendingAnthropicToolUse>();
+    let finishReason: string | undefined;
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let cacheReadTokens = 0;
+    let cacheWriteTokens = 0;
+    let hasUsage = false;
 
     for await (const sse of iterateSseMessages(response.body, abortSignal)) {
       if (sse.data === "[DONE]") {
@@ -104,6 +111,30 @@ export async function* streamAnthropicMessages(
           }
           break;
         }
+        case "message_start": {
+          const message = readOptionalRecord(event, "message");
+          const usage = message === undefined ? undefined : readOptionalRecord(message, "usage");
+          if (usage !== undefined) {
+            inputTokens += readOptionalNumber(usage, "input_tokens") ?? 0;
+            cacheReadTokens += readOptionalNumber(usage, "cache_read_input_tokens") ?? 0;
+            cacheWriteTokens += readOptionalNumber(usage, "cache_creation_input_tokens") ?? 0;
+            hasUsage = true;
+          }
+          break;
+        }
+        case "message_delta": {
+          const delta = readOptionalRecord(event, "delta");
+          const usage = readOptionalRecord(event, "usage");
+          const nextFinishReason = delta === undefined ? undefined : readOptionalString(delta, "stop_reason");
+          if (nextFinishReason !== undefined && nextFinishReason !== "") {
+            finishReason = nextFinishReason;
+          }
+          if (usage !== undefined) {
+            outputTokens += readOptionalNumber(usage, "output_tokens") ?? 0;
+            hasUsage = true;
+          }
+          break;
+        }
         case "error": {
           const errorRecord = readOptionalRecord(event, "error");
           if (errorRecord !== undefined) {
@@ -119,7 +150,23 @@ export async function* streamAnthropicMessages(
       return;
     }
 
-    yield { type: "finish-step" };
+    yield {
+      type: "finish-step",
+      info: {
+        ...(finishReason === undefined ? {} : { finishReason }),
+        ...(hasUsage
+          ? {
+              tokenUsage: {
+                ...createEmptyStepTokenUsage(),
+                input: inputTokens,
+                output: outputTokens,
+                cacheRead: cacheReadTokens,
+                cacheWrite: cacheWriteTokens
+              } as StepTokenUsage
+            }
+          : {})
+      }
+    };
     yield { type: "finish" };
   } catch (error) {
     if (abortSignal?.aborted ?? false) {
@@ -132,17 +179,19 @@ export async function* streamAnthropicMessages(
 }
 
 function buildAnthropicRequestBody(
-  modelId: string,
+  model: AiModel,
   systemPrompt: string,
   messages: readonly ConversationMessage[],
   tools: readonly ToolDefinition[]
 ): Record<string, unknown> {
   return {
-    model: modelId,
-    max_tokens: 4096,
+    model: model.modelId,
+    max_tokens: model.maxOutputTokens ?? 4096,
     ...(systemPrompt.trim() === "" ? {} : { system: systemPrompt }),
     messages: messagesToAnthropicMessages(messages),
     ...(tools.length === 0 ? {} : { tools: toolsToAnthropicTools(tools) }),
+    ...(model.temperature === undefined ? {} : { temperature: model.temperature }),
+    ...(model.toolChoice === undefined ? {} : { tool_choice: { type: model.toolChoice === "required" ? "any" : "auto" } }),
     stream: true
   };
 }
@@ -265,6 +314,11 @@ function readString(record: Record<string, unknown>, key: string): string {
 function readOptionalString(record: Record<string, unknown>, key: string): string | undefined {
   const value = record[key];
   return typeof value === "string" ? value : undefined;
+}
+
+function readOptionalNumber(record: Record<string, unknown>, key: string): number | undefined {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function readNumber(record: Record<string, unknown>, key: string): number {

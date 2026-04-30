@@ -20,6 +20,9 @@ export function createLanguageModel(config: RuntimeConfig): AiModel {
     modelId: config.model,
     apiKey: config.apiKey ?? "",
     ...(config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl }),
+    ...(config.maxOutputTokens === undefined ? {} : { maxOutputTokens: config.maxOutputTokens }),
+    ...(config.temperature === undefined ? {} : { temperature: config.temperature }),
+    ...(config.toolChoice === undefined ? {} : { toolChoice: config.toolChoice }),
     api: resolveApiKind(config.provider)
   };
 }

@@ -6,12 +6,15 @@
 
 import type { AiModel } from "../ai/types.ts";
 import { streamAssistantResponse } from "../ai/stream-assistant-response.ts";
-import { ModelResponseError, OperationAbortedError } from "../errors/recode-error.ts";
+import { ModelResponseError, OperationAbortedError, DoomLoopDetectedError } from "../errors/recode-error.ts";
 import type { ConversationMessage, ToolCall, ToolResultMessage } from "../messages/message.ts";
 import { formatQuestionAnswerSummary, parseQuestionToolResult } from "../tools/ask-user-question-tool.ts";
 import { executeToolCall } from "../tools/execute-tool-call.ts";
 import type { ToolExecutionContext } from "../tools/tool.ts";
 import { ToolRegistry } from "../tools/tool-registry.ts";
+import type { StepStats } from "./step-stats.ts";
+
+const DOOM_LOOP_TURN_LIMIT = 3;
 
 /**
  * Tool call observer.
@@ -32,6 +35,13 @@ export interface ToolResultObserver {
 }
 
 /**
+ * Step completion observer.
+ */
+export interface StepObserver {
+  (step: StepStats): void;
+}
+
+/**
  * Agent execution options.
  */
 export interface AgentRunOptions {
@@ -45,6 +55,7 @@ export interface AgentRunOptions {
   readonly onToolCall?: ToolCallObserver;
   readonly onTextDelta?: TextDeltaObserver;
   readonly onToolResult?: ToolResultObserver;
+  readonly onStepComplete?: StepObserver;
 }
 
 /**
@@ -54,6 +65,7 @@ export interface AgentRunResult {
   readonly finalText: string;
   readonly transcript: readonly ConversationMessage[];
   readonly iterations: number;
+  readonly steps: readonly StepStats[];
 }
 
 /**
@@ -73,8 +85,12 @@ export async function runAgentLoop(options: AgentRunOptions): Promise<AgentRunRe
   ];
 
   let iterations = 0;
+  const steps: StepStats[] = [];
+  let previousToolSignatureBatch: string | undefined;
+  let repeatedToolBatchCount = 0;
 
   while (true) {
+    const turnStartedAt = Date.now();
     const stream = streamAssistantResponse({
       model: options.languageModel,
       systemPrompt: options.systemPrompt,
@@ -85,6 +101,9 @@ export async function runAgentLoop(options: AgentRunOptions): Promise<AgentRunRe
 
     let accumulatedText = "";
     const collectedToolCalls: Array<{ toolCallId: string; toolName: string; input: unknown }> = [];
+    let finishReason: string | undefined;
+    let tokenUsage: StepStats["tokenUsage"] | undefined;
+    let costUsd: number | undefined;
 
     for await (const part of stream.fullStream) {
       switch (part.type) {
@@ -111,6 +130,10 @@ export async function runAgentLoop(options: AgentRunOptions): Promise<AgentRunRe
           break;
         }
         case "finish-step":
+          finishReason = part.info?.finishReason ?? finishReason;
+          tokenUsage = part.info?.tokenUsage ?? tokenUsage;
+          costUsd = part.info?.costUsd ?? costUsd;
+          break;
         case "finish":
           break;
       }
@@ -127,13 +150,24 @@ export async function runAgentLoop(options: AgentRunOptions): Promise<AgentRunRe
       })
     );
 
+    const stepStats: StepStats = {
+      finishReason: finishReason ?? inferFinishReason(toolCallsFromSdk.length),
+      durationMs: Math.max(0, Date.now() - turnStartedAt),
+      toolCallCount: toolCallsFromSdk.length,
+      ...(costUsd === undefined ? {} : { costUsd }),
+      ...(tokenUsage === undefined ? {} : { tokenUsage })
+    };
+
     const assistantMessage: ConversationMessage = {
       role: "assistant",
       content: accumulatedText,
-      toolCalls: toolCallsFromSdk
+      toolCalls: toolCallsFromSdk,
+      stepStats
     };
 
     messages.push(assistantMessage);
+    steps.push(stepStats);
+    options.onStepComplete?.(stepStats);
 
     iterations += 1;
 
@@ -141,8 +175,23 @@ export async function runAgentLoop(options: AgentRunOptions): Promise<AgentRunRe
       return {
         finalText: accumulatedText,
         transcript: [...messages],
-        iterations
+        iterations,
+        steps
       };
+    }
+
+    const currentToolSignatureBatch = buildToolSignatureBatch(toolCallsFromSdk);
+    if (currentToolSignatureBatch === previousToolSignatureBatch) {
+      repeatedToolBatchCount += 1;
+    } else {
+      previousToolSignatureBatch = currentToolSignatureBatch;
+      repeatedToolBatchCount = 1;
+    }
+
+    if (repeatedToolBatchCount >= DOOM_LOOP_TURN_LIMIT) {
+      throw new DoomLoopDetectedError(
+        `Detected a repeated tool-call loop after ${DOOM_LOOP_TURN_LIMIT} identical turns: ${describeToolBatch(toolCallsFromSdk)}`
+      );
     }
 
     for (const toolCall of toolCallsFromSdk) {
@@ -159,6 +208,22 @@ export async function runAgentLoop(options: AgentRunOptions): Promise<AgentRunRe
       }
     }
   }
+}
+
+function inferFinishReason(toolCallCount: number): string {
+  return toolCallCount > 0 ? "tool_calls" : "stop";
+}
+
+function buildToolSignatureBatch(toolCalls: readonly ToolCall[]): string {
+  return toolCalls
+    .map((toolCall) => `${toolCall.name}:${toolCall.argumentsJson}`)
+    .join("\n");
+}
+
+function describeToolBatch(toolCalls: readonly ToolCall[]): string {
+  return toolCalls
+    .map((toolCall) => toolCall.name)
+    .join(", ");
 }
 
 function buildSyntheticUserMessageFromToolResult(

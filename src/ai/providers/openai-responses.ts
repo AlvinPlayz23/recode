@@ -8,12 +8,16 @@ import { joinUrl, readErrorMessage } from "../http.ts";
 import { parseProviderToolArguments } from "../json.ts";
 import { iterateSseMessages } from "../sse.ts";
 import type { AiModel, AiStreamPart } from "../types.ts";
+import { createEmptyStepTokenUsage, type StepTokenUsage } from "../../agent/step-stats.ts";
 
 interface ResponsesRequestBody {
   readonly model: string;
   readonly instructions?: string;
   readonly input: readonly unknown[];
   readonly tools?: readonly unknown[];
+  readonly max_output_tokens?: number;
+  readonly temperature?: number;
+  readonly tool_choice?: "auto" | "required";
   readonly stream: true;
   readonly store: false;
 }
@@ -42,7 +46,7 @@ export async function* streamOpenAiResponses(
         "content-type": "application/json",
         authorization: `Bearer ${model.apiKey}`
       },
-      body: JSON.stringify(buildResponsesRequestBody(model.modelId, systemPrompt, messages, tools)),
+      body: JSON.stringify(buildResponsesRequestBody(model, systemPrompt, messages, tools)),
       ...(abortSignal === undefined ? {} : { signal: abortSignal })
     });
 
@@ -55,6 +59,7 @@ export async function* streamOpenAiResponses(
     }
 
     let pendingFunctionCall: PendingFunctionCall | undefined;
+    let finishInfo: { finishReason?: string; costUsd?: number; tokenUsage?: StepTokenUsage } | undefined;
 
     for await (const sse of iterateSseMessages(response.body, abortSignal)) {
       if (sse.data === "[DONE]") {
@@ -134,6 +139,23 @@ export async function* streamOpenAiResponses(
           }
           throw new Error("OpenAI Responses API reported a failure.");
         }
+        case "response.completed": {
+          const responseRecord = readOptionalRecord(event, "response");
+          if (responseRecord !== undefined) {
+            finishInfo = readResponsesFinishInfo(responseRecord);
+          }
+          break;
+        }
+        case "response.incomplete": {
+          const responseRecord = readOptionalRecord(event, "response");
+          if (responseRecord !== undefined) {
+            finishInfo = {
+              ...readResponsesFinishInfo(responseRecord),
+              finishReason: "max_output_tokens"
+            };
+          }
+          break;
+        }
         case "error":
           throw new Error(readString(event, "message"));
       }
@@ -144,7 +166,7 @@ export async function* streamOpenAiResponses(
       return;
     }
 
-    yield { type: "finish-step" };
+    yield { type: "finish-step", ...(finishInfo === undefined ? {} : { info: finishInfo }) };
     yield { type: "finish" };
   } catch (error) {
     if (abortSignal?.aborted ?? false) {
@@ -157,16 +179,19 @@ export async function* streamOpenAiResponses(
 }
 
 function buildResponsesRequestBody(
-  modelId: string,
+  model: AiModel,
   systemPrompt: string,
   messages: readonly ConversationMessage[],
   tools: readonly ToolDefinition[]
 ): ResponsesRequestBody {
   return {
-    model: modelId,
+    model: model.modelId,
     ...(systemPrompt.trim() === "" ? {} : { instructions: systemPrompt }),
     input: messagesToResponsesInput(messages),
     ...(tools.length === 0 ? {} : { tools: toolsToResponsesTools(tools) }),
+    ...(model.maxOutputTokens === undefined ? {} : { max_output_tokens: model.maxOutputTokens }),
+    ...(model.temperature === undefined ? {} : { temperature: model.temperature }),
+    ...(model.toolChoice === undefined ? {} : { tool_choice: model.toolChoice }),
     stream: true,
     store: false
   };
@@ -259,4 +284,40 @@ function readString(record: Record<string, unknown>, key: string): string {
 function readOptionalString(record: Record<string, unknown>, key: string): string | undefined {
   const value = record[key];
   return typeof value === "string" ? value : undefined;
+}
+
+function readResponsesFinishInfo(response: Record<string, unknown>): {
+  finishReason?: string;
+  costUsd?: number;
+  tokenUsage?: StepTokenUsage;
+} {
+  const usage = readOptionalRecord(response, "usage");
+  const tokenUsage = usage === undefined ? undefined : {
+    ...createEmptyStepTokenUsage(),
+    input: readOptionalNumber(usage, "input_tokens") ?? 0,
+    output: readOptionalNumber(usage, "output_tokens") ?? 0,
+    reasoning: readOptionalNumber(usage, "reasoning_tokens") ?? 0,
+    cacheRead: readOptionalNumber(usage, "input_tokens_details.cached_tokens") ?? 0,
+    cacheWrite: 0
+  };
+
+  const status = readOptionalString(response, "status");
+  return {
+    ...(status === undefined ? {} : { finishReason: status }),
+    ...(tokenUsage === undefined ? {} : { tokenUsage })
+  };
+}
+
+function readOptionalNumber(record: Record<string, unknown>, key: string): number | undefined {
+  if (key.includes(".")) {
+    const [head, ...tail] = key.split(".");
+    const next = head === undefined ? undefined : record[head];
+    if (tail.length === 0 || next === undefined || next === null || typeof next !== "object" || Array.isArray(next)) {
+      return undefined;
+    }
+    return readOptionalNumber(next as Record<string, unknown>, tail.join("."));
+  }
+
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }

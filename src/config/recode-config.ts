@@ -38,6 +38,9 @@ export interface ConfiguredProvider {
   readonly apiKey?: string;
   readonly models: readonly ConfiguredModel[];
   readonly defaultModelId?: string;
+  readonly maxOutputTokens?: number;
+  readonly temperature?: number;
+  readonly toolChoice?: "auto" | "required";
 }
 
 /**
@@ -331,6 +334,9 @@ function parseConfiguredProvider(value: unknown): ConfiguredProvider | undefined
 
   const apiKey = readOptionalNonEmptyString(value, "apiKey");
   const defaultModelId = readOptionalNonEmptyString(value, "defaultModelId");
+  const maxOutputTokens = readOptionalPositiveInteger(value, "maxOutputTokens");
+  const temperature = readOptionalFiniteNumber(value, "temperature");
+  const toolChoice = readOptionalToolChoice(value, "toolChoice");
   const modelsValue = value["models"];
   const models = Array.isArray(modelsValue)
     ? modelsValue.map(parseConfiguredModel).filter((model) => model !== undefined)
@@ -343,7 +349,10 @@ function parseConfiguredProvider(value: unknown): ConfiguredProvider | undefined
     baseUrl,
     models,
     ...(apiKey === undefined ? {} : { apiKey }),
-    ...(defaultModelId === undefined ? {} : { defaultModelId })
+    ...(defaultModelId === undefined ? {} : { defaultModelId }),
+    ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+    ...(temperature === undefined ? {} : { temperature }),
+    ...(toolChoice === undefined ? {} : { toolChoice })
   };
 }
 
@@ -432,6 +441,26 @@ function readOptionalLayoutMode(record: Record<string, unknown>, key: string): L
 function readOptionalBoolean(record: Record<string, unknown>, key: string): boolean | undefined {
   const value = record[key];
   return typeof value === "boolean" ? value : undefined;
+}
+
+function readOptionalPositiveInteger(record: Record<string, unknown>, key: string): number | undefined {
+  const value = record[key];
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+
+  const normalized = Math.trunc(value);
+  return normalized > 0 ? normalized : undefined;
+}
+
+function readOptionalFiniteNumber(record: Record<string, unknown>, key: string): number | undefined {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function readOptionalToolChoice(record: Record<string, unknown>, key: string): "auto" | "required" | undefined {
+  const value = readOptionalNonEmptyString(record, key);
+  return value === "auto" || value === "required" ? value : undefined;
 }
 
 function isMissingFileError(error: unknown): boolean {

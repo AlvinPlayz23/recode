@@ -15,7 +15,7 @@ type StreamPart =
   | { type: "tool-call"; toolCallId: string; toolName: string; input: Record<string, string> }
   | { type: "error"; error: unknown }
   | { type: "abort" }
-  | { type: "finish-step" }
+  | { type: "finish-step"; info?: { finishReason?: string } }
   | { type: "finish" };
 
 const fakeStreamAssistantResponse = mock<(options: Record<string, unknown>) => AiResponseStream>();
@@ -82,6 +82,7 @@ describe("runAgentLoop", () => {
     });
 
     expect(result.finalText).toBe("done");
+    expect(result.steps).toHaveLength(2);
     expect(capturedRequests).toHaveLength(2);
 
     const toolMessage = (capturedRequests[1]?.messages as Array<Record<string, unknown>>).find((m) => m.role === "tool");
@@ -184,6 +185,7 @@ describe("runAgentLoop", () => {
 
     expect(deltas).toEqual(["Hello", " ", "world"]);
     expect(result.finalText).toBe("Hello world");
+    expect(result.steps[0]?.finishReason).toBe("stop");
   });
 
   it("emits tool result notifications after tool execution", async () => {
@@ -253,6 +255,32 @@ describe("runAgentLoop", () => {
       toolRegistry: registry,
       toolContext: { workspaceRoot: "/tmp/recode", approvalMode: "yolo" }
     })).rejects.toThrow("Request aborted");
+  });
+
+  it("stops repeated identical tool-call turns as a doom loop", async () => {
+    fakeStreamAssistantResponse
+      .mockImplementationOnce(() => makeStreamResult([
+        toolCallPart("call_1", "echo_tool", { text: "loop" }),
+        ...finishParts()
+      ]))
+      .mockImplementationOnce(() => makeStreamResult([
+        toolCallPart("call_2", "echo_tool", { text: "loop" }),
+        ...finishParts()
+      ]))
+      .mockImplementationOnce(() => makeStreamResult([
+        toolCallPart("call_3", "echo_tool", { text: "loop" }),
+        ...finishParts()
+      ]));
+
+    const registry = new ToolRegistry([createEchoTool()]);
+
+    await expect(runAgentLoop({
+      systemPrompt: "test",
+      initialUserPrompt: "loop",
+      languageModel: {} as never,
+      toolRegistry: registry,
+      toolContext: { workspaceRoot: "/tmp/recode", approvalMode: "yolo" }
+    })).rejects.toThrow("Detected a repeated tool-call loop");
   });
 });
 

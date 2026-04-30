@@ -5,6 +5,7 @@
  */
 
 import type { ToolResultMetadata } from "../tools/tool.ts";
+import type { StepStats } from "../agent/step-stats.ts";
 
 /**
  * A tool call emitted by the model.
@@ -30,6 +31,7 @@ export interface AssistantMessage {
   readonly role: "assistant";
   readonly content: string;
   readonly toolCalls: readonly ToolCall[];
+  readonly stepStats?: StepStats;
 }
 
 /**

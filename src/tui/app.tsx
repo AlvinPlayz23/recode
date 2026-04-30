@@ -37,6 +37,7 @@ import { useKeyboard, usePaste, useRenderer, useSelectionHandler, useTerminalDim
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type { AiModel } from "../ai/types.ts";
 import type { AgentRunResult, TextDeltaObserver } from "../agent/run-agent-loop.ts";
+import { addStepTokenUsage } from "../agent/step-stats.ts";
 import { runAgentLoop } from "../agent/run-agent-loop.ts";
 import {
   loadRecodeConfigFile,
@@ -1484,6 +1485,7 @@ export function TuiApp(props: TuiAppProps) {
         sessionMode: sessionMode(),
         entriesCount: entries().length,
         transcriptCount: previousMessages().length,
+        transcript: previousMessages(),
         appendEntry(entry) {
           appendEntry(setEntries, entry);
         }
@@ -2422,6 +2424,7 @@ interface BuiltinCommandHandlerOptions {
   readonly sessionMode: SessionMode;
   readonly entriesCount: number;
   readonly transcriptCount: number;
+  readonly transcript: readonly ConversationMessage[];
   readonly appendEntry: (entry: UiEntry) => void;
 }
 
@@ -2467,7 +2470,8 @@ async function handleBuiltinCommand(options: BuiltinCommandHandlerOptions): Prom
           options.toolMarkerName,
           options.sessionMode,
           options.entriesCount,
-          options.transcriptCount
+          options.transcriptCount,
+          options.transcript
         )
       ));
       return;
@@ -2631,8 +2635,16 @@ function buildBuiltinStatusBody(
   toolMarkerName: ToolMarkerName,
   sessionMode: SessionMode,
   entriesCount: number,
-  transcriptCount: number
+  transcriptCount: number,
+  transcript: readonly ConversationMessage[]
 ): string {
+  const stepSummary = summarizeTranscriptSteps(transcript);
+  const providerControls = [
+    runtimeConfig.maxOutputTokens === undefined ? undefined : `max output ${runtimeConfig.maxOutputTokens}`,
+    runtimeConfig.temperature === undefined ? undefined : `temp ${runtimeConfig.temperature}`,
+    runtimeConfig.toolChoice === undefined ? undefined : `tool choice ${runtimeConfig.toolChoice}`
+  ].filter((value): value is string => value !== undefined);
+
   return [
     "## Current Status",
     "",
@@ -2641,13 +2653,64 @@ function buildBuiltinStatusBody(
     `- Model: ${runtimeConfig.model}`,
     `- Session mode: \`${getSessionModeLabel(sessionMode)}\``,
     `- Base URL: \`${runtimeConfig.baseUrl}\``,
+    `- Provider controls: ${providerControls.length === 0 ? "defaults" : providerControls.join(" · ")}`,
     `- Tool marker: ${getToolMarkerDefinition(toolMarkerName).label} (\`${getToolMarkerDefinition(toolMarkerName).symbol}\`)`,
     `- Approval mode: \`${runtimeConfig.approvalMode}\``,
     `- Always-allowed scopes: ${runtimeConfig.approvalAllowlist.length === 0 ? "none" : runtimeConfig.approvalAllowlist.map((scope) => `\`${scope}\``).join(", ")}`,
     `- Config path: \`${runtimeConfig.configPath}\``,
     `- Visible UI entries: ${entriesCount}`,
-    `- Conversation messages: ${transcriptCount}`
+    `- Conversation messages: ${transcriptCount}`,
+    `- Completed assistant steps: ${stepSummary.stepCount}`,
+    `- Total tool calls: ${stepSummary.totalToolCalls}`,
+    `- Total tokens: ${formatTotalTokens(stepSummary.totalTokens)}`,
+    `- Last finish reason: \`${stepSummary.lastFinishReason ?? "n/a"}\``,
+    `- Last step duration: ${stepSummary.lastDurationMs === undefined ? "n/a" : `${stepSummary.lastDurationMs} ms`}`
   ].join("\n");
+}
+
+function summarizeTranscriptSteps(transcript: readonly ConversationMessage[]): {
+  stepCount: number;
+  totalToolCalls: number;
+  totalTokens: number;
+  lastFinishReason?: string;
+  lastDurationMs?: number;
+} {
+  let stepCount = 0;
+  let totalToolCalls = 0;
+  let totalUsage = undefined;
+  let lastFinishReason: string | undefined;
+  let lastDurationMs: number | undefined;
+
+  for (const message of transcript) {
+    if (message.role !== "assistant") {
+      continue;
+    }
+
+    const stepStats = message.stepStats;
+    if (stepStats === undefined) {
+      continue;
+    }
+
+    stepCount += 1;
+    totalToolCalls += stepStats.toolCallCount;
+    totalUsage = addStepTokenUsage(totalUsage, stepStats.tokenUsage);
+    lastFinishReason = stepStats.finishReason;
+    lastDurationMs = stepStats.durationMs;
+  }
+
+  return {
+    stepCount,
+    totalToolCalls,
+    totalTokens: totalUsage === undefined
+      ? 0
+      : totalUsage.input + totalUsage.output + totalUsage.reasoning + totalUsage.cacheRead + totalUsage.cacheWrite,
+    ...(lastFinishReason === undefined ? {} : { lastFinishReason }),
+    ...(lastDurationMs === undefined ? {} : { lastDurationMs })
+  };
+}
+
+function formatTotalTokens(totalTokens: number): string {
+  return totalTokens.toLocaleString();
 }
 
 function buildBuiltinConfigBody(

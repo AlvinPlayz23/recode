@@ -30,6 +30,11 @@ export class ModelResponseError extends RecodeError {}
 export class OperationAbortedError extends RecodeError {}
 
 /**
+ * Raised when the model is stuck repeating the same tool calls.
+ */
+export class DoomLoopDetectedError extends RecodeError {}
+
+/**
  * Tool execution error.
  */
 export class ToolExecutionError extends RecodeError {}

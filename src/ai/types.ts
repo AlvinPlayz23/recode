@@ -5,6 +5,7 @@
 import type { RuntimeConfig } from "../runtime/runtime-config.ts";
 import type { ConversationMessage } from "../messages/message.ts";
 import type { ToolDefinition } from "../tools/tool.ts";
+import type { StepTokenUsage } from "../agent/step-stats.ts";
 
 /**
  * Supported low-level API modes in the internal AI layer.
@@ -20,6 +21,18 @@ export interface AiModel {
   readonly apiKey: string;
   readonly baseUrl?: string;
   readonly api: AiApiKind;
+  readonly maxOutputTokens?: number;
+  readonly temperature?: number;
+  readonly toolChoice?: "auto" | "required";
+}
+
+/**
+ * Provider-reported completion details for one streamed assistant step.
+ */
+export interface StreamCompletionInfo {
+  readonly finishReason?: string;
+  readonly costUsd?: number;
+  readonly tokenUsage?: StepTokenUsage;
 }
 
 /**
@@ -35,7 +48,7 @@ export type AiStreamPart =
     }
   | { readonly type: "error"; readonly error: unknown }
   | { readonly type: "abort" }
-  | { readonly type: "finish-step" }
+  | { readonly type: "finish-step"; readonly info?: StreamCompletionInfo }
   | { readonly type: "finish" };
 
 /**
