@@ -79,7 +79,6 @@ import type {
   ApprovalMode,
   EditToolResultMetadata,
   QuestionAnswer,
-  QuestionPrompt,
   QuestionToolDecision,
   QuestionToolRequest,
   ToolResultMetadata,
@@ -112,7 +111,6 @@ import {
 import {
   buildHistoryPickerItems,
   closeHistoryPicker,
-  formatRelativeTimestamp,
   openHistoryPicker,
   submitSelectedHistoryPickerItem,
   type HistoryPickerItem
@@ -126,11 +124,36 @@ import {
   type FileSuggestionItem,
   type FileSuggestionPanelState
 } from "./file-suggestions.ts";
+import { ApprovalModeOverlay } from "./approval-mode-overlay.tsx";
 import { Logo } from "./logo.tsx";
+import { CustomizeOverlay } from "./customize-overlay.tsx";
+import { HistoryPickerOverlay } from "./history-picker-overlay.tsx";
+import { LayoutPickerOverlay } from "./layout-picker-overlay.tsx";
 import { createMarkdownSyntaxStyle } from "./markdown-style.ts";
+import { ModelPickerOverlay } from "./model-picker-overlay.tsx";
+import { QuestionOverlay } from "./question-overlay.tsx";
+import {
+  buildHistoryPickerRenderKey,
+  getApprovalModePickerPopupRowBudget,
+  getApprovalModePickerVisibleCount,
+  getHistoryPickerPopupRowBudget,
+  getHistoryPickerScrollOffset,
+  getHistoryPickerVisibleCount,
+  getIndexedPickerChildId,
+  getLayoutPickerPopupRowBudget,
+  getLayoutPickerVisibleCount,
+  getModelPickerVisibleCount,
+  getThemePickerPopupRowBudget,
+  getThemePickerVisibleCount,
+  renderModelPickerLines,
+  syncScrollBoxSelection,
+  updateLinearSelectorWindow,
+  updateModelPickerWindow,
+  type ModelPickerRenderedLine
+} from "./selector-navigation.ts";
 import { filterToolsForSessionMode, getSessionModeLabel, type SessionMode } from "./session-mode.ts";
 import { getFooterTip } from "./startup-quotes.ts";
-import { getSpinnerPhaseGlyph, getSpinnerSegments, Spinner, type SpinnerPhase } from "./spinner.tsx";
+import { getSpinnerPhaseGlyph, getSpinnerSegments, type SpinnerPhase } from "./spinner.tsx";
 import {
   DEFAULT_LAYOUT_MODE,
   DEFAULT_TOOL_MARKER_NAME,
@@ -143,9 +166,24 @@ import {
   type ToolMarkerName,
   type LayoutMode,
   type ThemeColors,
-  type ThemeDefinition,
   type ThemeName
 } from "./theme.ts";
+import { ThemePickerOverlay } from "./theme-picker-overlay.tsx";
+import { ToastOverlay } from "./toast-overlay.tsx";
+import {
+  ToolApprovalOverlay,
+  type ApprovalDecisionOption
+} from "./tool-approval-overlay.tsx";
+import type {
+  ActiveApprovalRequest,
+  ActiveQuestionRequest,
+  ActiveToast,
+  ApprovalModePickerItem,
+  CustomizeRow,
+  LayoutPickerItem,
+  ModelPickerOption,
+  ThemePickerItem
+} from "./tui-app-types.ts";
 
 interface UiEntry {
   readonly id: string;
@@ -155,58 +193,9 @@ interface UiEntry {
   readonly metadata?: ToolResultMetadata;
 }
 
-interface ModelPickerOption {
-  readonly providerId: string;
-  readonly providerName: string;
-  readonly modelId: string;
-  readonly label: string;
-  readonly active: boolean;
-  readonly providerActive: boolean;
-  readonly custom: boolean;
-}
-
-interface ThemePickerItem extends ThemeDefinition {
-  readonly active: boolean;
-}
-
-interface CustomizeRowOption {
-  readonly label: string;
-  readonly value: string;
-}
-
-interface CustomizeRow {
-  readonly id: "tool-marker" | "theme";
-  readonly label: string;
-  readonly option: CustomizeRowOption;
-  readonly description: string;
-}
-
-interface ApprovalModePickerItem {
-  readonly mode: ApprovalMode;
-  readonly label: string;
-  readonly description: string;
-  readonly active: boolean;
-}
-
 interface PendingPaste {
   readonly token: string;
   readonly text: string;
-}
-
-interface ActiveApprovalRequest extends ToolApprovalRequest {
-  readonly selectedIndex: number;
-  readonly resolve: (decision: ToolApprovalDecision) => void;
-}
-
-interface ActiveQuestionRequest extends QuestionToolRequest {
-  readonly currentQuestionIndex: number;
-  readonly selectedOptionIndex: number;
-  readonly answers: Readonly<Record<string, QuestionAnswer>>;
-  readonly resolve: (decision: QuestionToolDecision) => void;
-}
-
-interface ActiveToast {
-  readonly message: string;
 }
 
 type PromptRenderable = InputRenderable | TextareaRenderable;
@@ -222,8 +211,6 @@ const PROMPT_TEXTAREA_KEY_BINDINGS: TextareaKeyBinding[] = [
     || binding.super === true
   )
 ];
-
-const HISTORY_PICKER_ITEM_ROW_HEIGHT = 4;
 
 export interface TuiAppProps {
   readonly systemPrompt: string;
@@ -359,6 +346,10 @@ export function TuiApp(props: TuiAppProps) {
   ));
   const modelPickerTotalOptionCount = createMemo(() => modelPickerOptions().length);
   const filteredHistoryPickerItems = createMemo(() => buildHistoryPickerItems(historyPickerItems(), historyPickerQuery()));
+  const historyPickerRenderKey = createMemo(() => buildHistoryPickerRenderKey(
+    filteredHistoryPickerItems(),
+    historyPickerQuery()
+  ));
   const historyPickerTotalOptionCount = createMemo(() => filteredHistoryPickerItems().length);
   const themePickerItems = createMemo(() => buildThemePickerItems(themeName(), themePickerQuery()));
   const themePickerTotalOptionCount = createMemo(() => themePickerItems().length);
@@ -830,29 +821,16 @@ export function TuiApp(props: TuiAppProps) {
   });
 
   createEffect(() => {
-    historyPickerQuery();
     const scrollBox = historyPickerScrollBox();
+    const windowStart = historyPickerWindowStart();
+
+    historyPickerQuery();
 
     if (!historyPickerOpen() || scrollBox === undefined) {
       return;
     }
 
-    if (historyPickerSelectedIndex() === 0 && historyPickerWindowStart() === 0) {
-      scrollBox.scrollTo(0);
-    }
-  });
-
-  createEffect(() => {
-    const items = filteredHistoryPickerItems();
-    if (items.length <= 0) {
-      return;
-    }
-
-    syncScrollBoxSelection(
-      historyPickerOpen(),
-      historyPickerScrollBox(),
-      getIndexedPickerChildId("history-picker-item", historyPickerSelectedIndex(), items.length)
-    );
+    scrollBox.scrollTo(getHistoryPickerScrollOffset(windowStart));
   });
 
   createEffect(() => {
@@ -1682,6 +1660,36 @@ export function TuiApp(props: TuiAppProps) {
     });
   };
 
+  const updateActiveQuestionCustomText = (value: string) => {
+    setActiveQuestionRequest((current) => {
+      if (current === undefined) {
+        return current;
+      }
+
+      const currentQuestion = current.questions[current.currentQuestionIndex];
+      if (currentQuestion === undefined) {
+        return current;
+      }
+
+      const currentAnswer = current.answers[currentQuestion.id] ?? {
+        questionId: currentQuestion.id,
+        selectedOptionLabels: [],
+        customText: ""
+      };
+
+      return {
+        ...current,
+        answers: {
+          ...current.answers,
+          [currentQuestion.id]: {
+            ...currentAnswer,
+            customText: value
+          }
+        }
+      };
+    });
+  };
+
   const submitActiveQuestionRequest = () => {
     const request = activeQuestionRequest();
     if (request === undefined) {
@@ -2187,6 +2195,12 @@ export function TuiApp(props: TuiAppProps) {
           <textarea
             ref={(value: TextareaRenderable) => {
               inputRef = value;
+              const visibleDraft = toVisibleDraft(draft());
+              if (value.plainText !== visibleDraft) {
+                setRenderableText(value, visibleDraft);
+              } else {
+                value.cursorOffset = visibleDraft.length;
+              }
               applyInputCursorStyle(value, t().brandShimmer);
               if (!modalOpen()) {
                 value.focus();
@@ -2290,793 +2304,132 @@ export function TuiApp(props: TuiAppProps) {
         </box>
       </Show>
 
-      <Show when={modelPickerOpen()}>
-        <box
-          flexDirection="column"
-          border
-          borderColor={t().brandShimmer}
-          marginLeft={3}
-          marginRight={3}
-          marginBottom={1}
-          paddingLeft={1}
-          paddingRight={1}
-          paddingTop={1}
-          paddingBottom={1}
-          flexShrink={0}
-        >
-          <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>Model Selector</text>
-          <text fg={t().hintText}>Type to filter. Use arrows to navigate. Press Enter to select. Press ESC to close.</text>
-          <box
-            flexDirection="row"
-            alignItems="center"
-            marginTop={1}
-            marginBottom={1}
-            border
-            borderColor={t().promptBorder}
-            paddingLeft={1}
-            paddingRight={1}
-          >
-            <text fg={t().brandShimmer}>⌕ </text>
-            <input
-              ref={(value) => {
-                modelPickerInputRef = value;
-                applyInputCursorStyle(value, t().brandShimmer);
-              }}
-              focused={modelPickerOpen()}
-              value={modelPickerQuery()}
-              flexGrow={1}
-              placeholder={modelPickerBusy() ? "Loading models..." : "Filter models or type a custom ID for the active provider..."}
-              onInput={(value) => {
-                setModelPickerQuery(value);
-                setModelPickerSelectedIndex(0);
-                setModelPickerWindowStart(0);
-              }}
-            />
-          </box>
-          <Show
-            when={!modelPickerBusy()}
-            fallback={<box marginTop={1}><Spinner verb="loading models" theme={t()} themeName={themeName()} /></box>}
-          >
-            <Show
-              when={modelPickerOptions().length > 0}
-              fallback={<text fg={t().hintText}>No models match the current filter. Type a custom ID for the active provider to add one.</text>}
-            >
-              {(() => {
-                const popupHeight = getModelPickerVisibleCount(terminal().height);
+      <ModelPickerOverlay
+        open={modelPickerOpen()}
+        busy={modelPickerBusy()}
+        query={modelPickerQuery()}
+        optionsCount={modelPickerTotalOptionCount()}
+        renderedLines={modelPickerRenderedLines()}
+        popupHeight={getModelPickerVisibleCount(terminal().height)}
+        theme={t()}
+        themeName={themeName()}
+        bindInputRef={(value) => {
+          modelPickerInputRef = value;
+          applyInputCursorStyle(value, t().brandShimmer);
+        }}
+        bindScrollBoxRef={(value) => {
+          setModelPickerScrollBox(value);
+        }}
+        onQueryInput={(value) => {
+          setModelPickerQuery(value);
+          setModelPickerSelectedIndex(0);
+          setModelPickerWindowStart(0);
+        }}
+      />
 
-                return (
-                  <scrollbox
-                    ref={(value: ScrollBoxRenderable) => {
-                      setModelPickerScrollBox(value);
-                    }}
-                    height={popupHeight}
-                    scrollY
-                  >
-                    <For each={modelPickerRenderedLines()}>
-                      {(line, index) => (
-                        <box id={getIndexedPickerChildId("model-picker-line", index(), modelPickerRenderedLines().length)}>
-                          <text
-                            fg={line.selected ? t().brandShimmer : line.kind === "group" ? t().text : t().assistantBody}
-                            attributes={line.kind === "group"
-                              ? TextAttributes.BOLD
-                              : line.selected
-                                ? TextAttributes.BOLD
-                                : TextAttributes.NONE}
-                          >
-                            {line.text}
-                          </text>
-                        </box>
-                      )}
-                    </For>
-                  </scrollbox>
-                );
-              })()}
-            </Show>
-          </Show>
-        </box>
-      </Show>
+      <HistoryPickerOverlay
+        open={historyPickerOpen()}
+        busy={historyPickerBusy()}
+        query={historyPickerQuery()}
+        items={filteredHistoryPickerItems()}
+        selectedIndex={historyPickerSelectedIndex()}
+        totalOptionCount={historyPickerTotalOptionCount()}
+        renderKey={historyPickerRenderKey()}
+        popupHeight={getHistoryPickerPopupRowBudget(terminal().height)}
+        terminalWidth={terminal().width}
+        theme={t()}
+        themeName={themeName()}
+        bindInputRef={(value) => {
+          historyPickerInputRef = value;
+          applyInputCursorStyle(value, t().brandShimmer);
+        }}
+        bindScrollBoxRef={(value) => {
+          setHistoryPickerScrollBox(value);
+        }}
+        onQueryInput={(value) => {
+          setHistoryPickerQuery(value);
+          setHistoryPickerSelectedIndex(0);
+          setHistoryPickerWindowStart(0);
+        }}
+      />
 
-      <Show when={historyPickerOpen()}>
-        <box
-          flexDirection="column"
-          border
-          borderColor={t().brandShimmer}
-          marginLeft={3}
-          marginRight={3}
-          marginBottom={1}
-          paddingLeft={1}
-          paddingRight={1}
-          paddingTop={1}
-          paddingBottom={1}
-          flexShrink={0}
-        >
-          <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>Conversation History</text>
-          <text fg={t().hintText}>Type to filter. Use arrows to navigate. Press Enter to restore. Press ESC to close.</text>
-          <box
-            flexDirection="row"
-            alignItems="center"
-            marginTop={1}
-            marginBottom={1}
-            border
-            borderColor={t().promptBorder}
-            paddingLeft={1}
-            paddingRight={1}
-          >
-            <text fg={t().brandShimmer}>⌕ </text>
-            <input
-              ref={(value) => {
-                historyPickerInputRef = value;
-                applyInputCursorStyle(value, t().brandShimmer);
-              }}
-              focused={historyPickerOpen()}
-              value={historyPickerQuery()}
-              flexGrow={1}
-              placeholder={historyPickerBusy() ? "Loading conversations..." : "Filter by title, preview, provider, or model..."}
-              onInput={(value) => {
-                setHistoryPickerQuery(value);
-                setHistoryPickerSelectedIndex(0);
-                setHistoryPickerWindowStart(0);
-              }}
-            />
-          </box>
-          <Show
-            when={!historyPickerBusy()}
-            fallback={<box marginTop={1}><Spinner verb="loading history" theme={t()} themeName={themeName()} /></box>}
-          >
-            <Show
-              when={filteredHistoryPickerItems().length > 0}
-              fallback={<text fg={t().hintText}>No saved conversations match the current filter.</text>}
-            >
-              {(() => {
-                const popupHeight = getHistoryPickerPopupRowBudget(terminal().height);
+      <ThemePickerOverlay
+        open={themePickerOpen()}
+        query={themePickerQuery()}
+        items={themePickerItems()}
+        selectedIndex={themePickerSelectedIndex()}
+        totalOptionCount={themePickerTotalOptionCount()}
+        popupHeight={getThemePickerPopupRowBudget(terminal().height)}
+        theme={t()}
+        bindInputRef={(value) => {
+          themePickerInputRef = value;
+          applyInputCursorStyle(value, t().brandShimmer);
+        }}
+        bindScrollBoxRef={(value) => {
+          setThemePickerScrollBox(value);
+        }}
+        onQueryInput={(value) => {
+          setThemePickerQuery(value);
+          setThemePickerSelectedIndex(0);
+          setThemePickerWindowStart(0);
+        }}
+      />
 
-                return (
-                  <scrollbox
-                    ref={(value: ScrollBoxRenderable) => {
-                      setHistoryPickerScrollBox(value);
-                    }}
-                    height={popupHeight}
-                    scrollY
-                  >
-                    <For each={filteredHistoryPickerItems()}>
-                      {(item, index) => {
-                        const actualIndex = () => index();
-                        const selected = () => actualIndex() === normalizeBuiltinCommandSelectionIndex(
-                          historyPickerSelectedIndex(),
-                          historyPickerTotalOptionCount()
-                        );
+      <CustomizeOverlay
+        open={customizePickerOpen()}
+        rows={customizeRows()}
+        selectedRow={customizePickerSelectedRow()}
+        theme={t()}
+      />
 
-                        return (
-                          <box
-                            id={getIndexedPickerChildId("history-picker-item", actualIndex(), filteredHistoryPickerItems().length)}
-                            flexDirection="column"
-                            marginBottom={1}
-                            paddingLeft={1}
-                            paddingRight={1}
-                          >
-                            <text
-                              fg={selected() ? t().brandShimmer : t().text}
-                              attributes={selected() ? TextAttributes.BOLD : TextAttributes.NONE}
-                            >
-                              {`${selected() ? "›" : " "} ${item.title}${item.current ? " (current)" : ""}`}
-                            </text>
-                            <text fg={t().hintText} attributes={TextAttributes.DIM}>{`${item.providerName} · ${item.model} · ${formatRelativeTimestamp(item.updatedAt)}`}</text>
-                            <text fg={t().assistantBody}>{item.preview}</text>
-                          </box>
-                        );
-                      }}
-                    </For>
-                  </scrollbox>
-                );
-              })()}
-            </Show>
-          </Show>
-        </box>
-      </Show>
+      <ApprovalModeOverlay
+        open={approvalModePickerOpen()}
+        items={approvalModePickerItems()}
+        selectedIndex={approvalModePickerSelectedIndex()}
+        totalOptionCount={approvalModePickerTotalOptionCount()}
+        popupHeight={getApprovalModePickerPopupRowBudget(terminal().height)}
+        theme={t()}
+        bindScrollBoxRef={(value) => {
+          setApprovalModePickerScrollBox(value);
+        }}
+      />
 
-      <Show when={themePickerOpen()}>
-        <box
-          flexDirection="column"
-          border
-          borderColor={t().brandShimmer}
-          marginLeft={3}
-          marginRight={3}
-          marginBottom={1}
-          paddingLeft={1}
-          paddingRight={1}
-          paddingTop={1}
-          paddingBottom={1}
-          flexShrink={0}
-        >
-          <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>Theme Selector</text>
-          <text fg={t().hintText}>Type to filter. Use arrows to navigate. Press Enter to select. Press ESC to close.</text>
-          <box
-            flexDirection="row"
-            alignItems="center"
-            marginTop={1}
-            marginBottom={1}
-            border
-            borderColor={t().promptBorder}
-            paddingLeft={1}
-            paddingRight={1}
-          >
-            <text fg={t().brandShimmer}>⌕ </text>
-            <input
-              ref={(value) => {
-                themePickerInputRef = value;
-                applyInputCursorStyle(value, t().brandShimmer);
-              }}
-              focused={themePickerOpen()}
-              value={themePickerQuery()}
-              flexGrow={1}
-              placeholder="Filter themes..."
-              onInput={(value) => {
-                setThemePickerQuery(value);
-                setThemePickerSelectedIndex(0);
-                setThemePickerWindowStart(0);
-              }}
-            />
-          </box>
-          <Show
-            when={themePickerItems().length > 0}
-            fallback={<text fg={t().hintText}>No themes match the current filter.</text>}
-          >
-            {(() => {
-              const popupHeight = getThemePickerPopupRowBudget(terminal().height);
+      <LayoutPickerOverlay
+        open={layoutPickerOpen()}
+        items={layoutPickerItems()}
+        selectedIndex={layoutPickerSelectedIndex()}
+        totalOptionCount={layoutPickerTotalOptionCount()}
+        popupHeight={getLayoutPickerPopupRowBudget(terminal().height)}
+        theme={t()}
+        bindScrollBoxRef={(value) => {
+          setLayoutPickerScrollBox(value);
+        }}
+      />
 
-              return (
-                <scrollbox
-                  ref={(value: ScrollBoxRenderable) => {
-                    setThemePickerScrollBox(value);
-                  }}
-                  height={popupHeight}
-                  scrollY
-                >
-                  <For each={themePickerItems()}>
-                    {(item, index) => {
-                      const actualIndex = () => index();
-                      const selected = () => actualIndex() === normalizeBuiltinCommandSelectionIndex(
-                        themePickerSelectedIndex(),
-                        themePickerTotalOptionCount()
-                      );
+      <QuestionOverlay
+        request={activeQuestionRequest()}
+        contextWindowRequest={isContextWindowQuestionRequest(activeQuestionRequest())}
+        theme={t()}
+        bindInputRef={(value) => {
+          questionCustomInputRef = value;
+          applyInputCursorStyle(value, t().brandShimmer);
+        }}
+        onCustomTextInput={updateActiveQuestionCustomText}
+      />
 
-                      return (
-                        <box
-                          id={getIndexedPickerChildId("theme-picker-item", actualIndex(), themePickerItems().length)}
-                          flexDirection="column"
-                          marginBottom={1}
-                          paddingLeft={1}
-                          paddingRight={1}
-                        >
-                          <text
-                            fg={selected() ? t().brandShimmer : t().text}
-                            attributes={selected() ? TextAttributes.BOLD : TextAttributes.NONE}
-                          >
-                            {`${selected() ? "›" : " "} ${item.label}${item.active ? " (current)" : ""}`}
-                          </text>
-                          <text fg={t().hintText} attributes={TextAttributes.DIM}>{item.description}</text>
-                        </box>
-                      );
-                    }}
-                  </For>
-                </scrollbox>
-              );
-            })()}
-          </Show>
-        </box>
-      </Show>
+      <ToolApprovalOverlay
+        request={activeApprovalRequest()}
+        decisions={APPROVAL_DECISIONS}
+        theme={t()}
+        formatTitle={formatApprovalRequestTitle}
+        formatDescription={formatApprovalRequestDescription}
+      />
 
-      <Show when={customizePickerOpen()}>
-        <box
-          flexDirection="column"
-          border
-          borderColor={t().brandShimmer}
-          marginLeft={3}
-          marginRight={3}
-          marginBottom={1}
-          paddingLeft={1}
-          paddingRight={1}
-          paddingTop={1}
-          paddingBottom={1}
-          flexShrink={0}
-        >
-          <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>Customize</text>
-          <text fg={t().hintText}>Use ↑/↓ to choose a row. Use ←/→ or Space to cycle. Press Enter or ESC to close.</text>
-          <box flexDirection="column" marginTop={1}>
-            <For each={customizeRows()}>
-              {(row, index) => {
-                const selected = () => index() === normalizeBuiltinCommandSelectionIndex(
-                  customizePickerSelectedRow(),
-                  customizeRows().length
-                );
-
-                return (
-                  <box flexDirection="column" marginBottom={1} paddingLeft={1} paddingRight={1}>
-                    <text
-                      fg={selected() ? t().brandShimmer : t().text}
-                      attributes={selected() ? TextAttributes.BOLD : TextAttributes.NONE}
-                    >
-                      {`${selected() ? "› " : "  "}${row.label.padEnd(12, " ")} < ${row.option.value === ""
-                        ? row.option.label
-                        : `${row.option.label} ${row.option.value}`} >`}
-                    </text>
-                    <text fg={t().hintText} attributes={TextAttributes.DIM}>{row.description}</text>
-                  </box>
-                );
-              }}
-            </For>
-          </box>
-        </box>
-      </Show>
-
-      <Show when={approvalModePickerOpen()}>
-        <box
-          flexDirection="column"
-          border
-          borderColor={t().brandShimmer}
-          marginLeft={3}
-          marginRight={3}
-          marginBottom={1}
-          paddingLeft={1}
-          paddingRight={1}
-          paddingTop={1}
-          paddingBottom={1}
-          flexShrink={0}
-        >
-          <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>Approval Mode</text>
-          <text fg={t().hintText}>Use arrows to navigate. Press Enter to select. Press ESC to close.</text>
-          {(() => {
-            const popupHeight = getApprovalModePickerPopupRowBudget(terminal().height);
-
-            return (
-              <scrollbox
-                ref={(value: ScrollBoxRenderable) => {
-                  setApprovalModePickerScrollBox(value);
-                }}
-                height={popupHeight}
-                scrollY
-                marginTop={1}
-              >
-                <For each={approvalModePickerItems()}>
-                  {(item, index) => {
-                    const actualIndex = () => index();
-                    const selected = () => actualIndex() === normalizeBuiltinCommandSelectionIndex(
-                      approvalModePickerSelectedIndex(),
-                      approvalModePickerTotalOptionCount()
-                    );
-
-                    return (
-                      <box
-                        id={getIndexedPickerChildId("approval-mode-picker-item", actualIndex(), approvalModePickerItems().length)}
-                        flexDirection="column"
-                        marginBottom={1}
-                        paddingLeft={1}
-                        paddingRight={1}
-                      >
-                        <text
-                          fg={selected() ? t().brandShimmer : t().text}
-                          attributes={selected() ? TextAttributes.BOLD : TextAttributes.NONE}
-                        >
-                          {`${selected() ? "›" : " "} ${item.label}${item.active ? " (current)" : ""}`}
-                        </text>
-                        <text fg={t().hintText} attributes={TextAttributes.DIM}>{item.description}</text>
-                      </box>
-                    );
-                  }}
-                </For>
-              </scrollbox>
-            );
-          })()}
-        </box>
-      </Show>
-
-      <Show when={layoutPickerOpen()}>
-        <box
-          flexDirection="column"
-          border
-          borderColor={t().brandShimmer}
-          marginLeft={3}
-          marginRight={3}
-          marginBottom={1}
-          paddingLeft={1}
-          paddingRight={1}
-          paddingTop={1}
-          paddingBottom={1}
-          flexShrink={0}
-        >
-          <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>Layout &amp; Density</text>
-          <text fg={t().hintText}>Use arrows to navigate. Press Enter to toggle. Press ESC to close.</text>
-          {(() => {
-            const popupHeight = getLayoutPickerPopupRowBudget(terminal().height);
-
-            return (
-              <scrollbox
-                ref={(value: ScrollBoxRenderable) => {
-                  setLayoutPickerScrollBox(value);
-                }}
-                height={popupHeight}
-                scrollY
-                marginTop={1}
-              >
-                <For each={layoutPickerItems()}>
-                  {(item, index) => {
-                    const actualIndex = () => index();
-                    const selected = () => actualIndex() === normalizeBuiltinCommandSelectionIndex(
-                      layoutPickerSelectedIndex(),
-                      layoutPickerTotalOptionCount()
-                    );
-
-                    return (
-                      <box
-                        id={getIndexedPickerChildId("layout-picker-item", actualIndex(), layoutPickerItems().length)}
-                        flexDirection="column"
-                        marginBottom={1}
-                        paddingLeft={1}
-                        paddingRight={1}
-                      >
-                        <text
-                          fg={selected() ? t().brandShimmer : t().text}
-                          attributes={selected() ? TextAttributes.BOLD : TextAttributes.NONE}
-                        >
-                          {`${selected() ? "›" : " "} ${item.label}${item.active ? " (current)" : ""}`}
-                        </text>
-                        <text fg={t().hintText} attributes={TextAttributes.DIM}>{item.description}</text>
-                      </box>
-                    );
-                  }}
-                </For>
-              </scrollbox>
-            );
-          })()}
-        </box>
-      </Show>
-
-      <Show when={activeQuestionRequest() !== undefined}>
-        <Show
-          when={activeQuestionRequest() !== undefined && isContextWindowQuestionRequest(activeQuestionRequest())}
-          fallback={
-            <box
-              flexDirection="column"
-              border
-              borderColor={t().brandShimmer}
-              marginLeft={3}
-              marginRight={3}
-              marginBottom={1}
-              paddingLeft={1}
-              paddingRight={1}
-              paddingTop={1}
-              paddingBottom={1}
-              flexShrink={0}
-            >
-              <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>Questions</text>
-              <Show when={activeQuestionRequest()}>
-                {(request: () => ActiveQuestionRequest) => {
-                  const activeQuestion = () => request().questions[request().currentQuestionIndex];
-                  const activeAnswer = () => {
-                    const question = activeQuestion();
-                    return question === undefined
-                      ? undefined
-                      : request().answers[question.id];
-                  };
-
-                  return (
-                    <>
-                      <text fg={t().hintText}>
-                        {`Question ${request().currentQuestionIndex + 1} of ${request().questions.length} · ←/→ to switch · Space to select · Enter to submit · ESC to dismiss`}
-                      </text>
-                      <Show when={activeQuestion()}>
-                        {(question: () => QuestionPrompt) => (
-                          <>
-                            <text fg={t().text} attributes={TextAttributes.BOLD} marginTop={1}>{question().header}</text>
-                            <text fg={t().assistantBody}>{question().question}</text>
-                            <text fg={t().hintText} attributes={TextAttributes.DIM}>
-                              {question().multiSelect ? "Select any answers that apply." : "Select one answer."}
-                            </text>
-                            <box
-                              flexDirection="column"
-                              border
-                              borderColor={t().promptBorder}
-                              marginTop={1}
-                              paddingLeft={1}
-                              paddingRight={1}
-                            >
-                              <For each={question().options}>
-                                {(option, index) => {
-                                  const selected = () => index() === normalizeBuiltinCommandSelectionIndex(
-                                    request().selectedOptionIndex,
-                                    question().options.length
-                                  );
-                                  const chosen = () => activeAnswer()?.selectedOptionLabels.includes(option.label) ?? false;
-
-                                  return (
-                                    <box flexDirection="column" marginBottom={1}>
-                                      <text
-                                        fg={selected() ? t().brandShimmer : t().text}
-                                        attributes={selected() ? TextAttributes.BOLD : TextAttributes.NONE}
-                                      >
-                                        {`${selected() ? "›" : " "} ${chosen() ? "[x]" : "[ ]"} ${option.label}`}
-                                      </text>
-                                      <text fg={t().hintText} attributes={TextAttributes.DIM}>{option.description}</text>
-                                    </box>
-                                  );
-                                }}
-                              </For>
-                            </box>
-                            <Show when={question().allowCustomText}>
-                              <box
-                                flexDirection="row"
-                                alignItems="center"
-                                marginTop={1}
-                                border
-                                borderColor={t().promptBorder}
-                                paddingLeft={1}
-                                paddingRight={1}
-                              >
-                                <text fg={t().brandShimmer}>✎ </text>
-                                <input
-                                  ref={(value) => {
-                                    questionCustomInputRef = value;
-                                    applyInputCursorStyle(value, t().brandShimmer);
-                                  }}
-                                  focused={activeQuestionRequest() !== undefined}
-                                  value={activeAnswer()?.customText ?? ""}
-                                  flexGrow={1}
-                                  placeholder="Optional custom answer..."
-                                  onInput={(value) => {
-                                    setActiveQuestionRequest((current) => {
-                                      if (current === undefined) {
-                                        return current;
-                                      }
-
-                                      const currentQuestion = current.questions[current.currentQuestionIndex];
-                                      if (currentQuestion === undefined) {
-                                        return current;
-                                      }
-
-                                      const currentAnswer = current.answers[currentQuestion.id] ?? {
-                                        questionId: currentQuestion.id,
-                                        selectedOptionLabels: [],
-                                        customText: ""
-                                      };
-
-                                      return {
-                                        ...current,
-                                        answers: {
-                                          ...current.answers,
-                                          [currentQuestion.id]: {
-                                            ...currentAnswer,
-                                            customText: value
-                                          }
-                                        }
-                                      };
-                                    });
-                                  }}
-                                />
-                              </box>
-                            </Show>
-                          </>
-                        )}
-                      </Show>
-                    </>
-                  );
-                }}
-              </Show>
-            </box>
-          }
-        >
-          <box
-            flexDirection="column"
-            border
-            borderColor={t().warning}
-            marginLeft={5}
-            marginRight={5}
-            marginBottom={1}
-            paddingLeft={2}
-            paddingRight={2}
-            paddingTop={1}
-            paddingBottom={1}
-            flexShrink={0}
-          >
-            <Show when={activeQuestionRequest()}>
-              {(request: () => ActiveQuestionRequest) => {
-                const question = () => request().questions[0];
-                const answer = () => {
-                  const active = question();
-                  return active === undefined
-                    ? undefined
-                    : request().answers[active.id];
-                };
-
-                return (
-                  <>
-                    <box flexDirection="row" justifyContent="space-between" alignItems="center">
-                      <text fg={t().warning} attributes={TextAttributes.BOLD}>Model Context Window</text>
-                      <text fg={t().hintText} attributes={TextAttributes.DIM}>Enter saves · ESC falls back</text>
-                    </box>
-
-                    <box
-                      flexDirection="column"
-                      marginTop={1}
-                      marginBottom={1}
-                      border
-                      borderColor={t().promptBorder}
-                      paddingLeft={1}
-                      paddingRight={1}
-                      paddingTop={1}
-                      paddingBottom={1}
-                    >
-                      <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>Unknown model limit</text>
-                      <text fg={t().assistantBody}>{question()?.question ?? ""}</text>
-                      <text fg={t().hintText} attributes={TextAttributes.DIM}>
-                        Save the real number if you know it. Otherwise Recode can use a conservative session-only guardrail.
-                      </text>
-                    </box>
-
-                    <box flexDirection="row" alignItems="center" marginBottom={1}>
-                      <box
-                        width={14}
-                        flexShrink={0}
-                        border
-                        borderColor={t().warning}
-                        paddingLeft={1}
-                        paddingRight={1}
-                      >
-                        <text fg={t().warning} attributes={TextAttributes.BOLD}>Tokens</text>
-                      </box>
-                      <box
-                        flexDirection="row"
-                        alignItems="center"
-                        flexGrow={1}
-                        border
-                        borderColor={t().brandShimmer}
-                        paddingLeft={1}
-                        paddingRight={1}
-                      >
-                        <text fg={t().brandShimmer}># </text>
-                        <input
-                          ref={(value) => {
-                            questionCustomInputRef = value;
-                            applyInputCursorStyle(value, t().brandShimmer);
-                          }}
-                          focused={activeQuestionRequest() !== undefined}
-                          value={answer()?.customText ?? ""}
-                          flexGrow={1}
-                          placeholder="e.g. 128000"
-                          onInput={(value) => {
-                            setActiveQuestionRequest((current) => {
-                              if (current === undefined) {
-                                return current;
-                              }
-
-                              const currentQuestion = current.questions[current.currentQuestionIndex];
-                              if (currentQuestion === undefined) {
-                                return current;
-                              }
-
-                              const currentAnswer = current.answers[currentQuestion.id] ?? {
-                                questionId: currentQuestion.id,
-                                selectedOptionLabels: [],
-                                customText: ""
-                              };
-
-                              return {
-                                ...current,
-                                answers: {
-                                  ...current.answers,
-                                  [currentQuestion.id]: {
-                                    ...currentAnswer,
-                                    customText: value
-                                  }
-                                }
-                              };
-                            });
-                          }}
-                        />
-                      </box>
-                    </box>
-
-                    <box
-                      flexDirection="column"
-                      border
-                      borderColor={t().warning}
-                      paddingLeft={1}
-                      paddingRight={1}
-                      paddingTop={1}
-                      paddingBottom={1}
-                    >
-                      <text fg={t().warning} attributes={TextAttributes.BOLD}>200k Session Fallback</text>
-                      <text fg={t().assistantBody}>
-                        Leave the field empty and press Enter to continue with a temporary 200,000-token window for this session.
-                      </text>
-                      <text fg={t().hintText} attributes={TextAttributes.DIM}>
-                        This does not overwrite your saved model config.
-                      </text>
-                    </box>
-                  </>
-                );
-              }}
-            </Show>
-          </box>
-        </Show>
-      </Show>
-
-      <Show when={activeApprovalRequest() !== undefined}>
-        <box
-          flexDirection="column"
-          border
-          borderColor={t().brandShimmer}
-          marginLeft={3}
-          marginRight={3}
-          marginBottom={1}
-          paddingLeft={1}
-          paddingRight={1}
-          paddingTop={1}
-          paddingBottom={1}
-          flexShrink={0}
-        >
-          <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>Approve Tool Action</text>
-          <Show when={activeApprovalRequest()}>
-            {(request: () => ActiveApprovalRequest) => (
-              <>
-                <text fg={t().text}>{formatApprovalRequestTitle(request())}</text>
-                <text fg={t().hintText} attributes={TextAttributes.DIM}>
-                  {formatApprovalRequestDescription(request())}
-                </text>
-                <box
-                  flexDirection="column"
-                  border
-                  borderColor={t().promptBorder}
-                  marginTop={1}
-                  paddingLeft={1}
-                  paddingRight={1}
-                >
-                  <For each={APPROVAL_DECISIONS}>
-                    {(decision, index) => {
-                      const selected = () => index() === normalizeBuiltinCommandSelectionIndex(
-                        request().selectedIndex,
-                        APPROVAL_DECISIONS.length
-                      );
-
-                      return (
-                        <box flexDirection="column" marginBottom={1}>
-                          <text
-                            fg={selected() ? t().brandShimmer : t().text}
-                            attributes={selected() ? TextAttributes.BOLD : TextAttributes.NONE}
-                          >
-                            {`${selected() ? "›" : " "} ${decision.label}`}
-                          </text>
-                          <text fg={t().hintText} attributes={TextAttributes.DIM}>{decision.description}</text>
-                        </box>
-                      );
-                    }}
-                  </For>
-                </box>
-                <text fg={t().hintText} marginTop={1}>Press Enter to confirm or ESC to deny.</text>
-              </>
-            )}
-          </Show>
-        </box>
-      </Show>
-
-      <Show when={activeToast() !== undefined}>
-        <box
-          position="absolute"
-          right={3}
-          top={2}
-          maxWidth={Math.max(20, Math.min(32, terminal().width - 6))}
-          border
-          borderColor={t().success}
-          backgroundColor={t().userMessageBackground}
-          paddingLeft={1}
-          paddingRight={1}
-          paddingTop={1}
-          paddingBottom={1}
-        >
-          <text fg={t().success} attributes={TextAttributes.BOLD} wrapMode="word" width="100%">
-            {activeToast()!.message}
-          </text>
-        </box>
-      </Show>
+      <ToastOverlay
+        toast={activeToast()}
+        maxWidth={Math.max(20, Math.min(32, terminal().width - 6))}
+        theme={t()}
+      />
     </box>
   );
 }
@@ -3387,7 +2740,7 @@ async function submitSelectedThemePickerItem(options: SubmitThemePickerSelection
   }
 }
 
-const APPROVAL_DECISIONS = [
+const APPROVAL_DECISIONS: readonly ApprovalDecisionOption[] = [
   {
     decision: "allow-once",
     label: "Allow once",
@@ -3882,206 +3235,6 @@ function cycleCustomizeSetting(options: CycleCustomizeSettingOptions): void {
   persistSelectedTheme(options.configPath, nextTheme.name);
 }
 
-interface ModelPickerRenderedLine {
-  readonly kind: "group" | "option";
-  readonly text: string;
-  readonly selected: boolean;
-}
-
-interface WindowedItems<TItem> {
-  readonly items: readonly TItem[];
-  readonly startIndex: number;
-  readonly hiddenBeforeCount: number;
-  readonly hiddenAfterCount: number;
-}
-
-function renderModelPickerLines(
-  options: readonly ModelPickerOption[],
-  selectedIndex: number
-): readonly ModelPickerRenderedLine[] {
-  const lines: ModelPickerRenderedLine[] = [];
-  let cursor = 0;
-  let currentProviderId: string | undefined;
-
-  for (const option of options) {
-    if (option.providerId !== currentProviderId) {
-      currentProviderId = option.providerId;
-      lines.push({
-        kind: "group",
-        text: option.providerActive ? `${option.providerName} (active provider)` : option.providerName,
-        selected: false
-      });
-    }
-
-    const activeSuffix = option.active ? " (active)" : "";
-    const prefix = cursor === selectedIndex ? "›" : " ";
-    const body = option.custom
-      ? `Custom ID: ${option.modelId}`
-      : option.modelId;
-
-    lines.push({
-      kind: "option",
-      text: `${prefix} ${body}${activeSuffix}`,
-      selected: cursor === selectedIndex
-    });
-    cursor += 1;
-  }
-
-  return lines;
-}
-
-function findSelectedRenderedLineIndex(lines: readonly ModelPickerRenderedLine[]): number {
-  const selectedIndex = lines.findIndex((line) => line.selected);
-  return selectedIndex === -1 ? 0 : selectedIndex;
-}
-
-function getIndexedPickerChildId(prefix: string, index: number, totalCount: number): string {
-  const normalizedIndex = totalCount <= 0
-    ? 0
-    : normalizeBuiltinCommandSelectionIndex(index, totalCount);
-  return `${prefix}-${normalizedIndex}`;
-}
-
-function syncScrollBoxSelection(
-  open: boolean,
-  scrollBox: ScrollBoxRenderable | undefined,
-  childId: string
-): void {
-  if (!open || scrollBox === undefined) {
-    return;
-  }
-
-  scrollBox.scrollChildIntoView(childId);
-}
-
-function buildVisibleWindowFromStart<TItem>(
-  items: readonly TItem[],
-  startIndex: number,
-  maxVisibleItems: number
-): WindowedItems<TItem> {
-  const visibleCount = Math.max(1, Math.min(maxVisibleItems, items.length));
-  const maxStartIndex = Math.max(0, items.length - visibleCount);
-  const normalizedStartIndex = clampNumber(startIndex, 0, maxStartIndex);
-  const visibleItems = items.slice(normalizedStartIndex, normalizedStartIndex + visibleCount);
-
-  return {
-    items: visibleItems,
-    startIndex: normalizedStartIndex,
-    hiddenBeforeCount: normalizedStartIndex,
-    hiddenAfterCount: Math.max(0, items.length - (normalizedStartIndex + visibleItems.length))
-  };
-}
-
-function clampNumber(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
-}
-
-function updateLinearSelectorWindow(options: {
-  selectedIndex: number;
-  totalCount: number;
-  direction: -1 | 1;
-  visibleCount: number;
-  windowStart: number;
-  setSelectedIndex: (value: number) => void;
-  setWindowStart: (value: number) => void;
-}): void {
-  const nextSelectedIndex = moveBuiltinCommandSelectionIndex(
-    options.selectedIndex,
-    options.totalCount,
-    options.direction
-  );
-  options.setSelectedIndex(nextSelectedIndex);
-  options.setWindowStart(adjustWindowStart(
-    options.windowStart,
-    nextSelectedIndex,
-    options.visibleCount,
-    options.totalCount
-  ));
-}
-
-function updateModelPickerWindow(options: {
-  direction: -1 | 1;
-  options: readonly ModelPickerOption[];
-  selectedIndex: number;
-  totalCount: number;
-  visibleCount: number;
-  windowStart: number;
-  setSelectedIndex: (value: number) => void;
-  setWindowStart: (value: number) => void;
-}): void {
-  const nextSelectedIndex = moveBuiltinCommandSelectionIndex(
-    options.selectedIndex,
-    options.totalCount,
-    options.direction
-  );
-  const renderedLines = renderModelPickerLines(options.options, nextSelectedIndex);
-  const selectedLineIndex = findSelectedRenderedLineIndex(renderedLines);
-
-  options.setSelectedIndex(nextSelectedIndex);
-  options.setWindowStart(adjustWindowStart(
-    options.windowStart,
-    selectedLineIndex,
-    options.visibleCount,
-    renderedLines.length
-  ));
-}
-
-function adjustWindowStart(
-  currentStart: number,
-  selectedIndex: number,
-  visibleCount: number,
-  totalCount: number
-): number {
-  const normalizedVisibleCount = Math.max(1, visibleCount);
-  const maxStartIndex = Math.max(0, totalCount - normalizedVisibleCount);
-
-  if (selectedIndex < currentStart) {
-    return clampNumber(selectedIndex, 0, maxStartIndex);
-  }
-
-  if (selectedIndex >= currentStart + normalizedVisibleCount) {
-    return clampNumber(selectedIndex - normalizedVisibleCount + 1, 0, maxStartIndex);
-  }
-
-  return clampNumber(currentStart, 0, maxStartIndex);
-}
-
-function getModelPickerVisibleCount(terminalHeight: number): number {
-  return Math.max(8, Math.min(terminalHeight - 18, 16));
-}
-
-function getHistoryPickerPopupRowBudget(terminalHeight: number): number {
-  return Math.max(8, Math.min(terminalHeight - 18, 16));
-}
-
-function getHistoryPickerVisibleCount(terminalHeight: number): number {
-  return Math.max(1, Math.floor(getHistoryPickerPopupRowBudget(terminalHeight) / HISTORY_PICKER_ITEM_ROW_HEIGHT));
-}
-
-function getThemePickerPopupRowBudget(terminalHeight: number): number {
-  return Math.max(6, Math.min(terminalHeight - 18, 12));
-}
-
-function getThemePickerVisibleCount(terminalHeight: number): number {
-  return Math.max(1, Math.floor(getThemePickerPopupRowBudget(terminalHeight) / 3));
-}
-
-function getApprovalModePickerPopupRowBudget(terminalHeight: number): number {
-  return Math.max(5, Math.min(terminalHeight - 18, 10));
-}
-
-function getApprovalModePickerVisibleCount(terminalHeight: number): number {
-  return Math.max(1, Math.floor(getApprovalModePickerPopupRowBudget(terminalHeight) / 3));
-}
-
-function getLayoutPickerPopupRowBudget(terminalHeight: number): number {
-  return Math.max(5, Math.min(terminalHeight - 18, 12));
-}
-
-function getLayoutPickerVisibleCount(terminalHeight: number): number {
-  return Math.max(1, Math.floor(getLayoutPickerPopupRowBudget(terminalHeight) / 3));
-}
-
 function formatToolCallEntry(toolCall: ToolCall): string {
   const displayName = toToolDisplayName(toolCall.name);
   const summary = summarizeToolArguments(toolCall.name, toolCall.argumentsJson);
@@ -4535,13 +3688,6 @@ function truncateInlineText(value: string, maxLength: number): string {
 }
 
 // ── Layout Picker ──
-
-interface LayoutPickerItem {
-  readonly id: string;
-  readonly label: string;
-  readonly description: string;
-  readonly active: boolean;
-}
 
 function buildLayoutPickerItems(currentLayout: LayoutMode, toolsCollapsed: boolean): readonly LayoutPickerItem[] {
   return [

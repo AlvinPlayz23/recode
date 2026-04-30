@@ -66,6 +66,11 @@ recode -v, --version Show version
 | `/export` | Export the current conversation to HTML |
 | `/history` | Open the conversation history |
 | `/new` | Start a new conversation |
+| `/compact` | Compact older conversation history into a continuation summary |
+| `/plan` | Switch to read-only planning mode |
+| `/build` | Switch back to normal implementation mode |
+| `/layout` | Switch between compact and comfortable layout |
+| `/minimal` | Toggle minimal mode (hide header) |
 | `/exit` | Exit Recode |
 | `/quit` | Exit Recode |
 
@@ -139,6 +144,20 @@ It supports:
 - starting a fresh conversation via `/new`
 
 Conversations are stored as JSON files plus a global `index.json`.
+
+## TUI Refactor Status
+
+The main TUI screen still centers on [src/tui/app.tsx](./src/tui/app.tsx), but it has been actively reduced and split into smaller modules.
+
+- Current `app.tsx` size: `3497` lines
+- Refactor history and extraction map: [src/tui/REFACTOR-HISTORY.md](./src/tui/REFACTOR-HISTORY.md)
+- Recent extractions include session persistence, file suggestions, built-in command content, history helpers, shared selector math, and the major popup/overlay components
+
+The biggest remaining refactor seams are:
+- keyboard routing
+- prompt submission and agent orchestration
+- transcript rehydration and entry rendering
+- layout/composer measurement helpers
 
 ## Environment Variables
 
