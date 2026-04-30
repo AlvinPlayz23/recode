@@ -107,6 +107,48 @@ describe("loadRuntimeConfig", () => {
     );
   });
 
+  it("applies environment-only tuning overrides to provider metadata", () => {
+    const workspaceRoot = createWorkspaceWithConfig({
+      activeProviderId: "openrouter",
+      providers: [
+        {
+          id: "openrouter",
+          name: "OpenRouter",
+          kind: "openai-chat",
+          baseUrl: "https://openrouter.ai/api/v1",
+          apiKey: "or-key",
+          models: [{ id: "openai/gpt-4.1-mini" }],
+          defaultModelId: "openai/gpt-4.1-mini",
+          maxOutputTokens: 1024,
+          temperature: 0.1,
+          toolChoice: "auto"
+        }
+      ]
+    });
+
+    withEnv(
+      {
+        RECODE_CONFIG_PATH: ".recode/config.json",
+        RECODE_MAX_OUTPUT_TOKENS: "4096",
+        RECODE_TEMPERATURE: "0.3",
+        RECODE_TOOL_CHOICE: "required"
+      },
+      () => {
+        const config = loadRuntimeConfig(workspaceRoot);
+        const provider = config.providers[0];
+
+        expect(config.maxOutputTokens).toBe(4096);
+        expect(config.temperature).toBe(0.3);
+        expect(config.toolChoice).toBe("required");
+        expect(provider?.source).toBe("env");
+        expect(provider?.maxOutputTokens).toBe(4096);
+        expect(provider?.temperature).toBe(0.3);
+        expect(provider?.toolChoice).toBe("required");
+        expect(provider?.apiKey).toBe("or-key");
+      }
+    );
+  });
+
   it("allows missing API keys for endpoints that do not require them", () => {
     withEnv(
       {

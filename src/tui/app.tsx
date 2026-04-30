@@ -43,8 +43,6 @@ import {
   evaluateAutoCompaction,
   type ContextTokenEstimate
 } from "../agent/compact-conversation.ts";
-import type { AgentRunResult, TextDeltaObserver } from "../agent/run-agent-loop.ts";
-import { runAgentLoop } from "../agent/run-agent-loop.ts";
 import {
   loadRecodeConfigFile,
   saveRecodeConfigFile,
@@ -116,7 +114,6 @@ import {
   type HistoryPickerItem
 } from "./history-picker.ts";
 import {
-  applyFileSuggestionDraftValue,
   buildFileSuggestionPanelState,
   getFileSuggestionQuery,
   invalidateWorkspaceFileSuggestionCache,
@@ -174,6 +171,20 @@ import {
   ToolApprovalOverlay,
   type ApprovalDecisionOption
 } from "./tool-approval-overlay.tsx";
+import {
+  handleCommandPanelKey,
+  handleCustomizePickerKey,
+  handleFileSuggestionPanelKey,
+  handleLinearPickerKey,
+  handleQuestionRequestKey,
+  handleToolApprovalKey,
+  type CommandPanelState
+} from "./keyboard-router.ts";
+import {
+  expandDraftPastes,
+  runSingleTurn,
+  type PendingPaste
+} from "./prompt-submission-controller.ts";
 import type {
   ActiveApprovalRequest,
   ActiveQuestionRequest,
@@ -191,11 +202,6 @@ interface UiEntry {
   readonly title: string;
   readonly body: string;
   readonly metadata?: ToolResultMetadata;
-}
-
-interface PendingPaste {
-  readonly token: string;
-  readonly text: string;
 }
 
 type PromptRenderable = InputRenderable | TextareaRenderable;
@@ -588,6 +594,9 @@ export function TuiApp(props: TuiAppProps) {
 
     const visibleValue = toVisibleDraft(nextDraft);
     if (getRenderableText(inputRef) === visibleValue) {
+      if (isCommandDraft(nextDraft)) {
+        moveRenderableCursorToEnd(inputRef, visibleValue);
+      }
       return;
     }
 
@@ -939,459 +948,269 @@ export function TuiApp(props: TuiAppProps) {
       return;
     }
 
-    if (activeQuestionRequest() !== undefined) {
-      const request = activeQuestionRequest();
-      if (isContextWindowQuestionRequest(request)) {
-        switch (key.name) {
-          case "escape":
-            key.preventDefault();
-            resolveQuestionRequest({ dismissed: true });
-            return;
-          case "return":
-          case "enter":
-            key.preventDefault();
-            submitActiveQuestionRequest();
-            return;
-          default:
-            return;
-        }
-      }
-
-      switch (key.name) {
-        case "escape":
-          key.preventDefault();
-          resolveQuestionRequest({ dismissed: true });
-          return;
-        case "left":
-          key.preventDefault();
-          moveActiveQuestionIndex(-1);
-          return;
-        case "right":
-        case "tab":
-          key.preventDefault();
-          moveActiveQuestionIndex(1);
-          return;
-        case "up":
-          key.preventDefault();
-          moveActiveQuestionOptionIndex(-1);
-          return;
-        case "down":
-          key.preventDefault();
-          moveActiveQuestionOptionIndex(1);
-          return;
-        case "space":
-          key.preventDefault();
-          toggleActiveQuestionOption();
-          return;
-        case "return":
-        case "enter":
-          key.preventDefault();
-          if (key.shift) {
-            toggleActiveQuestionOption();
-            return;
-          }
-          submitActiveQuestionRequest();
-          return;
-        default:
-          return;
-      }
+    if (handleQuestionRequestKey({
+      key,
+      request: activeQuestionRequest(),
+      contextWindowRequest: isContextWindowQuestionRequest(activeQuestionRequest()),
+      dismiss: resolveQuestionRequest,
+      submit: submitActiveQuestionRequest,
+      moveQuestion: moveActiveQuestionIndex,
+      moveOption: moveActiveQuestionOptionIndex,
+      toggleOption: toggleActiveQuestionOption
+    })) {
+      return;
     }
 
-    if (activeApprovalRequest() !== undefined) {
-      const optionCount = APPROVAL_DECISIONS.length;
-      switch (key.name) {
-        case "escape":
-          key.preventDefault();
-          resolveApprovalRequest("deny");
-          return;
-        case "up":
-          key.preventDefault();
-          setActiveApprovalRequest((current) => current === undefined
-            ? current
-            : {
-                ...current,
-                selectedIndex: moveBuiltinCommandSelectionIndex(current.selectedIndex, optionCount, -1)
-              });
-          return;
-        case "down":
-          key.preventDefault();
-          setActiveApprovalRequest((current) => current === undefined
-            ? current
-            : {
-                ...current,
-                selectedIndex: moveBuiltinCommandSelectionIndex(current.selectedIndex, optionCount, 1)
-              });
-          return;
-        case "return":
-        case "enter": {
-          key.preventDefault();
-          const request = activeApprovalRequest();
-          if (request === undefined) {
-            return;
-          }
-          const decision = APPROVAL_DECISIONS[
-            normalizeBuiltinCommandSelectionIndex(request.selectedIndex, optionCount)
-          ]?.decision;
-          resolveApprovalRequest(decision ?? "deny");
-          return;
-        }
-        default:
-          return;
+    if (handleToolApprovalKey({
+      key,
+      request: activeApprovalRequest(),
+      optionCount: APPROVAL_DECISIONS.length,
+      resolve: resolveApprovalRequest,
+      moveSelected(direction) {
+        setActiveApprovalRequest((current) => current === undefined
+          ? current
+          : {
+              ...current,
+              selectedIndex: moveBuiltinCommandSelectionIndex(current.selectedIndex, APPROVAL_DECISIONS.length, direction)
+            });
+      },
+      decisionAt(index) {
+        return APPROVAL_DECISIONS[index]?.decision;
       }
+    })) {
+      return;
     }
 
-    if (approvalModePickerOpen()) {
-      switch (key.name) {
-        case "escape":
-          key.preventDefault();
-          closeApprovalModePicker(inputRef, setApprovalModePickerOpen, setApprovalModePickerSelectedIndex, setApprovalModePickerWindowStart);
-          return;
-        case "up":
-          key.preventDefault();
-          updateLinearSelectorWindow({
-            selectedIndex: approvalModePickerSelectedIndex(),
-            totalCount: approvalModePickerTotalOptionCount(),
-            direction: -1,
-            visibleCount: getApprovalModePickerVisibleCount(terminal().height),
-            windowStart: approvalModePickerWindowStart(),
-            setSelectedIndex: setApprovalModePickerSelectedIndex,
-            setWindowStart: setApprovalModePickerWindowStart
-          });
-          return;
-        case "down":
-          key.preventDefault();
-          updateLinearSelectorWindow({
-            selectedIndex: approvalModePickerSelectedIndex(),
-            totalCount: approvalModePickerTotalOptionCount(),
-            direction: 1,
-            visibleCount: getApprovalModePickerVisibleCount(terminal().height),
-            windowStart: approvalModePickerWindowStart(),
-            setSelectedIndex: setApprovalModePickerSelectedIndex,
-            setWindowStart: setApprovalModePickerWindowStart
-          });
-          return;
-        case "return":
-        case "enter":
-          key.preventDefault();
-          submitSelectedApprovalModePickerItem({
-            configPath: sessionRuntimeConfig().configPath,
-            selectedIndex: approvalModePickerSelectedIndex(),
-            items: approvalModePickerItems(),
-            approvalAllowlist: approvalAllowlist(),
-            updateApprovalSettings,
-            appendEntry(entry) {
-              appendEntry(setEntries, entry);
-            },
-            close() {
-              closeApprovalModePicker(inputRef, setApprovalModePickerOpen, setApprovalModePickerSelectedIndex, setApprovalModePickerWindowStart);
-            }
-          });
-          return;
-        default:
-          return;
+    if (handleLinearPickerKey({
+      key,
+      open: approvalModePickerOpen(),
+      totalCount: approvalModePickerTotalOptionCount(),
+      close() {
+        closeApprovalModePicker(inputRef, setApprovalModePickerOpen, setApprovalModePickerSelectedIndex, setApprovalModePickerWindowStart);
+      },
+      move(direction) {
+        updateLinearSelectorWindow({
+          selectedIndex: approvalModePickerSelectedIndex(),
+          totalCount: approvalModePickerTotalOptionCount(),
+          direction,
+          visibleCount: getApprovalModePickerVisibleCount(terminal().height),
+          windowStart: approvalModePickerWindowStart(),
+          setSelectedIndex: setApprovalModePickerSelectedIndex,
+          setWindowStart: setApprovalModePickerWindowStart
+        });
+      },
+      submit() {
+        submitSelectedApprovalModePickerItem({
+          configPath: sessionRuntimeConfig().configPath,
+          selectedIndex: approvalModePickerSelectedIndex(),
+          items: approvalModePickerItems(),
+          approvalAllowlist: approvalAllowlist(),
+          updateApprovalSettings,
+          appendEntry(entry) {
+            appendEntry(setEntries, entry);
+          },
+          close() {
+            closeApprovalModePicker(inputRef, setApprovalModePickerOpen, setApprovalModePickerSelectedIndex, setApprovalModePickerWindowStart);
+          }
+        });
       }
+    })) {
+      return;
     }
 
-    if (layoutPickerOpen()) {
-      switch (key.name) {
-        case "escape":
-          key.preventDefault();
-          closeLayoutPicker(inputRef, setLayoutPickerOpen, setLayoutPickerSelectedIndex, setLayoutPickerWindowStart);
-          return;
-        case "up":
-          key.preventDefault();
-          updateLinearSelectorWindow({
-            selectedIndex: layoutPickerSelectedIndex(),
-            totalCount: layoutPickerTotalOptionCount(),
-            direction: -1,
-            visibleCount: getLayoutPickerVisibleCount(terminal().height),
-            windowStart: layoutPickerWindowStart(),
-            setSelectedIndex: setLayoutPickerSelectedIndex,
-            setWindowStart: setLayoutPickerWindowStart
-          });
-          return;
-        case "down":
-          key.preventDefault();
-          updateLinearSelectorWindow({
-            selectedIndex: layoutPickerSelectedIndex(),
-            totalCount: layoutPickerTotalOptionCount(),
-            direction: 1,
-            visibleCount: getLayoutPickerVisibleCount(terminal().height),
-            windowStart: layoutPickerWindowStart(),
-            setSelectedIndex: setLayoutPickerSelectedIndex,
-            setWindowStart: setLayoutPickerWindowStart
-          });
-          return;
-        case "return":
-        case "enter":
-          key.preventDefault();
-          submitSelectedLayoutPickerItem({
-            configPath: sessionRuntimeConfig().configPath,
-            selectedIndex: layoutPickerSelectedIndex(),
-            items: layoutPickerItems(),
-            setLayoutMode,
-            setToolsCollapsed,
-            appendEntry(entry) {
-              appendEntry(setEntries, entry);
-            },
-            close() {
-              closeLayoutPicker(inputRef, setLayoutPickerOpen, setLayoutPickerSelectedIndex, setLayoutPickerWindowStart);
-            }
-          });
-          return;
-        default:
-          return;
+    if (handleLinearPickerKey({
+      key,
+      open: layoutPickerOpen(),
+      totalCount: layoutPickerTotalOptionCount(),
+      close() {
+        closeLayoutPicker(inputRef, setLayoutPickerOpen, setLayoutPickerSelectedIndex, setLayoutPickerWindowStart);
+      },
+      move(direction) {
+        updateLinearSelectorWindow({
+          selectedIndex: layoutPickerSelectedIndex(),
+          totalCount: layoutPickerTotalOptionCount(),
+          direction,
+          visibleCount: getLayoutPickerVisibleCount(terminal().height),
+          windowStart: layoutPickerWindowStart(),
+          setSelectedIndex: setLayoutPickerSelectedIndex,
+          setWindowStart: setLayoutPickerWindowStart
+        });
+      },
+      submit() {
+        submitSelectedLayoutPickerItem({
+          configPath: sessionRuntimeConfig().configPath,
+          selectedIndex: layoutPickerSelectedIndex(),
+          items: layoutPickerItems(),
+          setLayoutMode,
+          setToolsCollapsed,
+          appendEntry(entry) {
+            appendEntry(setEntries, entry);
+          },
+          close() {
+            closeLayoutPicker(inputRef, setLayoutPickerOpen, setLayoutPickerSelectedIndex, setLayoutPickerWindowStart);
+          }
+        });
       }
+    })) {
+      return;
     }
 
-    if (customizePickerOpen()) {
-      switch (key.name) {
-        case "escape":
-          key.preventDefault();
-          closeCustomizePicker(inputRef, setCustomizePickerOpen, setCustomizePickerSelectedRow);
-          return;
-        case "up":
-          key.preventDefault();
-          setCustomizePickerSelectedRow((current) => moveBuiltinCommandSelectionIndex(current, customizeRows().length, -1));
-          return;
-        case "down":
-          key.preventDefault();
-          setCustomizePickerSelectedRow((current) => moveBuiltinCommandSelectionIndex(current, customizeRows().length, 1));
-          return;
-        case "left":
-          key.preventDefault();
-          cycleCustomizeSetting({
-            direction: -1,
-            rowIndex: customizePickerSelectedRow(),
-            configPath: sessionRuntimeConfig().configPath,
-            themeName,
-            setThemeName,
-            toolMarkerName,
-            setToolMarkerName
-          });
-          return;
-        case "right":
-        case "space":
-          key.preventDefault();
-          cycleCustomizeSetting({
-            direction: 1,
-            rowIndex: customizePickerSelectedRow(),
-            configPath: sessionRuntimeConfig().configPath,
-            themeName,
-            setThemeName,
-            toolMarkerName,
-            setToolMarkerName
-          });
-          return;
-        case "return":
-        case "enter":
-          key.preventDefault();
-          closeCustomizePicker(inputRef, setCustomizePickerOpen, setCustomizePickerSelectedRow);
-          return;
-        default:
-          return;
+    if (handleCustomizePickerKey({
+      key,
+      open: customizePickerOpen(),
+      rows: customizeRows(),
+      close() {
+        closeCustomizePicker(inputRef, setCustomizePickerOpen, setCustomizePickerSelectedRow);
+      },
+      moveRow(direction) {
+        setCustomizePickerSelectedRow((current) => moveBuiltinCommandSelectionIndex(current, customizeRows().length, direction));
+      },
+      cycle(direction) {
+        cycleCustomizeSetting({
+          direction,
+          rowIndex: customizePickerSelectedRow(),
+          configPath: sessionRuntimeConfig().configPath,
+          themeName,
+          setThemeName,
+          toolMarkerName,
+          setToolMarkerName
+        });
       }
+    })) {
+      return;
     }
 
-    if (themePickerOpen()) {
-      switch (key.name) {
-        case "escape":
-          key.preventDefault();
-          closeThemePicker(inputRef, setThemePickerOpen, setThemePickerQuery, setThemePickerSelectedIndex, setThemePickerWindowStart);
-          return;
-        case "up":
-          if (themePickerTotalOptionCount() <= 0) {
-            return;
+    if (handleLinearPickerKey({
+      key,
+      open: themePickerOpen(),
+      totalCount: themePickerTotalOptionCount(),
+      close() {
+        closeThemePicker(inputRef, setThemePickerOpen, setThemePickerQuery, setThemePickerSelectedIndex, setThemePickerWindowStart);
+      },
+      move(direction) {
+        updateLinearSelectorWindow({
+          selectedIndex: themePickerSelectedIndex(),
+          totalCount: themePickerTotalOptionCount(),
+          direction,
+          visibleCount: getThemePickerVisibleCount(terminal().height),
+          windowStart: themePickerWindowStart(),
+          setSelectedIndex: setThemePickerSelectedIndex,
+          setWindowStart: setThemePickerWindowStart
+        });
+      },
+      submit() {
+        void submitSelectedThemePickerItem({
+          configPath: sessionRuntimeConfig().configPath,
+          selectedIndex: themePickerSelectedIndex(),
+          items: themePickerItems(),
+          setThemeName,
+          appendEntry(entry) {
+            appendEntry(setEntries, entry);
+          },
+          close() {
+            closeThemePicker(inputRef, setThemePickerOpen, setThemePickerQuery, setThemePickerSelectedIndex, setThemePickerWindowStart);
           }
-          key.preventDefault();
-          updateLinearSelectorWindow({
-            selectedIndex: themePickerSelectedIndex(),
-            totalCount: themePickerTotalOptionCount(),
-            direction: -1,
-            visibleCount: getThemePickerVisibleCount(terminal().height),
-            windowStart: themePickerWindowStart(),
-            setSelectedIndex: setThemePickerSelectedIndex,
-            setWindowStart: setThemePickerWindowStart
-          });
-          return;
-        case "down":
-          if (themePickerTotalOptionCount() <= 0) {
-            return;
-          }
-          key.preventDefault();
-          updateLinearSelectorWindow({
-            selectedIndex: themePickerSelectedIndex(),
-            totalCount: themePickerTotalOptionCount(),
-            direction: 1,
-            visibleCount: getThemePickerVisibleCount(terminal().height),
-            windowStart: themePickerWindowStart(),
-            setSelectedIndex: setThemePickerSelectedIndex,
-            setWindowStart: setThemePickerWindowStart
-          });
-          return;
-        case "return":
-        case "enter":
-          key.preventDefault();
-          void submitSelectedThemePickerItem({
-            configPath: sessionRuntimeConfig().configPath,
-            selectedIndex: themePickerSelectedIndex(),
-            items: themePickerItems(),
-            setThemeName,
-            appendEntry(entry) {
-              appendEntry(setEntries, entry);
-            },
-            close() {
-              closeThemePicker(inputRef, setThemePickerOpen, setThemePickerQuery, setThemePickerSelectedIndex, setThemePickerWindowStart);
-            }
-          });
-          return;
-        default:
-          return;
+        });
       }
+    })) {
+      return;
     }
 
-    if (historyPickerOpen()) {
-      switch (key.name) {
-        case "escape":
-          key.preventDefault();
-          closeHistoryPicker(
-            setHistoryPickerOpen,
-            setHistoryPickerQuery,
-            setHistoryPickerSelectedIndex,
-            setHistoryPickerWindowStart,
-            () => inputRef?.focus()
-          );
-          return;
-        case "up":
-          if (historyPickerTotalOptionCount() <= 0) {
-            return;
+    if (handleLinearPickerKey({
+      key,
+      open: historyPickerOpen(),
+      totalCount: historyPickerTotalOptionCount(),
+      busy: historyPickerBusy(),
+      close() {
+        closeHistoryPicker(
+          setHistoryPickerOpen,
+          setHistoryPickerQuery,
+          setHistoryPickerSelectedIndex,
+          setHistoryPickerWindowStart,
+          () => inputRef?.focus()
+        );
+      },
+      move(direction) {
+        updateLinearSelectorWindow({
+          selectedIndex: historyPickerSelectedIndex(),
+          totalCount: historyPickerTotalOptionCount(),
+          direction,
+          visibleCount: getHistoryPickerVisibleCount(terminal().height),
+          windowStart: historyPickerWindowStart(),
+          setSelectedIndex: setHistoryPickerSelectedIndex,
+          setWindowStart: setHistoryPickerWindowStart
+        });
+      },
+      submit() {
+        void submitSelectedHistoryPickerItem({
+          historyRoot: historyRoot(),
+          runtimeConfig: sessionRuntimeConfig(),
+          selectedIndex: historyPickerSelectedIndex(),
+          items: filteredHistoryPickerItems(),
+          setBusy: setHistoryPickerBusy,
+          setRuntimeConfig: setSessionRuntimeConfig,
+          setConversation: setCurrentConversation,
+          setEntries,
+          setPreviousMessages,
+          setLastContextEstimate,
+          rehydrateEntries: rehydrateEntriesFromTranscript,
+          close() {
+            closeHistoryPicker(
+              setHistoryPickerOpen,
+              setHistoryPickerQuery,
+              setHistoryPickerSelectedIndex,
+              setHistoryPickerWindowStart,
+              () => inputRef?.focus()
+            );
           }
-          key.preventDefault();
-          updateLinearSelectorWindow({
-            selectedIndex: historyPickerSelectedIndex(),
-            totalCount: historyPickerTotalOptionCount(),
-            direction: -1,
-            visibleCount: getHistoryPickerVisibleCount(terminal().height),
-            windowStart: historyPickerWindowStart(),
-            setSelectedIndex: setHistoryPickerSelectedIndex,
-            setWindowStart: setHistoryPickerWindowStart
-          });
-          return;
-        case "down":
-          if (historyPickerTotalOptionCount() <= 0) {
-            return;
-          }
-          key.preventDefault();
-          updateLinearSelectorWindow({
-            selectedIndex: historyPickerSelectedIndex(),
-            totalCount: historyPickerTotalOptionCount(),
-            direction: 1,
-            visibleCount: getHistoryPickerVisibleCount(terminal().height),
-            windowStart: historyPickerWindowStart(),
-            setSelectedIndex: setHistoryPickerSelectedIndex,
-            setWindowStart: setHistoryPickerWindowStart
-          });
-          return;
-        case "return":
-        case "enter":
-          if (historyPickerBusy()) {
-            return;
-          }
-          key.preventDefault();
-          void submitSelectedHistoryPickerItem({
-            historyRoot: historyRoot(),
-            runtimeConfig: sessionRuntimeConfig(),
-            selectedIndex: historyPickerSelectedIndex(),
-            items: filteredHistoryPickerItems(),
-            setBusy: setHistoryPickerBusy,
-            setRuntimeConfig: setSessionRuntimeConfig,
-            setConversation: setCurrentConversation,
-            setEntries,
-            setPreviousMessages,
-            setLastContextEstimate,
-            rehydrateEntries: rehydrateEntriesFromTranscript,
-            close() {
-              closeHistoryPicker(
-                setHistoryPickerOpen,
-                setHistoryPickerQuery,
-                setHistoryPickerSelectedIndex,
-                setHistoryPickerWindowStart,
-                () => inputRef?.focus()
-              );
-            }
-          });
-          return;
-        default:
-          return;
+        });
       }
+    })) {
+      return;
     }
 
-    if (modelPickerOpen()) {
-      switch (key.name) {
-        case "escape":
-          key.preventDefault();
-          closeModelPicker(inputRef, setModelPickerOpen, setModelPickerQuery, setModelPickerSelectedIndex, setModelPickerWindowStart);
-          return;
-        case "up":
-          if (modelPickerTotalOptionCount() <= 0) {
-            return;
+    if (handleLinearPickerKey({
+      key,
+      open: modelPickerOpen(),
+      totalCount: modelPickerTotalOptionCount(),
+      busy: modelPickerBusy(),
+      close() {
+        closeModelPicker(inputRef, setModelPickerOpen, setModelPickerQuery, setModelPickerSelectedIndex, setModelPickerWindowStart);
+      },
+      move(direction) {
+        updateModelPickerWindow({
+          direction,
+          options: modelPickerOptions(),
+          selectedIndex: modelPickerSelectedIndex(),
+          totalCount: modelPickerTotalOptionCount(),
+          windowStart: modelPickerWindowStart(),
+          visibleCount: getModelPickerVisibleCount(terminal().height),
+          setSelectedIndex: setModelPickerSelectedIndex,
+          setWindowStart: setModelPickerWindowStart
+        });
+      },
+      submit() {
+        void submitSelectedModelPickerOption({
+          historyRoot: historyRoot(),
+          runtimeConfig: sessionRuntimeConfig(),
+          selectedIndex: modelPickerSelectedIndex(),
+          options: modelPickerOptions(),
+          setBusy: setModelPickerBusy,
+          setRuntimeConfig: setSessionRuntimeConfig,
+          currentConversation: currentConversation(),
+          currentMode: sessionMode(),
+          transcript: previousMessages(),
+          setConversation: setCurrentConversation,
+          appendEntry(entry) {
+            appendEntry(setEntries, entry);
+          },
+          close() {
+            closeModelPicker(inputRef, setModelPickerOpen, setModelPickerQuery, setModelPickerSelectedIndex, setModelPickerWindowStart);
           }
-          key.preventDefault();
-          updateModelPickerWindow({
-            direction: -1,
-            options: modelPickerOptions(),
-            selectedIndex: modelPickerSelectedIndex(),
-            totalCount: modelPickerTotalOptionCount(),
-            windowStart: modelPickerWindowStart(),
-            visibleCount: getModelPickerVisibleCount(terminal().height),
-            setSelectedIndex: setModelPickerSelectedIndex,
-            setWindowStart: setModelPickerWindowStart
-          });
-          return;
-        case "down":
-          if (modelPickerTotalOptionCount() <= 0) {
-            return;
-          }
-          key.preventDefault();
-          updateModelPickerWindow({
-            direction: 1,
-            options: modelPickerOptions(),
-            selectedIndex: modelPickerSelectedIndex(),
-            totalCount: modelPickerTotalOptionCount(),
-            windowStart: modelPickerWindowStart(),
-            visibleCount: getModelPickerVisibleCount(terminal().height),
-            setSelectedIndex: setModelPickerSelectedIndex,
-            setWindowStart: setModelPickerWindowStart
-          });
-          return;
-        case "return":
-        case "enter":
-          if (modelPickerBusy()) {
-            return;
-          }
-          key.preventDefault();
-          void submitSelectedModelPickerOption({
-            historyRoot: historyRoot(),
-            runtimeConfig: sessionRuntimeConfig(),
-            selectedIndex: modelPickerSelectedIndex(),
-            options: modelPickerOptions(),
-            setBusy: setModelPickerBusy,
-            setRuntimeConfig: setSessionRuntimeConfig,
-            currentConversation: currentConversation(),
-            currentMode: sessionMode(),
-            transcript: previousMessages(),
-            setConversation: setCurrentConversation,
-            appendEntry(entry) {
-              appendEntry(setEntries, entry);
-            },
-            close() {
-              closeModelPicker(inputRef, setModelPickerOpen, setModelPickerQuery, setModelPickerSelectedIndex, setModelPickerWindowStart);
-            }
-          });
-          return;
-        default:
-          return;
+        });
       }
+    })) {
+      return;
     }
 
     if (key.name === "escape" && busy()) {
@@ -1404,21 +1223,40 @@ export function TuiApp(props: TuiAppProps) {
     const filePanel = fileSuggestionPanel();
     const panel = commandPanel();
 
-    if (key.name === "escape" && filePanel !== undefined) {
-      key.preventDefault();
-      key.stopPropagation();
-      setFileSuggestionSelectionIndex(0);
-      inputRef?.focus();
+    if (key.name === "escape" && handleFileSuggestionPanelKey({
+      key,
+      panel: filePanel,
+      currentDraft: draft(),
+      setDraft,
+      setSelectionIndex: setFileSuggestionSelectionIndex,
+      setRenderableDraft(value) {
+        setRenderableText(inputRef, toVisibleDraft(value));
+      },
+      focusPrompt() {
+        inputRef?.focus();
+      }
+    })) {
       return;
     }
 
-    if (key.name === "escape" && panel !== undefined) {
-      key.preventDefault();
-      key.stopPropagation();
-      clearDraft(inputRef, setDraft);
-      setPendingPastes([]);
-      setCommandSelectionIndex(0);
-      inputRef?.focus();
+    if (key.name === "escape" && handleCommandPanelKey({
+      key,
+      panel,
+      clearDraft() {
+        clearDraft(inputRef, setDraft);
+        setPendingPastes([]);
+      },
+      setSelectionIndex: setCommandSelectionIndex,
+      applyCommand(command) {
+        applyCommandDraft(inputRef, setDraft, setCommandSelectionIndex, command);
+      },
+      submitCommand(command) {
+        void submitPrompt(command);
+      },
+      focusPrompt() {
+        inputRef?.focus();
+      }
+    })) {
       return;
     }
 
@@ -1426,83 +1264,41 @@ export function TuiApp(props: TuiAppProps) {
       return;
     }
 
-    if (filePanel !== undefined) {
-      switch (key.name) {
-        case "up":
-          if (filePanel.items.length === 0) {
-            return;
-          }
-          key.preventDefault();
-          key.stopPropagation();
-          setFileSuggestionSelectionIndex(moveBuiltinCommandSelectionIndex(filePanel.selectedIndex, filePanel.items.length, -1));
-          inputRef?.focus();
-          return;
-        case "down":
-          if (filePanel.items.length === 0) {
-            return;
-          }
-          key.preventDefault();
-          key.stopPropagation();
-          setFileSuggestionSelectionIndex(moveBuiltinCommandSelectionIndex(filePanel.selectedIndex, filePanel.items.length, 1));
-          inputRef?.focus();
-          return;
-        case "tab":
-        case "return":
-        case "enter":
-          if (filePanel.selectedItem === undefined) {
-            return;
-          }
-          key.preventDefault();
-          key.stopPropagation();
-          applyFileSuggestionDraft(inputRef, draft(), setDraft, setFileSuggestionSelectionIndex, filePanel.selectedItem);
-          return;
-        default:
-          break;
+    if (handleFileSuggestionPanelKey({
+      key,
+      panel: filePanel,
+      currentDraft: draft(),
+      setDraft,
+      setSelectionIndex: setFileSuggestionSelectionIndex,
+      setRenderableDraft(value) {
+        setRenderableText(inputRef, toVisibleDraft(value));
+      },
+      focusPrompt() {
+        inputRef?.focus();
       }
-    }
-
-    if (panel === undefined) {
+    })) {
       return;
     }
 
-    switch (key.name) {
-      case "up":
-        if (panel.commands.length === 0) {
-          return;
-        }
-        key.preventDefault();
-        key.stopPropagation();
-        setCommandSelectionIndex(moveBuiltinCommandSelectionIndex(panel.selectedIndex, panel.commands.length, -1));
+    if (handleCommandPanelKey({
+      key,
+      panel,
+      clearDraft() {
+        clearDraft(inputRef, setDraft);
+        setPendingPastes([]);
+      },
+      setSelectionIndex: setCommandSelectionIndex,
+      applyCommand(command) {
+        applyCommandDraft(inputRef, setDraft, setCommandSelectionIndex, command);
+      },
+      submitCommand(command) {
+        void submitPrompt(command);
+      },
+      focusPrompt() {
         inputRef?.focus();
-        return;
-      case "down":
-        if (panel.commands.length === 0) {
-          return;
-        }
-        key.preventDefault();
-        key.stopPropagation();
-        setCommandSelectionIndex(moveBuiltinCommandSelectionIndex(panel.selectedIndex, panel.commands.length, 1));
-        inputRef?.focus();
-        return;
-      case "tab":
-        if (panel.selectedCommand === undefined) {
-          return;
-        }
-        key.preventDefault();
-        key.stopPropagation();
-        applyCommandDraft(inputRef, setDraft, setCommandSelectionIndex, panel.selectedCommand.command);
-        return;
-      case "return":
-      case "enter":
-        if (panel.selectedCommand === undefined) {
-          return;
-        }
-        key.preventDefault();
-        key.stopPropagation();
-        void submitPrompt(panel.selectedCommand.command);
-        return;
-      default:
-        return;
+      }
+    })) {
+      return;
     }
   });
 
@@ -2451,6 +2247,14 @@ function setRenderableText(input: PromptRenderable | undefined, value: string): 
   }
 }
 
+function moveRenderableCursorToEnd(input: PromptRenderable | undefined, value: string): void {
+  if (input === undefined) {
+    return;
+  }
+
+  input.cursorOffset = value.length;
+}
+
 function applyInputCursorStyle(input: PromptRenderable | undefined, color: string): void {
   if (input === undefined) {
     return;
@@ -2558,13 +2362,6 @@ async function handleBuiltinCommand(options: BuiltinCommandHandlerOptions): Prom
   }
 }
 
-interface CommandPanelState {
-  readonly commands: readonly { readonly command: string; readonly description: string }[];
-  readonly hasMore: boolean;
-  readonly selectedIndex: number;
-  readonly selectedCommand: { readonly command: string; readonly description: string } | undefined;
-}
-
 function buildCommandPanelState(
   draft: string,
   commands: readonly { readonly command: string; readonly description: string }[],
@@ -2586,22 +2383,6 @@ function buildCommandPanelState(
     selectedIndex: normalizedSelectedIndex,
     selectedCommand: visibleCommands[normalizedSelectedIndex]
   };
-}
-
-function applyFileSuggestionDraft(
-  input: PromptRenderable | undefined,
-  currentDraft: string,
-  setDraft: (value: string) => void,
-  setSelectionIndex: (value: number) => void,
-  item: FileSuggestionItem
-): void {
-  const nextDraft = applyFileSuggestionDraftValue(currentDraft, item);
-  setDraft(nextDraft);
-  setSelectionIndex(0);
-  if (input !== undefined) {
-    setRenderableText(input, toVisibleDraft(nextDraft));
-    input.focus();
-  }
 }
 
 function createToolRegistryForMode(baseRegistry: ToolRegistry, mode: SessionMode): ToolRegistry {
@@ -2875,16 +2656,6 @@ function countPastedLines(value: string): number {
 
 function normalizePastedText(value: string): string {
   return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-}
-
-function expandDraftPastes(value: string, pastes: readonly PendingPaste[]): string {
-  let expanded = value;
-
-  for (const paste of pastes) {
-    expanded = expanded.replaceAll(paste.token, paste.text);
-  }
-
-  return expanded;
 }
 
 function estimateConversationFlowHeight(
@@ -3480,40 +3251,6 @@ function renderEntry(
         </box>
       );
   }
-}
-
-interface SingleTurnOptions {
-  readonly systemPrompt: string;
-  readonly prompt: string;
-  readonly previousMessages: readonly ConversationMessage[];
-  readonly languageModel: AiModel;
-  readonly toolRegistry: ToolRegistry;
-  readonly toolContext: ToolExecutionContext;
-  readonly abortSignal?: AbortSignal;
-  readonly onToolCall: (toolCall: ToolCall) => void;
-  readonly onTextDelta: TextDeltaObserver;
-  readonly onToolResult?: (toolResult: Extract<ConversationMessage, { role: "tool" }>) => void;
-}
-
-async function runSingleTurn(options: SingleTurnOptions): Promise<AgentRunResult> {
-  return await runAgentLoop({
-    systemPrompt: options.systemPrompt,
-    initialUserPrompt: options.prompt,
-    previousMessages: options.previousMessages,
-    languageModel: options.languageModel,
-    toolRegistry: options.toolRegistry,
-    toolContext: options.toolContext,
-    ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
-    onToolCall(toolCall) {
-      options.onToolCall(toolCall);
-    },
-    onTextDelta(delta) {
-      options.onTextDelta(delta);
-    },
-    onToolResult(toolResult) {
-      options.onToolResult?.(toolResult);
-    }
-  });
 }
 
 function createEntry(kind: UiEntry["kind"], title: string, body: string): UiEntry {

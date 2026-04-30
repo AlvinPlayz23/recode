@@ -149,15 +149,23 @@ Conversations are stored as JSON files plus a global `index.json`.
 
 The main TUI screen still centers on [src/tui/app.tsx](./src/tui/app.tsx), but it has been actively reduced and split into smaller modules.
 
-- Current `app.tsx` size: `3497` lines
+- Current `app.tsx` size: `3233` lines
 - Refactor history and extraction map: [src/tui/REFACTOR-HISTORY.md](./src/tui/REFACTOR-HISTORY.md)
-- Recent extractions include session persistence, file suggestions, built-in command content, history helpers, shared selector math, and the major popup/overlay components
+- Recent extractions include session persistence, file suggestions, built-in command content, history helpers, shared selector math, popup/overlay components, keyboard routing helpers, and prompt submission helpers
 
 The biggest remaining refactor seams are:
-- keyboard routing
-- prompt submission and agent orchestration
+- built-in command dispatch
+- deeper prompt submission and agent orchestration
 - transcript rehydration and entry rendering
 - layout/composer measurement helpers
+
+## Core Refactor Status
+
+The non-TUI core now has a few opencode-inspired seams:
+
+- `src/agent/run-agent-loop.ts` stays as the public loop API, while `src/agent/session-processor.ts` owns one streamed assistant step, tool execution, synthetic question follow-ups, and doom-loop detection.
+- `src/runtime/runtime-config.ts` loads resolved runtime config, while `src/runtime/runtime-provider-config.ts` shapes provider metadata from config plus environment overrides.
+- `src/config/recode-config.ts` keeps persistence and parsing, while `src/config/recode-config-update.ts` centralizes config patching so selector helpers do not drop unrelated settings.
 
 ## Environment Variables
 
@@ -280,13 +288,13 @@ recode/
 ├── src/
 │   ├── agent/       # Agent loop
 │   ├── ai/          # Internal AI transport layer
-│   ├── config/      # Persistent user config
+│   ├── config/      # Persistent user config and config update helpers
 │   ├── errors/      # Error types
 │   ├── history/     # Persistent sessions and HTML export
 │   ├── messages/    # Conversation message model
 │   ├── models/      # Runtime model factory
 │   ├── prompt/      # System prompt
-│   ├── runtime/     # Runtime config loading
+│   ├── runtime/     # Runtime config loading and provider metadata shaping
 │   ├── shared/      # Shared helpers
 │   ├── tools/       # Tool system
 │   ├── tui/         # OpenTUI UI

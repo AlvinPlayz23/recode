@@ -11,13 +11,12 @@ import {
 } from "../config/recode-config.ts";
 import type { ProviderKind } from "../providers/provider-kind.ts";
 import type { ApprovalMode, ToolApprovalScope } from "../tools/tool.ts";
+import {
+  buildRuntimeProviders,
+  type RuntimeProviderConfig
+} from "./runtime-provider-config.ts";
 
-/**
- * Runtime provider metadata.
- */
-export interface RuntimeProviderConfig extends ConfiguredProvider {
-  readonly source: "config" | "env";
-}
+export type { RuntimeProviderConfig } from "./runtime-provider-config.ts";
 
 /**
  * Recode runtime config.
@@ -170,13 +169,15 @@ export function loadRuntimeConfig(workspaceRoot: string): RuntimeConfig {
 
   const providers = buildRuntimeProviders(
     config.providers,
-    envProviderKind,
-    envBaseUrl,
-    envApiKey,
-    envModel,
-    envMaxOutputTokens,
-    envTemperature,
-    envToolChoice,
+    {
+      ...(envProviderKind === undefined ? {} : { kind: envProviderKind }),
+      ...(envBaseUrl === undefined ? {} : { baseUrl: envBaseUrl }),
+      ...(envApiKey === undefined ? {} : { apiKey: envApiKey }),
+      ...(envModel === undefined ? {} : { model: envModel }),
+      ...(envMaxOutputTokens === undefined ? {} : { maxOutputTokens: envMaxOutputTokens }),
+      ...(envTemperature === undefined ? {} : { temperature: envTemperature }),
+      ...(envToolChoice === undefined ? {} : { toolChoice: envToolChoice })
+    },
     providerId,
     providerName
   );
@@ -256,60 +257,6 @@ function resolveSelectedConfiguredProvider(
   }
 
   return providers[0];
-}
-
-function buildRuntimeProviders(
-  configuredProviders: readonly ConfiguredProvider[],
-  envProviderKind: ProviderKind | undefined,
-  envBaseUrl: string | undefined,
-  envApiKey: string | undefined,
-  envModel: string | undefined,
-  envMaxOutputTokens: number | undefined,
-  envTemperature: number | undefined,
-  envToolChoice: "auto" | "required" | undefined,
-  activeProviderId: string,
-  activeProviderName: string
-): readonly RuntimeProviderConfig[] {
-  const providers = configuredProviders.map((provider) => ({
-    ...provider,
-    source: "config" as const
-  }));
-
-  if (envProviderKind === undefined && envBaseUrl === undefined && envApiKey === undefined && envModel === undefined) {
-    return providers;
-  }
-
-  const existingProviderIndex = providers.findIndex((provider) => provider.id === activeProviderId);
-  const existingProvider = existingProviderIndex === -1 ? undefined : providers[existingProviderIndex];
-  const envProvider: RuntimeProviderConfig = {
-    id: activeProviderId,
-    name: activeProviderName,
-    kind: envProviderKind ?? existingProvider?.kind ?? "openai",
-    baseUrl: envBaseUrl ?? existingProvider?.baseUrl ?? "https://api.openai.com/v1",
-    models: envModel === undefined
-      ? existingProvider?.models ?? []
-      : [existingProvider?.models.find((model) => model.id === envModel) ?? { id: envModel }],
-    ...(envModel === undefined
-      ? (existingProvider?.defaultModelId === undefined ? {} : { defaultModelId: existingProvider.defaultModelId })
-      : { defaultModelId: envModel }),
-    ...(envMaxOutputTokens === undefined
-      ? (existingProvider?.maxOutputTokens === undefined ? {} : { maxOutputTokens: existingProvider.maxOutputTokens })
-      : { maxOutputTokens: envMaxOutputTokens }),
-    ...(envTemperature === undefined
-      ? (existingProvider?.temperature === undefined ? {} : { temperature: existingProvider.temperature })
-      : { temperature: envTemperature }),
-    ...(envToolChoice === undefined
-      ? (existingProvider?.toolChoice === undefined ? {} : { toolChoice: existingProvider.toolChoice })
-      : { toolChoice: envToolChoice }),
-    ...(envApiKey === undefined ? {} : { apiKey: envApiKey }),
-    source: "env"
-  };
-
-  if (existingProviderIndex === -1) {
-    return [...providers, envProvider];
-  }
-
-  return providers.map((provider, index) => index === existingProviderIndex ? envProvider : provider);
 }
 
 function defaultProviderName(provider: ProviderKind): string {

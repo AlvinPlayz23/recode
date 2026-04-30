@@ -15,6 +15,8 @@ import {
   saveRecodeConfigFile,
   selectConfiguredApprovalAllowlist,
   selectConfiguredApprovalMode,
+  selectConfiguredLayoutMode,
+  selectConfiguredMinimalMode,
   setConfiguredModelContextWindow,
   selectConfiguredProviderModel,
   selectConfiguredTheme,
@@ -136,5 +138,43 @@ describe("recode config", () => {
 
     expect(allowlistConfig.approvalMode).toBe("yolo");
     expect(allowlistConfig.approvalAllowlist).toEqual(["bash"]);
+  });
+
+  it("preserves unrelated settings across config selectors", () => {
+    const config = selectConfiguredToolMarker(
+      selectConfiguredMinimalMode(
+        selectConfiguredLayoutMode(
+          selectConfiguredApprovalMode(
+            selectConfiguredTheme(createEmptyConfig(), "paper-lantern"),
+            "auto-edits"
+          ),
+          "comfortable"
+        ),
+        true
+      ),
+      "triangle"
+    );
+
+    const nextConfig = selectConfiguredProviderModel(
+      upsertConfiguredProvider(
+        config,
+        {
+          id: "openai",
+          name: "OpenAI",
+          kind: "openai",
+          baseUrl: "https://api.openai.com/v1",
+          models: [{ id: "gpt-4.1" }]
+        },
+        true
+      ),
+      "openai",
+      "gpt-4.1-mini"
+    );
+
+    expect(nextConfig.themeName).toBe("paper-lantern");
+    expect(nextConfig.approvalMode).toBe("auto-edits");
+    expect(nextConfig.layoutMode).toBe("comfortable");
+    expect(nextConfig.minimalMode).toBe(true);
+    expect(nextConfig.toolMarkerName).toBe("triangle");
   });
 });

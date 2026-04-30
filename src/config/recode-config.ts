@@ -9,6 +9,7 @@ import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import type { ProviderKind } from "../providers/provider-kind.ts";
 import { isRecord } from "../shared/is-record.ts";
+import { patchRecodeConfig } from "./recode-config-update.ts";
 import {
   isLayoutMode,
   isThemeName,
@@ -120,19 +121,10 @@ export function upsertConfiguredProvider(
     provider
   ];
 
-  return {
-    version: CONFIG_VERSION,
+  return patchRecodeConfig(config, {
     providers,
-    ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
-    ...(config.toolMarkerName === undefined ? {} : { toolMarkerName: config.toolMarkerName }),
-    ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
-    ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
-    ...(config.layoutMode === undefined ? {} : { layoutMode: config.layoutMode }),
-    ...(config.minimalMode === undefined ? {} : { minimalMode: config.minimalMode }),
-    ...(makeActive ? { activeProviderId: provider.id } : (
-      config.activeProviderId === undefined ? {} : { activeProviderId: config.activeProviderId }
-    ))
-  };
+    ...(makeActive ? { activeProviderId: provider.id } : {})
+  });
 }
 
 /**
@@ -156,17 +148,10 @@ export function selectConfiguredProviderModel(
     };
   });
 
-  return {
-    version: CONFIG_VERSION,
+  return patchRecodeConfig(config, {
     activeProviderId: providerId,
-    ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
-    ...(config.toolMarkerName === undefined ? {} : { toolMarkerName: config.toolMarkerName }),
-    ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
-    ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
-    ...(config.layoutMode === undefined ? {} : { layoutMode: config.layoutMode }),
-    ...(config.minimalMode === undefined ? {} : { minimalMode: config.minimalMode }),
     providers
-  };
+  });
 }
 
 /**
@@ -197,17 +182,7 @@ export function setConfiguredModelContextWindow(
     };
   });
 
-  return {
-    version: CONFIG_VERSION,
-    providers,
-    ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
-    ...(config.toolMarkerName === undefined ? {} : { toolMarkerName: config.toolMarkerName }),
-    ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
-    ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
-    ...(config.layoutMode === undefined ? {} : { layoutMode: config.layoutMode }),
-    ...(config.minimalMode === undefined ? {} : { minimalMode: config.minimalMode }),
-    ...(config.activeProviderId === undefined ? {} : { activeProviderId: config.activeProviderId })
-  };
+  return patchRecodeConfig(config, { providers });
 }
 
 /**
@@ -217,17 +192,7 @@ export function selectConfiguredTheme(
   config: RecodeConfigFile,
   themeName: ThemeName
 ): RecodeConfigFile {
-  return {
-    version: CONFIG_VERSION,
-    providers: config.providers,
-    themeName,
-    ...(config.toolMarkerName === undefined ? {} : { toolMarkerName: config.toolMarkerName }),
-    ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
-    ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
-    ...(config.layoutMode === undefined ? {} : { layoutMode: config.layoutMode }),
-    ...(config.minimalMode === undefined ? {} : { minimalMode: config.minimalMode }),
-    ...(config.activeProviderId === undefined ? {} : { activeProviderId: config.activeProviderId })
-  };
+  return patchRecodeConfig(config, { themeName });
 }
 
 /**
@@ -237,17 +202,7 @@ export function selectConfiguredToolMarker(
   config: RecodeConfigFile,
   toolMarkerName: ToolMarkerName
 ): RecodeConfigFile {
-  return {
-    version: CONFIG_VERSION,
-    providers: config.providers,
-    toolMarkerName,
-    ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
-    ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
-    ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
-    ...(config.layoutMode === undefined ? {} : { layoutMode: config.layoutMode }),
-    ...(config.minimalMode === undefined ? {} : { minimalMode: config.minimalMode }),
-    ...(config.activeProviderId === undefined ? {} : { activeProviderId: config.activeProviderId })
-  };
+  return patchRecodeConfig(config, { toolMarkerName });
 }
 
 /**
@@ -257,17 +212,7 @@ export function selectConfiguredApprovalMode(
   config: RecodeConfigFile,
   approvalMode: ApprovalMode
 ): RecodeConfigFile {
-  return {
-    version: CONFIG_VERSION,
-    providers: config.providers,
-    approvalMode,
-    ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
-    ...(config.toolMarkerName === undefined ? {} : { toolMarkerName: config.toolMarkerName }),
-    ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
-    ...(config.layoutMode === undefined ? {} : { layoutMode: config.layoutMode }),
-    ...(config.minimalMode === undefined ? {} : { minimalMode: config.minimalMode }),
-    ...(config.activeProviderId === undefined ? {} : { activeProviderId: config.activeProviderId })
-  };
+  return patchRecodeConfig(config, { approvalMode });
 }
 
 /**
@@ -277,17 +222,7 @@ export function selectConfiguredApprovalAllowlist(
   config: RecodeConfigFile,
   approvalAllowlist: readonly ToolApprovalScope[]
 ): RecodeConfigFile {
-  return {
-    version: CONFIG_VERSION,
-    providers: config.providers,
-    ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
-    ...(config.toolMarkerName === undefined ? {} : { toolMarkerName: config.toolMarkerName }),
-    ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
-    approvalAllowlist,
-    ...(config.layoutMode === undefined ? {} : { layoutMode: config.layoutMode }),
-    ...(config.minimalMode === undefined ? {} : { minimalMode: config.minimalMode }),
-    ...(config.activeProviderId === undefined ? {} : { activeProviderId: config.activeProviderId })
-  };
+  return patchRecodeConfig(config, { approvalAllowlist });
 }
 
 /**
@@ -297,17 +232,7 @@ export function selectConfiguredLayoutMode(
   config: RecodeConfigFile,
   layoutMode: LayoutMode
 ): RecodeConfigFile {
-  return {
-    version: CONFIG_VERSION,
-    providers: config.providers,
-    layoutMode,
-    ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
-    ...(config.toolMarkerName === undefined ? {} : { toolMarkerName: config.toolMarkerName }),
-    ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
-    ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
-    ...(config.minimalMode === undefined ? {} : { minimalMode: config.minimalMode }),
-    ...(config.activeProviderId === undefined ? {} : { activeProviderId: config.activeProviderId })
-  };
+  return patchRecodeConfig(config, { layoutMode });
 }
 
 /**
@@ -317,17 +242,7 @@ export function selectConfiguredMinimalMode(
   config: RecodeConfigFile,
   minimalMode: boolean
 ): RecodeConfigFile {
-  return {
-    version: CONFIG_VERSION,
-    providers: config.providers,
-    minimalMode,
-    ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
-    ...(config.toolMarkerName === undefined ? {} : { toolMarkerName: config.toolMarkerName }),
-    ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
-    ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
-    ...(config.layoutMode === undefined ? {} : { layoutMode: config.layoutMode }),
-    ...(config.activeProviderId === undefined ? {} : { activeProviderId: config.activeProviderId })
-  };
+  return patchRecodeConfig(config, { minimalMode });
 }
 
 function parseRecodeConfigFile(value: unknown): RecodeConfigFile {
