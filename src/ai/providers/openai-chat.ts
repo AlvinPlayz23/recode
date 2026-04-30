@@ -2,7 +2,7 @@
  * Streaming adapter for OpenAI Chat Completions.
  */
 
-import type { ConversationMessage } from "../../messages/message.ts";
+import { formatContinuationSummaryForModel, type ConversationMessage } from "../../messages/message.ts";
 import type { ToolDefinition } from "../../tools/tool.ts";
 import { joinUrl, readErrorMessage } from "../http.ts";
 import { parseProviderToolArguments } from "../json.ts";
@@ -226,6 +226,12 @@ function messagesToChatMessages(systemPrompt: string, messages: readonly Convers
         });
         break;
       }
+      case "summary":
+        result.push({
+          role: "user",
+          content: formatContinuationSummaryForModel(message.content)
+        });
+        break;
       case "tool":
         result.push({
           role: "tool",

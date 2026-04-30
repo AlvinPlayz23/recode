@@ -37,6 +37,15 @@ import {
 import { useKeyboard, usePaste, useRenderer, useSelectionHandler, useTerminalDimensions } from "@opentui/solid";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type { AiModel } from "../ai/types.ts";
+import {
+  DEFAULT_FALLBACK_CONTEXT_WINDOW_TOKENS,
+  assertConversationFitsContextWindow,
+  calculateReservedContextTokens,
+  compactConversation,
+  estimateConversationContextTokens,
+  evaluateAutoCompaction,
+  type ContextTokenEstimate
+} from "../agent/compact-conversation.ts";
 import type { AgentRunResult, TextDeltaObserver } from "../agent/run-agent-loop.ts";
 import { addStepTokenUsage } from "../agent/step-stats.ts";
 import { runAgentLoop } from "../agent/run-agent-loop.ts";
@@ -47,6 +56,7 @@ import {
   selectConfiguredApprovalMode,
   selectConfiguredLayoutMode,
   selectConfiguredMinimalMode,
+  setConfiguredModelContextWindow,
   selectConfiguredProviderModel,
   selectConfiguredTheme,
   selectConfiguredToolMarker
@@ -64,11 +74,16 @@ import {
   type SavedConversationMeta,
   type SavedConversationRecord
 } from "../history/recode-history.ts";
-import type { ConversationMessage, ToolCall } from "../messages/message.ts";
+import {
+  formatContinuationSummaryForDisplay,
+  type ConversationMessage,
+  type ToolCall
+} from "../messages/message.ts";
 import { createLanguageModel } from "../models/create-model-client.ts";
 import { listModelsForProvider, type ListedModelGroup } from "../models/list-models.ts";
 import { PLAN_SYSTEM_PROMPT } from "../prompt/plan-system-prompt.ts";
 import {
+  setRuntimeModelContextWindow,
   selectRuntimeProviderModel,
   type RuntimeConfig
 } from "../runtime/runtime-config.ts";
@@ -193,6 +208,14 @@ interface FileSuggestionPanelState {
   readonly selectedItem: FileSuggestionItem | undefined;
 }
 
+interface ContextWindowStatusSnapshot {
+  readonly contextWindowTokens: number;
+  readonly source: "configured" | "fallback";
+  readonly reservedTokens: number;
+  readonly lastEstimate?: ContextTokenEstimate;
+  readonly autoCompactionActive: boolean;
+}
+
 type PromptRenderable = InputRenderable | TextareaRenderable;
 
 const PROMPT_TEXTAREA_KEY_BINDINGS: TextareaKeyBinding[] = [
@@ -228,6 +251,8 @@ export function TuiApp(props: TuiAppProps) {
   const [draft, setDraft] = createSignal("");
   const [pendingPastes, setPendingPastes] = createSignal<readonly PendingPaste[]>([]);
   const [previousMessages, setPreviousMessages] = createSignal<readonly ConversationMessage[]>([]);
+  const [contextWindowFallbacks, setContextWindowFallbacks] = createSignal<Readonly<Record<string, number>>>({});
+  const [lastContextEstimate, setLastContextEstimate] = createSignal<ContextTokenEstimate | undefined>(undefined);
   const [sessionMode, setSessionMode] = createSignal<SessionMode>("build");
   const [currentConversation, setCurrentConversation] = createSignal<SavedConversationRecord | undefined>(undefined);
   const [statusTick, setStatusTick] = createSignal(0);
@@ -299,6 +324,11 @@ export function TuiApp(props: TuiAppProps) {
   const markdownStyle = createMemo(() => createMarkdownSyntaxStyle(t()));
   const sessionLanguageModel = createMemo(() => createLanguageModel(sessionRuntimeConfig()));
   const historyRoot = createMemo(() => resolveHistoryRoot(sessionRuntimeConfig().configPath));
+  const currentContextWindowStatus = createMemo<ContextWindowStatusSnapshot>(() => buildContextWindowStatusSnapshot(
+    sessionRuntimeConfig(),
+    contextWindowFallbacks(),
+    lastContextEstimate()
+  ));
   const modalOpen = createMemo(() =>
     modelPickerOpen()
     || historyPickerOpen()
@@ -599,6 +629,153 @@ export function TuiApp(props: TuiAppProps) {
     });
   }
 
+  const resolveCurrentContextWindowStatus = () => buildContextWindowStatusSnapshot(
+    sessionRuntimeConfig(),
+    contextWindowFallbacks(),
+    lastContextEstimate()
+  );
+
+  const persistModelContextWindow = (providerId: string, modelId: string, contextWindowTokens: number) => {
+    const config = loadRecodeConfigFile(sessionRuntimeConfig().configPath);
+    const nextConfig = setConfiguredModelContextWindow(config, providerId, modelId, contextWindowTokens);
+    saveRecodeConfigFile(sessionRuntimeConfig().configPath, nextConfig);
+    setSessionRuntimeConfig((current) => setRuntimeModelContextWindow(current, providerId, modelId, contextWindowTokens));
+  };
+
+  const ensureActiveModelContextWindow = async (): Promise<ContextWindowStatusSnapshot> => {
+    const configuredStatus = resolveCurrentContextWindowStatus();
+    if (configuredStatus.source === "configured") {
+      return configuredStatus;
+    }
+
+    const runtimeConfig = sessionRuntimeConfig();
+    const modelKey = buildContextWindowFallbackKey(runtimeConfig.providerId, runtimeConfig.model);
+    const existingFallback = contextWindowFallbacks()[modelKey];
+    if (existingFallback !== undefined) {
+      return resolveCurrentContextWindowStatus();
+    }
+
+    const decision = await requestQuestionAnswers({
+      questions: [
+        {
+          id: "context-window",
+          header: "Context Window",
+          question: `Recode does not know the context window for '${runtimeConfig.model}'. Enter it if you know it, or use the conservative 200k fallback for this session.`,
+          multiSelect: false,
+          allowCustomText: true,
+          options: [
+            {
+              label: "Use 200k fallback this session",
+              description: "Auto-compaction stays conservative until this model has a saved context window."
+            }
+          ]
+        }
+      ]
+    });
+
+    const setFallbackForSession = (message: string) => {
+      setContextWindowFallbacks((current) => ({
+        ...current,
+        [modelKey]: DEFAULT_FALLBACK_CONTEXT_WINDOW_TOKENS
+      }));
+      appendEntry(setEntries, createEntry("status", "status", message));
+    };
+
+    if (decision.dismissed) {
+      setFallbackForSession(
+        `Using the conservative 200k context-window fallback for ${runtimeConfig.model} this session. Set the real value later from setup or when prompted again after a restart.`
+      );
+      return buildContextWindowStatusSnapshot(runtimeConfig, {
+        ...contextWindowFallbacks(),
+        [modelKey]: DEFAULT_FALLBACK_CONTEXT_WINDOW_TOKENS
+      }, lastContextEstimate());
+    }
+
+    const answer = decision.answers[0];
+    const customValue = answer?.customText.trim() ?? "";
+    const parsedValue = Number.parseInt(customValue, 10);
+    if (Number.isFinite(parsedValue) && parsedValue > 0) {
+      persistModelContextWindow(runtimeConfig.providerId, runtimeConfig.model, parsedValue);
+      appendEntry(
+        setEntries,
+        createEntry("status", "status", `Saved a ${parsedValue.toLocaleString()} token context window for ${runtimeConfig.model}`)
+      );
+      return buildContextWindowStatusSnapshot(
+        setRuntimeModelContextWindow(runtimeConfig, runtimeConfig.providerId, runtimeConfig.model, parsedValue),
+        contextWindowFallbacks(),
+        lastContextEstimate()
+      );
+    }
+
+    setFallbackForSession(
+      customValue === ""
+        ? `Using the conservative 200k context-window fallback for ${runtimeConfig.model} this session.`
+        : `Could not parse '${customValue}' as a positive integer, so Recode will use the conservative 200k context-window fallback for ${runtimeConfig.model} this session.`
+    );
+    return buildContextWindowStatusSnapshot(runtimeConfig, {
+      ...contextWindowFallbacks(),
+      [modelKey]: DEFAULT_FALLBACK_CONTEXT_WINDOW_TOKENS
+    }, lastContextEstimate());
+  };
+
+  const prepareTranscriptForPendingPrompt = async (
+    pendingPrompt: string,
+    abortSignal: AbortSignal
+  ): Promise<readonly ConversationMessage[]> => {
+    const contextWindowStatus = await ensureActiveModelContextWindow();
+    const estimateBefore = estimateConversationContextTokens(previousMessages(), pendingPrompt);
+    setLastContextEstimate(estimateBefore);
+
+    const compactionDecision = evaluateAutoCompaction(
+      estimateBefore,
+      contextWindowStatus.contextWindowTokens,
+      sessionLanguageModel().maxOutputTokens
+    );
+
+    if (!compactionDecision.shouldCompact) {
+      return previousMessages();
+    }
+
+    const compacted = await compactConversation({
+      transcript: previousMessages(),
+      languageModel: sessionLanguageModel(),
+      abortSignal
+    });
+
+    if (compacted.kind === "noop") {
+      throw new Error(
+        "This session is near the context limit, but there is not enough older history to compact yet. Try a shorter prompt, compact later, or configure a larger context window for this model."
+      );
+    }
+
+    setPreviousMessages(compacted.transcript);
+    const persistedConversation = persistConversation(
+      historyRoot(),
+      sessionRuntimeConfig(),
+      compacted.transcript,
+      currentConversation(),
+      sessionMode()
+    );
+    setCurrentConversation(persistedConversation);
+    appendEntry(
+      setEntries,
+      createEntry(
+        "status",
+        "status",
+        `Auto-compacted ${compacted.compactedMessageCount} older message${compacted.compactedMessageCount === 1 ? "" : "s"} into a continuation summary`
+      )
+    );
+
+    const estimateAfter = assertConversationFitsContextWindow(
+      compacted.transcript,
+      pendingPrompt,
+      contextWindowStatus.contextWindowTokens,
+      sessionLanguageModel().maxOutputTokens
+    );
+    setLastContextEstimate(estimateAfter);
+    return compacted.transcript;
+  };
+
   onMount(() => {
     inputRef?.focus();
     applyInputCursorStyle(inputRef, t().brandShimmer);
@@ -608,6 +785,7 @@ export function TuiApp(props: TuiAppProps) {
       setConversation: setCurrentConversation,
       setEntries,
       setPreviousMessages,
+      setLastContextEstimate,
       setSessionMode
     });
   });
@@ -752,6 +930,23 @@ export function TuiApp(props: TuiAppProps) {
     }
 
     if (activeQuestionRequest() !== undefined) {
+      const request = activeQuestionRequest();
+      if (isContextWindowQuestionRequest(request)) {
+        switch (key.name) {
+          case "escape":
+            key.preventDefault();
+            resolveQuestionRequest({ dismissed: true });
+            return;
+          case "return":
+          case "enter":
+            key.preventDefault();
+            submitActiveQuestionRequest();
+            return;
+          default:
+            return;
+        }
+      }
+
       switch (key.name) {
         case "escape":
           key.preventDefault();
@@ -1092,15 +1287,16 @@ export function TuiApp(props: TuiAppProps) {
             runtimeConfig: sessionRuntimeConfig(),
             selectedIndex: historyPickerSelectedIndex(),
             items: filteredHistoryPickerItems(),
-            setBusy: setHistoryPickerBusy,
-            setRuntimeConfig: setSessionRuntimeConfig,
-            setConversation: setCurrentConversation,
-            setEntries,
-            setPreviousMessages,
-            close() {
-              closeHistoryPicker(inputRef, setHistoryPickerOpen, setHistoryPickerQuery, setHistoryPickerSelectedIndex, setHistoryPickerWindowStart);
-            }
-          });
+          setBusy: setHistoryPickerBusy,
+          setRuntimeConfig: setSessionRuntimeConfig,
+          setConversation: setCurrentConversation,
+          setEntries,
+          setPreviousMessages,
+          setLastContextEstimate,
+          close() {
+            closeHistoryPicker(inputRef, setHistoryPickerOpen, setHistoryPickerQuery, setHistoryPickerSelectedIndex, setHistoryPickerWindowStart);
+          }
+        });
           return;
         default:
           return;
@@ -1461,6 +1657,11 @@ export function TuiApp(props: TuiAppProps) {
     });
 
     if (unanswered !== undefined) {
+      if (isContextWindowQuestionRequest(request)) {
+        resolveQuestionRequest(buildContextWindowFallbackDecision(request));
+        return;
+      }
+
       appendEntry(
         setEntries,
         createEntry("status", "status", `Answer '${unanswered.header}' or press ESC to dismiss.`)
@@ -1600,9 +1801,53 @@ export function TuiApp(props: TuiAppProps) {
         setCurrentConversation(conversation);
         setEntries([createEntry("status", "status", "Started a new conversation")]);
         setPreviousMessages([]);
+        setLastContextEstimate(undefined);
         setStreamingBody("");
         setStreamingEntryId(undefined);
         setPendingPastes([]);
+        return;
+      }
+
+      if (builtinCommand.name === "compact") {
+        setBusyPhase("thinking");
+        setBusy(true);
+
+        try {
+          const compacted = await compactConversation({
+            transcript: previousMessages(),
+            languageModel: sessionLanguageModel()
+          });
+
+          if (compacted.kind === "noop") {
+            appendEntry(setEntries, createEntry("status", "status", "Nothing to compact yet."));
+            return;
+          }
+
+          setPreviousMessages(compacted.transcript);
+          setLastContextEstimate(estimateConversationContextTokens(compacted.transcript));
+          const persistedConversation = persistConversation(
+            historyRoot(),
+            sessionRuntimeConfig(),
+            compacted.transcript,
+            currentConversation(),
+            sessionMode()
+          );
+          setCurrentConversation(persistedConversation);
+          appendEntry(
+            setEntries,
+            createEntry(
+              "status",
+              "status",
+              `Compacted ${compacted.compactedMessageCount} older message${compacted.compactedMessageCount === 1 ? "" : "s"} into a continuation summary`
+            )
+          );
+        } catch (error) {
+          appendEntry(setEntries, createEntry("error", "error", toErrorMessage(error)));
+        } finally {
+          setBusyPhase("thinking");
+          setBusy(false);
+          inputRef?.focus();
+        }
         return;
       }
 
@@ -1645,6 +1890,7 @@ export function TuiApp(props: TuiAppProps) {
         entriesCount: entries().length,
         transcriptCount: previousMessages().length,
         transcript: previousMessages(),
+        contextWindowStatus: currentContextWindowStatus(),
         appendEntry(entry) {
           appendEntry(setEntries, entry);
         }
@@ -1657,22 +1903,25 @@ export function TuiApp(props: TuiAppProps) {
     setPendingPastes([]);
     setBusyPhase("thinking");
     setBusy(true);
-    appendEntry(setEntries, createEntry("user", "You", prompt));
 
     const abortController = new AbortController();
     activeAbortController = abortController;
-
-    const streamingEntry = createEntry("assistant", "Recode", "");
-    let currentStreamingId = streamingEntry.id;
-    setStreamingBody("");
-    setStreamingEntryId(currentStreamingId);
-    appendEntry(setEntries, streamingEntry);
+    let currentStreamingId: string | undefined;
 
     try {
+      const preparedTranscript = await prepareTranscriptForPendingPrompt(expandedPrompt, abortController.signal);
+      appendEntry(setEntries, createEntry("user", "You", prompt));
+
+      const streamingEntry = createEntry("assistant", "Recode", "");
+      currentStreamingId = streamingEntry.id;
+      setStreamingBody("");
+      setStreamingEntryId(currentStreamingId);
+      appendEntry(setEntries, streamingEntry);
+
       const result = await runSingleTurn({
         systemPrompt: activeSystemPrompt(),
         prompt: expandedPrompt,
-        previousMessages: previousMessages(),
+        previousMessages: preparedTranscript,
         languageModel: sessionLanguageModel(),
         toolRegistry: activeToolRegistry(),
         toolContext: sessionToolContext(),
@@ -1681,6 +1930,9 @@ export function TuiApp(props: TuiAppProps) {
           setBusyPhase("tool");
           flushAndResetPendingStreamText();
           const currentId = currentStreamingId;
+          if (currentId === undefined) {
+            return;
+          }
           const currentBody = streamingBody();
 
           if (currentBody !== "") {
@@ -1703,7 +1955,9 @@ export function TuiApp(props: TuiAppProps) {
           appendEntry(setEntries, nextEntry);
         },
         onTextDelta(delta) {
-          schedulePendingStreamTextFlush(currentStreamingId, delta);
+          if (currentStreamingId !== undefined) {
+            schedulePendingStreamTextFlush(currentStreamingId, delta);
+          }
         },
         onToolResult(toolResult) {
           setBusyPhase("thinking");
@@ -1719,6 +1973,7 @@ export function TuiApp(props: TuiAppProps) {
       flushAndResetPendingStreamText();
       const lastId = currentStreamingId;
       const finalBody = result.finalText !== "" ? result.finalText : streamingBody();
+      if (lastId !== undefined) {
       setEntries((prev) => {
         const last = prev.find((e) => e.id === lastId);
         if (last === undefined) {
@@ -1732,8 +1987,10 @@ export function TuiApp(props: TuiAppProps) {
         }
         return prev;
       });
+      }
 
       setPreviousMessages(result.transcript);
+      setLastContextEstimate(estimateConversationContextTokens(result.transcript));
       setBusyPhase("saving-history");
       const persistedConversation = persistConversation(
         historyRoot(),
@@ -1751,7 +2008,7 @@ export function TuiApp(props: TuiAppProps) {
       flushAndResetPendingStreamText();
       const currentId = currentStreamingId;
       const partialBody = streamingBody();
-      if (partialBody !== "") {
+      if (currentId !== undefined && partialBody !== "") {
         updateEntryBody(setEntries, currentId, () => partialBody);
       }
       if (!(error instanceof OperationAbortedError)) {
@@ -1790,7 +2047,7 @@ export function TuiApp(props: TuiAppProps) {
               <For each={commandPanel()!.commands}>
                 {(command, index) => (
                   <box flexDirection="row" gap={1}>
-                    <box width={12} flexShrink={0}>
+                    <box width={18} flexShrink={0}>
                       <text
                         fg={index() === commandPanel()!.selectedIndex ? t().brandShimmer : t().text}
                         attributes={index() === commandPanel()!.selectedIndex ? TextAttributes.BOLD : TextAttributes.NONE}
@@ -1890,6 +2147,7 @@ export function TuiApp(props: TuiAppProps) {
               }
             }}
             initialValue={toVisibleDraft(draft())}
+            focused={!modalOpen()}
             flexGrow={1}
             minHeight={1}
             maxHeight={4}
@@ -2428,133 +2686,272 @@ export function TuiApp(props: TuiAppProps) {
       </Show>
 
       <Show when={activeQuestionRequest() !== undefined}>
-        <box
-          flexDirection="column"
-          border
-          borderColor={t().brandShimmer}
-          marginLeft={3}
-          marginRight={3}
-          marginBottom={1}
-          paddingLeft={1}
-          paddingRight={1}
-          paddingTop={1}
-          paddingBottom={1}
-          flexShrink={0}
-        >
-          <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>Questions</text>
-          <Show when={activeQuestionRequest()}>
-            {(request: () => ActiveQuestionRequest) => {
-              const activeQuestion = () => request().questions[request().currentQuestionIndex];
-              const activeAnswer = () => {
-                const question = activeQuestion();
-                return question === undefined
-                  ? undefined
-                  : request().answers[question.id];
-              };
+        <Show
+          when={activeQuestionRequest() !== undefined && isContextWindowQuestionRequest(activeQuestionRequest())}
+          fallback={
+            <box
+              flexDirection="column"
+              border
+              borderColor={t().brandShimmer}
+              marginLeft={3}
+              marginRight={3}
+              marginBottom={1}
+              paddingLeft={1}
+              paddingRight={1}
+              paddingTop={1}
+              paddingBottom={1}
+              flexShrink={0}
+            >
+              <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>Questions</text>
+              <Show when={activeQuestionRequest()}>
+                {(request: () => ActiveQuestionRequest) => {
+                  const activeQuestion = () => request().questions[request().currentQuestionIndex];
+                  const activeAnswer = () => {
+                    const question = activeQuestion();
+                    return question === undefined
+                      ? undefined
+                      : request().answers[question.id];
+                  };
 
-              return (
-                <>
-                  <text fg={t().hintText}>
-                    {`Question ${request().currentQuestionIndex + 1} of ${request().questions.length} · ←/→ to switch · Space to select · Enter to submit · ESC to dismiss`}
-                  </text>
-                  <Show when={activeQuestion()}>
-                    {(question: () => QuestionPrompt) => (
-                      <>
-                        <text fg={t().text} attributes={TextAttributes.BOLD} marginTop={1}>{question().header}</text>
-                        <text fg={t().assistantBody}>{question().question}</text>
-                        <text fg={t().hintText} attributes={TextAttributes.DIM}>
-                          {question().multiSelect ? "Select any answers that apply." : "Select one answer."}
-                        </text>
-                        <box
-                          flexDirection="column"
-                          border
-                          borderColor={t().promptBorder}
-                          marginTop={1}
-                          paddingLeft={1}
-                          paddingRight={1}
-                        >
-                          <For each={question().options}>
-                            {(option, index) => {
-                              const selected = () => index() === normalizeBuiltinCommandSelectionIndex(
-                                request().selectedOptionIndex,
-                                question().options.length
-                              );
-                              const chosen = () => activeAnswer()?.selectedOptionLabels.includes(option.label) ?? false;
+                  return (
+                    <>
+                      <text fg={t().hintText}>
+                        {`Question ${request().currentQuestionIndex + 1} of ${request().questions.length} · ←/→ to switch · Space to select · Enter to submit · ESC to dismiss`}
+                      </text>
+                      <Show when={activeQuestion()}>
+                        {(question: () => QuestionPrompt) => (
+                          <>
+                            <text fg={t().text} attributes={TextAttributes.BOLD} marginTop={1}>{question().header}</text>
+                            <text fg={t().assistantBody}>{question().question}</text>
+                            <text fg={t().hintText} attributes={TextAttributes.DIM}>
+                              {question().multiSelect ? "Select any answers that apply." : "Select one answer."}
+                            </text>
+                            <box
+                              flexDirection="column"
+                              border
+                              borderColor={t().promptBorder}
+                              marginTop={1}
+                              paddingLeft={1}
+                              paddingRight={1}
+                            >
+                              <For each={question().options}>
+                                {(option, index) => {
+                                  const selected = () => index() === normalizeBuiltinCommandSelectionIndex(
+                                    request().selectedOptionIndex,
+                                    question().options.length
+                                  );
+                                  const chosen = () => activeAnswer()?.selectedOptionLabels.includes(option.label) ?? false;
 
-                              return (
-                                <box flexDirection="column" marginBottom={1}>
-                                  <text
-                                    fg={selected() ? t().brandShimmer : t().text}
-                                    attributes={selected() ? TextAttributes.BOLD : TextAttributes.NONE}
-                                  >
-                                    {`${selected() ? "›" : " "} ${chosen() ? "[x]" : "[ ]"} ${option.label}`}
-                                  </text>
-                                  <text fg={t().hintText} attributes={TextAttributes.DIM}>{option.description}</text>
-                                </box>
-                              );
-                            }}
-                          </For>
-                        </box>
-                        <Show when={question().allowCustomText}>
-                          <box
-                            flexDirection="row"
-                            alignItems="center"
-                            marginTop={1}
-                            border
-                            borderColor={t().promptBorder}
-                            paddingLeft={1}
-                            paddingRight={1}
-                          >
-                            <text fg={t().brandShimmer}>✎ </text>
-                            <input
-                              ref={(value) => {
-                                questionCustomInputRef = value;
-                                applyInputCursorStyle(value, t().brandShimmer);
-                              }}
-                              focused={activeQuestionRequest() !== undefined}
-                              value={activeAnswer()?.customText ?? ""}
-                              flexGrow={1}
-                              placeholder="Optional custom answer..."
-                              onInput={(value) => {
-                                setActiveQuestionRequest((current) => {
-                                  if (current === undefined) {
-                                    return current;
-                                  }
-
-                                  const currentQuestion = current.questions[current.currentQuestionIndex];
-                                  if (currentQuestion === undefined) {
-                                    return current;
-                                  }
-
-                                  const currentAnswer = current.answers[currentQuestion.id] ?? {
-                                    questionId: currentQuestion.id,
-                                    selectedOptionLabels: [],
-                                    customText: ""
-                                  };
-
-                                  return {
-                                    ...current,
-                                    answers: {
-                                      ...current.answers,
-                                      [currentQuestion.id]: {
-                                        ...currentAnswer,
-                                        customText: value
+                                  return (
+                                    <box flexDirection="column" marginBottom={1}>
+                                      <text
+                                        fg={selected() ? t().brandShimmer : t().text}
+                                        attributes={selected() ? TextAttributes.BOLD : TextAttributes.NONE}
+                                      >
+                                        {`${selected() ? "›" : " "} ${chosen() ? "[x]" : "[ ]"} ${option.label}`}
+                                      </text>
+                                      <text fg={t().hintText} attributes={TextAttributes.DIM}>{option.description}</text>
+                                    </box>
+                                  );
+                                }}
+                              </For>
+                            </box>
+                            <Show when={question().allowCustomText}>
+                              <box
+                                flexDirection="row"
+                                alignItems="center"
+                                marginTop={1}
+                                border
+                                borderColor={t().promptBorder}
+                                paddingLeft={1}
+                                paddingRight={1}
+                              >
+                                <text fg={t().brandShimmer}>✎ </text>
+                                <input
+                                  ref={(value) => {
+                                    questionCustomInputRef = value;
+                                    applyInputCursorStyle(value, t().brandShimmer);
+                                  }}
+                                  focused={activeQuestionRequest() !== undefined}
+                                  value={activeAnswer()?.customText ?? ""}
+                                  flexGrow={1}
+                                  placeholder="Optional custom answer..."
+                                  onInput={(value) => {
+                                    setActiveQuestionRequest((current) => {
+                                      if (current === undefined) {
+                                        return current;
                                       }
-                                    }
-                                  };
-                                });
-                              }}
-                            />
-                          </box>
-                        </Show>
-                      </>
-                    )}
-                  </Show>
-                </>
-              );
-            }}
-          </Show>
-        </box>
+
+                                      const currentQuestion = current.questions[current.currentQuestionIndex];
+                                      if (currentQuestion === undefined) {
+                                        return current;
+                                      }
+
+                                      const currentAnswer = current.answers[currentQuestion.id] ?? {
+                                        questionId: currentQuestion.id,
+                                        selectedOptionLabels: [],
+                                        customText: ""
+                                      };
+
+                                      return {
+                                        ...current,
+                                        answers: {
+                                          ...current.answers,
+                                          [currentQuestion.id]: {
+                                            ...currentAnswer,
+                                            customText: value
+                                          }
+                                        }
+                                      };
+                                    });
+                                  }}
+                                />
+                              </box>
+                            </Show>
+                          </>
+                        )}
+                      </Show>
+                    </>
+                  );
+                }}
+              </Show>
+            </box>
+          }
+        >
+          <box
+            flexDirection="column"
+            border
+            borderColor={t().warning}
+            marginLeft={5}
+            marginRight={5}
+            marginBottom={1}
+            paddingLeft={2}
+            paddingRight={2}
+            paddingTop={1}
+            paddingBottom={1}
+            flexShrink={0}
+          >
+            <Show when={activeQuestionRequest()}>
+              {(request: () => ActiveQuestionRequest) => {
+                const question = () => request().questions[0];
+                const answer = () => {
+                  const active = question();
+                  return active === undefined
+                    ? undefined
+                    : request().answers[active.id];
+                };
+
+                return (
+                  <>
+                    <box flexDirection="row" justifyContent="space-between" alignItems="center">
+                      <text fg={t().warning} attributes={TextAttributes.BOLD}>Model Context Window</text>
+                      <text fg={t().hintText} attributes={TextAttributes.DIM}>Enter saves · ESC falls back</text>
+                    </box>
+
+                    <box
+                      flexDirection="column"
+                      marginTop={1}
+                      marginBottom={1}
+                      border
+                      borderColor={t().promptBorder}
+                      paddingLeft={1}
+                      paddingRight={1}
+                      paddingTop={1}
+                      paddingBottom={1}
+                    >
+                      <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>Unknown model limit</text>
+                      <text fg={t().assistantBody}>{question()?.question ?? ""}</text>
+                      <text fg={t().hintText} attributes={TextAttributes.DIM}>
+                        Save the real number if you know it. Otherwise Recode can use a conservative session-only guardrail.
+                      </text>
+                    </box>
+
+                    <box flexDirection="row" alignItems="center" marginBottom={1}>
+                      <box
+                        width={14}
+                        flexShrink={0}
+                        border
+                        borderColor={t().warning}
+                        paddingLeft={1}
+                        paddingRight={1}
+                      >
+                        <text fg={t().warning} attributes={TextAttributes.BOLD}>Tokens</text>
+                      </box>
+                      <box
+                        flexDirection="row"
+                        alignItems="center"
+                        flexGrow={1}
+                        border
+                        borderColor={t().brandShimmer}
+                        paddingLeft={1}
+                        paddingRight={1}
+                      >
+                        <text fg={t().brandShimmer}># </text>
+                        <input
+                          ref={(value) => {
+                            questionCustomInputRef = value;
+                            applyInputCursorStyle(value, t().brandShimmer);
+                          }}
+                          focused={activeQuestionRequest() !== undefined}
+                          value={answer()?.customText ?? ""}
+                          flexGrow={1}
+                          placeholder="e.g. 128000"
+                          onInput={(value) => {
+                            setActiveQuestionRequest((current) => {
+                              if (current === undefined) {
+                                return current;
+                              }
+
+                              const currentQuestion = current.questions[current.currentQuestionIndex];
+                              if (currentQuestion === undefined) {
+                                return current;
+                              }
+
+                              const currentAnswer = current.answers[currentQuestion.id] ?? {
+                                questionId: currentQuestion.id,
+                                selectedOptionLabels: [],
+                                customText: ""
+                              };
+
+                              return {
+                                ...current,
+                                answers: {
+                                  ...current.answers,
+                                  [currentQuestion.id]: {
+                                    ...currentAnswer,
+                                    customText: value
+                                  }
+                                }
+                              };
+                            });
+                          }}
+                        />
+                      </box>
+                    </box>
+
+                    <box
+                      flexDirection="column"
+                      border
+                      borderColor={t().warning}
+                      paddingLeft={1}
+                      paddingRight={1}
+                      paddingTop={1}
+                      paddingBottom={1}
+                    >
+                      <text fg={t().warning} attributes={TextAttributes.BOLD}>200k Session Fallback</text>
+                      <text fg={t().assistantBody}>
+                        Leave the field empty and press Enter to continue with a temporary 200,000-token window for this session.
+                      </text>
+                      <text fg={t().hintText} attributes={TextAttributes.DIM}>
+                        This does not overwrite your saved model config.
+                      </text>
+                    </box>
+                  </>
+                );
+              }}
+            </Show>
+          </box>
+        </Show>
       </Show>
 
       <Show when={activeApprovalRequest() !== undefined}>
@@ -2667,6 +3064,30 @@ function applyInputCursorStyle(input: PromptRenderable | undefined, color: strin
   input.cursorColor = color;
 }
 
+function isContextWindowQuestionRequest(
+  request: Pick<QuestionToolRequest, "questions"> | undefined
+): boolean {
+  return request?.questions.length === 1 && request.questions[0]?.id === "context-window";
+}
+
+function buildContextWindowFallbackDecision(
+  request: Pick<QuestionToolRequest, "questions">
+): QuestionToolDecision {
+  const question = request.questions[0];
+  const fallbackLabel = question?.options[0]?.label;
+
+  return {
+    dismissed: false,
+    answers: [
+      {
+        questionId: question?.id ?? "context-window",
+        selectedOptionLabels: fallbackLabel === undefined ? [] : [fallbackLabel],
+        customText: ""
+      }
+    ]
+  };
+}
+
 interface BuiltinCommandHandlerOptions {
   readonly commandName: "help" | "status" | "config";
   readonly runtimeConfig: RuntimeConfig;
@@ -2676,6 +3097,7 @@ interface BuiltinCommandHandlerOptions {
   readonly entriesCount: number;
   readonly transcriptCount: number;
   readonly transcript: readonly ConversationMessage[];
+  readonly contextWindowStatus: ContextWindowStatusSnapshot;
   readonly appendEntry: (entry: UiEntry) => void;
 }
 
@@ -2722,7 +3144,8 @@ async function handleBuiltinCommand(options: BuiltinCommandHandlerOptions): Prom
           options.sessionMode,
           options.entriesCount,
           options.transcriptCount,
-          options.transcript
+          options.transcript,
+          options.contextWindowStatus
         )
       ));
       return;
@@ -2887,7 +3310,8 @@ function buildBuiltinStatusBody(
   sessionMode: SessionMode,
   entriesCount: number,
   transcriptCount: number,
-  transcript: readonly ConversationMessage[]
+  transcript: readonly ConversationMessage[],
+  contextWindowStatus: ContextWindowStatusSnapshot
 ): string {
   const stepSummary = summarizeTranscriptSteps(transcript);
   const providerControls = [
@@ -2909,6 +3333,10 @@ function buildBuiltinStatusBody(
     `- Approval mode: \`${runtimeConfig.approvalMode}\``,
     `- Always-allowed scopes: ${runtimeConfig.approvalAllowlist.length === 0 ? "none" : runtimeConfig.approvalAllowlist.map((scope) => `\`${scope}\``).join(", ")}`,
     `- Config path: \`${runtimeConfig.configPath}\``,
+    `- Context window: ${contextWindowStatus.contextWindowTokens.toLocaleString()} tokens (${contextWindowStatus.source})`,
+    `- Reserved compaction buffer: ${contextWindowStatus.reservedTokens.toLocaleString()} tokens`,
+    `- Last estimated context usage: ${contextWindowStatus.lastEstimate === undefined ? "n/a" : `${contextWindowStatus.lastEstimate.estimatedTokens.toLocaleString()} tokens (${contextWindowStatus.lastEstimate.source})`}`,
+    `- Auto-compaction: ${contextWindowStatus.autoCompactionActive ? "enabled" : "disabled"}`,
     `- Visible UI entries: ${entriesCount}`,
     `- Conversation messages: ${transcriptCount}`,
     `- Completed assistant steps: ${stepSummary.stepCount}`,
@@ -2917,6 +3345,26 @@ function buildBuiltinStatusBody(
     `- Last finish reason: \`${stepSummary.lastFinishReason ?? "n/a"}\``,
     `- Last step duration: ${stepSummary.lastDurationMs === undefined ? "n/a" : `${stepSummary.lastDurationMs} ms`}`
   ].join("\n");
+}
+
+function buildContextWindowStatusSnapshot(
+  runtimeConfig: RuntimeConfig,
+  fallbackContexts: Readonly<Record<string, number>>,
+  lastEstimate: ContextTokenEstimate | undefined
+): ContextWindowStatusSnapshot {
+  const configuredContextWindowTokens = runtimeConfig.contextWindowTokens;
+  const fallbackContextWindowTokens = fallbackContexts[buildContextWindowFallbackKey(runtimeConfig.providerId, runtimeConfig.model)];
+  const contextWindowTokens = configuredContextWindowTokens
+    ?? fallbackContextWindowTokens
+    ?? DEFAULT_FALLBACK_CONTEXT_WINDOW_TOKENS;
+
+  return {
+    contextWindowTokens,
+    source: configuredContextWindowTokens === undefined ? "fallback" : "configured",
+    reservedTokens: calculateReservedContextTokens(runtimeConfig.maxOutputTokens),
+    autoCompactionActive: true,
+    ...(lastEstimate === undefined ? {} : { lastEstimate })
+  };
 }
 
 function summarizeTranscriptSteps(transcript: readonly ConversationMessage[]): {
@@ -2997,7 +3445,11 @@ function buildBuiltinConfigBody(
     lines.push(`  - Kind: ${provider.kind}`);
     lines.push(`  - Base URL: \`${provider.baseUrl}\``);
     lines.push(`  - Default model: \`${provider.defaultModelId ?? provider.models[0]?.id ?? "unset"}\``);
-    lines.push(`  - Saved models: ${provider.models.length === 0 ? "none" : provider.models.map((model) => `\`${model.id}\``).join(", ")}`);
+    lines.push(`  - Saved models: ${provider.models.length === 0 ? "none" : provider.models.map((model) =>
+      model.contextWindowTokens === undefined
+        ? `\`${model.id}\``
+        : `\`${model.id}\` (${model.contextWindowTokens.toLocaleString()} ctx)`
+    ).join(", ")}`);
   }
 
   return lines.join("\n");
@@ -3022,6 +3474,10 @@ function normalizeDraftInput(previousDraft: string, nextValue: string): string {
     return nextValue;
   }
 
+  if (previousDraft === "/" && nextValue === "") {
+    return "/";
+  }
+
   if (isCommandDraft(previousDraft)) {
     return nextValue === "" ? "" : `/${nextValue}`;
   }
@@ -3035,6 +3491,7 @@ interface RestoreConversationOptions {
   readonly setConversation: (value: SavedConversationRecord) => void;
   readonly setEntries: (value: readonly UiEntry[]) => void;
   readonly setPreviousMessages: (value: readonly ConversationMessage[]) => void;
+  readonly setLastContextEstimate: (value: ContextTokenEstimate | undefined) => void;
   readonly setSessionMode: (value: SessionMode) => void;
 }
 
@@ -3043,6 +3500,7 @@ async function startFreshConversation(options: RestoreConversationOptions): Prom
   options.setConversation(nextConversation);
   options.setEntries([]);
   options.setPreviousMessages([]);
+  options.setLastContextEstimate(undefined);
   options.setSessionMode("build");
 }
 
@@ -3107,6 +3565,9 @@ function rehydrateEntriesFromTranscript(transcript: readonly ConversationMessage
         for (const toolCall of message.toolCalls) {
           entries.push(createEntry("tool", "tool", formatToolCallEntry(toolCall)));
         }
+        break;
+      case "summary":
+        entries.push(createEntry("assistant", "Recode", formatContinuationSummaryForDisplay(message.content)));
         break;
       case "tool":
         if (message.isError) {
@@ -3198,6 +3659,7 @@ interface SubmitHistoryPickerSelectionOptions {
   readonly setConversation: (value: SavedConversationRecord) => void;
   readonly setEntries: (value: readonly UiEntry[]) => void;
   readonly setPreviousMessages: (value: readonly ConversationMessage[]) => void;
+  readonly setLastContextEstimate: (value: ContextTokenEstimate | undefined) => void;
   readonly close: () => void;
 }
 
@@ -3220,6 +3682,7 @@ async function submitSelectedHistoryPickerItem(options: SubmitHistoryPickerSelec
     options.setConversation(conversation);
     options.setEntries(rehydrateEntriesFromTranscript(conversation.transcript));
     options.setPreviousMessages(conversation.transcript);
+    options.setLastContextEstimate(estimateConversationContextTokens(conversation.transcript));
     options.close();
   } finally {
     options.setBusy(false);
@@ -3709,6 +4172,10 @@ function persistSelectedModel(runtimeConfig: RuntimeConfig, providerId: string, 
   const config = loadRecodeConfigFile(runtimeConfig.configPath);
   const nextConfig = selectConfiguredProviderModel(config, providerId, modelId);
   saveRecodeConfigFile(runtimeConfig.configPath, nextConfig);
+}
+
+function buildContextWindowFallbackKey(providerId: string, modelId: string): string {
+  return `${providerId}::${modelId}`;
 }
 
 function persistSelectedTheme(configPath: string, themeName: ThemeName): void {

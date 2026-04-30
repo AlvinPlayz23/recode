@@ -23,6 +23,7 @@ export function createLanguageModel(config: RuntimeConfig): AiModel {
     ...(config.maxOutputTokens === undefined ? {} : { maxOutputTokens: config.maxOutputTokens }),
     ...(config.temperature === undefined ? {} : { temperature: config.temperature }),
     ...(config.toolChoice === undefined ? {} : { toolChoice: config.toolChoice }),
+    ...(config.contextWindowTokens === undefined ? {} : { contextWindowTokens: config.contextWindowTokens }),
     api: resolveApiKind(config.provider)
   };
 }

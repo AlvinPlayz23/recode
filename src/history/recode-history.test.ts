@@ -27,6 +27,7 @@ describe("recode history", () => {
   it("saves conversations and marks the active one", () => {
     const historyRoot = mkdtempSync(join(tmpdir(), "recode-history-"));
     const transcript: readonly ConversationMessage[] = [
+      { role: "summary", kind: "continuation", content: "Earlier work summary" },
       { role: "user", content: "Explain the architecture" },
       {
         role: "assistant",

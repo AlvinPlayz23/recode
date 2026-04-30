@@ -117,7 +117,7 @@ async function promptForProvider(
       });
 
       if (remoteModels.length > 0) {
-        models = remoteModels;
+        models = mergeModelsPreservingMetadata(existingProvider?.models ?? [], remoteModels);
         defaultModelId = await promptFetchedModelSelection(
           rl,
           remoteModels,
@@ -140,7 +140,7 @@ async function promptForProvider(
       "Comma-separated model IDs to store",
       existingProvider?.models.map((model) => model.id).join(", ")
     );
-    models = parseManualModels(manualModelIds);
+    models = mergeModelsPreservingMetadata(existingProvider?.models ?? [], parseManualModels(manualModelIds));
     defaultModelId = await askRequired(
       rl,
       "Default model ID",
@@ -149,6 +149,14 @@ async function promptForProvider(
   }
 
   models = ensureDefaultModel(models, defaultModelId);
+  const defaultModelContextWindow = await askOptionalPositiveInteger(
+    rl,
+    `Context window tokens for '${defaultModelId}' (leave blank if unknown)`,
+    models.find((model) => model.id === defaultModelId)?.contextWindowTokens
+  );
+  if (defaultModelContextWindow !== undefined) {
+    models = setModelContextWindow(models, defaultModelId, defaultModelContextWindow);
+  }
 
   const makeActive = await askYesNo(
     rl,
@@ -342,6 +350,44 @@ function ensureDefaultModel(models: readonly ConfiguredModel[], defaultModelId: 
   }
 
   return [...models, { id: defaultModelId }];
+}
+
+function mergeModelsPreservingMetadata(
+  existingModels: readonly ConfiguredModel[],
+  nextModels: readonly ConfiguredModel[]
+): readonly ConfiguredModel[] {
+  const merged = new Map<string, ConfiguredModel>();
+
+  for (const model of existingModels) {
+    merged.set(model.id, model);
+  }
+
+  for (const model of nextModels) {
+    const existingModel = merged.get(model.id);
+    merged.set(model.id, {
+      ...(existingModel ?? {}),
+      ...model,
+      ...(existingModel?.contextWindowTokens === undefined ? {} : { contextWindowTokens: existingModel.contextWindowTokens })
+    });
+  }
+
+  return [...merged.values()];
+}
+
+function setModelContextWindow(
+  models: readonly ConfiguredModel[],
+  modelId: string,
+  contextWindowTokens: number
+): readonly ConfiguredModel[] {
+  const existingModel = models.find((model) => model.id === modelId);
+  const nextModel: ConfiguredModel = {
+    ...(existingModel ?? { id: modelId }),
+    contextWindowTokens
+  };
+
+  return existingModel === undefined
+    ? [...models, nextModel]
+    : models.map((model) => model.id === modelId ? nextModel : model);
 }
 
 function normalizeProviderId(value: string): string {

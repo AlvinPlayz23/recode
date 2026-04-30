@@ -23,7 +23,8 @@ describe("createLanguageModel", () => {
       baseUrl: "https://api.openai.com/v1",
       maxOutputTokens: 2048,
       temperature: 0.2,
-      toolChoice: "required"
+      toolChoice: "required",
+      contextWindowTokens: 128000
     });
 
     expect(model.api).toBe("openai-responses");
@@ -31,6 +32,7 @@ describe("createLanguageModel", () => {
     expect(model.maxOutputTokens).toBe(2048);
     expect(model.temperature).toBe(0.2);
     expect(model.toolChoice).toBe("required");
+    expect(model.contextWindowTokens).toBe(128000);
   });
 
   it("maps openai-chat to the chat completions adapter", () => {

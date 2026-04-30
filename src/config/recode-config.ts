@@ -25,6 +25,7 @@ import type { ApprovalMode, ToolApprovalScope } from "../tools/tool.ts";
 export interface ConfiguredModel {
   readonly id: string;
   readonly label?: string;
+  readonly contextWindowTokens?: number;
 }
 
 /**
@@ -165,6 +166,47 @@ export function selectConfiguredProviderModel(
     ...(config.layoutMode === undefined ? {} : { layoutMode: config.layoutMode }),
     ...(config.minimalMode === undefined ? {} : { minimalMode: config.minimalMode }),
     providers
+  };
+}
+
+/**
+ * Persist one model-level context window size.
+ */
+export function setConfiguredModelContextWindow(
+  config: RecodeConfigFile,
+  providerId: string,
+  modelId: string,
+  contextWindowTokens: number
+): RecodeConfigFile {
+  const providers = config.providers.map((provider) => {
+    if (provider.id !== providerId) {
+      return provider;
+    }
+
+    const existingModel = provider.models.find((model) => model.id === modelId);
+    const nextModel: ConfiguredModel = {
+      ...(existingModel ?? { id: modelId }),
+      contextWindowTokens
+    };
+
+    return {
+      ...provider,
+      models: existingModel === undefined
+        ? [...provider.models, nextModel]
+        : provider.models.map((model) => model.id === modelId ? nextModel : model)
+    };
+  });
+
+  return {
+    version: CONFIG_VERSION,
+    providers,
+    ...(config.themeName === undefined ? {} : { themeName: config.themeName }),
+    ...(config.toolMarkerName === undefined ? {} : { toolMarkerName: config.toolMarkerName }),
+    ...(config.approvalMode === undefined ? {} : { approvalMode: config.approvalMode }),
+    ...(config.approvalAllowlist === undefined ? {} : { approvalAllowlist: config.approvalAllowlist }),
+    ...(config.layoutMode === undefined ? {} : { layoutMode: config.layoutMode }),
+    ...(config.minimalMode === undefined ? {} : { minimalMode: config.minimalMode }),
+    ...(config.activeProviderId === undefined ? {} : { activeProviderId: config.activeProviderId })
   };
 }
 
@@ -367,9 +409,11 @@ function parseConfiguredModel(value: unknown): ConfiguredModel | undefined {
   }
 
   const label = readOptionalNonEmptyString(value, "label");
+  const contextWindowTokens = readOptionalPositiveInteger(value, "contextWindowTokens");
   return {
     id,
-    ...(label === undefined ? {} : { label })
+    ...(label === undefined ? {} : { label }),
+    ...(contextWindowTokens === undefined ? {} : { contextWindowTokens })
   };
 }
 

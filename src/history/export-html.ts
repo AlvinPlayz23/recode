@@ -110,6 +110,7 @@ function buildConversationHtml(conversation: SavedConversationRecord, themeName:
     }
     .message.user { background: color-mix(in srgb, var(--panel) 72%, transparent); }
     .message.assistant { background: color-mix(in srgb, var(--panel-alt) 54%, transparent); }
+    .message.summary { background: color-mix(in srgb, var(--panel-alt) 34%, transparent); }
     .message.tool { background: rgba(255,255,255,0.03); }
     .message-header {
       margin-bottom: 8px;
@@ -120,6 +121,7 @@ function buildConversationHtml(conversation: SavedConversationRecord, themeName:
     }
     .message.user .message-header { color: ${theme.user}; }
     .message.assistant .message-header { color: ${theme.assistantLabel}; }
+    .message.summary .message-header { color: var(--brand-bright); }
     .message.tool .message-header { color: var(--tool); }
     .message.error .message-header { color: var(--error); }
     .content {
@@ -212,6 +214,11 @@ function renderMessage(message: ConversationMessage, theme: ReturnType<typeof ge
 ${message.toolCalls.length === 0 ? "" : `  <div class="content" style="margin-top: 12px; color: ${theme.tool};">${message.toolCalls.map((toolCall) =>
     `• ${escapeHtml(toolCall.name)} ${escapeHtml(toolCall.argumentsJson)}`
   ).join("\n")}</div>`}
+</article>`;
+    case "summary":
+      return `<article class="message summary">
+  <div class="message-header">Continuation Summary</div>
+  <div class="content">${escapeHtml(message.content)}</div>
 </article>`;
     case "tool":
       return `<article class="message tool ${message.isError ? "error" : ""}">

@@ -35,6 +35,16 @@ export class OperationAbortedError extends RecodeError {}
 export class DoomLoopDetectedError extends RecodeError {}
 
 /**
+ * Raised when transcript compaction cannot complete safely.
+ */
+export class ConversationCompactionError extends RecodeError {}
+
+/**
+ * Raised when a conversation still exceeds the usable context window.
+ */
+export class ContextWindowExceededError extends RecodeError {}
+
+/**
  * Tool execution error.
  */
 export class ToolExecutionError extends RecodeError {}

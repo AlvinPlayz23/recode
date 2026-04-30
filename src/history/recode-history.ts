@@ -9,7 +9,14 @@ import { dirname, join, resolve } from "node:path";
 import type { StepStats, StepTokenUsage } from "../agent/step-stats.ts";
 import type { RuntimeConfig } from "../runtime/runtime-config.ts";
 import { isRecord } from "../shared/is-record.ts";
-import type { AssistantMessage, ConversationMessage, ToolCall, ToolResultMessage, UserMessage } from "../messages/message.ts";
+import type {
+  AssistantMessage,
+  ContinuationSummaryMessage,
+  ConversationMessage,
+  ToolCall,
+  ToolResultMessage,
+  UserMessage
+} from "../messages/message.ts";
 import type { EditToolResultMetadata, ToolResultMetadata } from "../tools/tool.ts";
 import type { SessionMode } from "../tui/session-mode.ts";
 
@@ -171,9 +178,11 @@ export function buildConversationMeta(
 ): SavedConversationMeta {
   const userMessages = transcript.filter((message): message is UserMessage => message.role === "user");
   const assistantMessages = transcript.filter((message): message is AssistantMessage => message.role === "assistant");
+  const summaryMessages = transcript.filter((message): message is ContinuationSummaryMessage => message.role === "summary");
   const titleSource = userMessages[0]?.content ?? assistantMessages[0]?.content ?? "New Conversation";
   const previewSource = assistantMessages.at(-1)?.content
     ?? userMessages.at(-1)?.content
+    ?? summaryMessages.at(-1)?.content
     ?? "No messages yet";
 
   return {
@@ -337,6 +346,8 @@ function parseConversationMessage(value: unknown): ConversationMessage | undefin
       return parseAssistantMessage(value);
     case "tool":
       return parseToolResultMessage(value);
+    case "summary":
+      return parseContinuationSummaryMessage(value);
     default:
       return undefined;
   }
@@ -396,6 +407,21 @@ function parseToolResultMessage(value: Record<string, unknown>): ToolResultMessa
     content,
     isError: value["isError"],
     ...(metadata === undefined ? {} : { metadata })
+  };
+}
+
+function parseContinuationSummaryMessage(value: Record<string, unknown>): ContinuationSummaryMessage | undefined {
+  const content = readOptionalString(value, "content");
+  const kind = readOptionalString(value, "kind");
+
+  if (content === undefined || kind !== "continuation") {
+    return undefined;
+  }
+
+  return {
+    role: "summary",
+    kind: "continuation",
+    content
   };
 }
 

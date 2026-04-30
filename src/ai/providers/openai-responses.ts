@@ -2,7 +2,7 @@
  * Streaming adapter for the OpenAI Responses API.
  */
 
-import type { ConversationMessage } from "../../messages/message.ts";
+import { formatContinuationSummaryForModel, type ConversationMessage } from "../../messages/message.ts";
 import type { ToolDefinition } from "../../tools/tool.ts";
 import { joinUrl, readErrorMessage } from "../http.ts";
 import { parseProviderToolArguments } from "../json.ts";
@@ -225,6 +225,12 @@ function messagesToResponsesInput(messages: readonly ConversationMessage[]): rea
             arguments: toolCall.argumentsJson
           });
         }
+        break;
+      case "summary":
+        input.push({
+          role: "user",
+          content: [{ type: "input_text", text: formatContinuationSummaryForModel(message.content) }]
+        });
         break;
       case "tool":
         input.push({

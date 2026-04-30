@@ -48,7 +48,7 @@ describe("loadRuntimeConfig", () => {
           kind: "openai-chat",
           baseUrl: "https://openrouter.ai/api/v1",
           apiKey: "or-key",
-          models: [{ id: "openai/gpt-4.1-mini" }],
+          models: [{ id: "openai/gpt-4.1-mini", contextWindowTokens: 128000 }],
           defaultModelId: "openai/gpt-4.1-mini",
           maxOutputTokens: 1024,
           temperature: 0.1,
@@ -70,6 +70,7 @@ describe("loadRuntimeConfig", () => {
       expect(config.maxOutputTokens).toBe(1024);
       expect(config.temperature).toBe(0.1);
       expect(config.toolChoice).toBe("auto");
+      expect(config.contextWindowTokens).toBe(128000);
     });
   });
 

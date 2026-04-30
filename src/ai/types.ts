@@ -24,6 +24,7 @@ export interface AiModel {
   readonly maxOutputTokens?: number;
   readonly temperature?: number;
   readonly toolChoice?: "auto" | "required";
+  readonly contextWindowTokens?: number;
 }
 
 /**

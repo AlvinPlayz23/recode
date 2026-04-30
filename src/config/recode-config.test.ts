@@ -15,6 +15,7 @@ import {
   saveRecodeConfigFile,
   selectConfiguredApprovalAllowlist,
   selectConfiguredApprovalMode,
+  setConfiguredModelContextWindow,
   selectConfiguredProviderModel,
   selectConfiguredTheme,
   selectConfiguredToolMarker,
@@ -46,7 +47,7 @@ describe("recode config", () => {
         kind: "openai",
         baseUrl: "https://api.openai.com/v1",
         apiKey: "sk-test",
-        models: [{ id: "gpt-4.1" }],
+        models: [{ id: "gpt-4.1", contextWindowTokens: 128000 }],
         defaultModelId: "gpt-4.1"
       },
       true
@@ -91,6 +92,32 @@ describe("recode config", () => {
     expect(config.activeProviderId).toBe("openai");
     expect(config.providers[0]?.defaultModelId).toBe("gpt-4.1-mini");
     expect(config.providers[0]?.models).toContainEqual({ id: "gpt-4.1-mini" });
+  });
+
+  it("stores context-window metadata per model", () => {
+    const config = setConfiguredModelContextWindow(
+      {
+        version: 1,
+        activeProviderId: "openai",
+        providers: [
+          {
+            id: "openai",
+            name: "OpenAI",
+            kind: "openai",
+            baseUrl: "https://api.openai.com/v1",
+            models: [{ id: "gpt-4.1-mini" }]
+          }
+        ]
+      },
+      "openai",
+      "gpt-4.1-mini",
+      128000
+    );
+
+    expect(config.providers[0]?.models).toContainEqual({
+      id: "gpt-4.1-mini",
+      contextWindowTokens: 128000
+    });
   });
 
   it("updates the configured theme", () => {

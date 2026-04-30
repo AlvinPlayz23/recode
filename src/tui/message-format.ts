@@ -8,7 +8,7 @@
  * Built-in TUI command names.
  */
 export type BuiltinCommandName =
-  "help" | "clear" | "status" | "config" | "models" | "theme" | "customize" | "approval-mode" | "export" | "history" | "new" | "plan" | "build" | "layout" | "minimal" | "exit" | "quit";
+  "help" | "clear" | "status" | "config" | "models" | "theme" | "customize" | "approval-mode" | "export" | "history" | "new" | "compact" | "plan" | "build" | "layout" | "minimal" | "exit" | "quit";
 
 /**
  * Built-in TUI command definition.
@@ -39,6 +39,7 @@ const BUILTIN_COMMANDS: readonly BuiltinCommandDefinition[] = [
   { name: "export", command: "/export", description: "Export the current conversation to HTML" },
   { name: "history", command: "/history", description: "Open the conversation history" },
   { name: "new", command: "/new", description: "Start a new conversation" },
+  { name: "compact", command: "/compact", description: "Compact older conversation history into a continuation summary" },
   { name: "plan", command: "/plan", description: "Switch to read-only planning mode" },
   { name: "build", command: "/build", description: "Switch to normal implementation mode" },
   { name: "layout", command: "/layout", description: "Switch between compact and comfortable layout" },
@@ -59,6 +60,7 @@ const BUILTIN_COMMAND_ALIASES: Readonly<Record<string, BuiltinCommandName>> = {
   "/export": "export",
   "/history": "history",
   "/new": "new",
+  "/compact": "compact",
   "/plan": "plan",
   "/build": "build",
   "/layout": "layout",

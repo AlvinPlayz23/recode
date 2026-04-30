@@ -37,6 +37,7 @@ export interface RuntimeConfig {
   readonly maxOutputTokens?: number;
   readonly temperature?: number;
   readonly toolChoice?: "auto" | "required";
+  readonly contextWindowTokens?: number;
 }
 
 /**
@@ -61,6 +62,9 @@ export function selectRuntimeProviderModel(
         defaultModelId: modelId
       }
     : provider);
+  const selectedModel = providers
+    .find((provider) => provider.id === providerId)
+    ?.models.find((model) => model.id === modelId);
 
   return {
     provider: selectedProvider.kind,
@@ -76,7 +80,44 @@ export function selectRuntimeProviderModel(
     ...(selectedProvider.maxOutputTokens === undefined ? {} : { maxOutputTokens: selectedProvider.maxOutputTokens }),
     ...(selectedProvider.temperature === undefined ? {} : { temperature: selectedProvider.temperature }),
     ...(selectedProvider.toolChoice === undefined ? {} : { toolChoice: selectedProvider.toolChoice }),
+    ...(selectedModel?.contextWindowTokens === undefined ? {} : { contextWindowTokens: selectedModel.contextWindowTokens }),
     ...(selectedProvider.apiKey === undefined ? {} : { apiKey: selectedProvider.apiKey })
+  };
+}
+
+/**
+ * Update one runtime model's context-window metadata.
+ */
+export function setRuntimeModelContextWindow(
+  runtimeConfig: RuntimeConfig,
+  providerId: string,
+  modelId: string,
+  contextWindowTokens: number
+): RuntimeConfig {
+  const providers = runtimeConfig.providers.map((provider) => {
+    if (provider.id !== providerId) {
+      return provider;
+    }
+
+    const existingModel = provider.models.find((model) => model.id === modelId);
+    const nextModel = {
+      ...(existingModel ?? { id: modelId }),
+      contextWindowTokens
+    };
+
+    return {
+      ...provider,
+      models: existingModel === undefined
+        ? [...provider.models, nextModel]
+        : provider.models.map((model) => model.id === modelId ? nextModel : model)
+    };
+  });
+
+  const isCurrentModel = runtimeConfig.providerId === providerId && runtimeConfig.model === modelId;
+  return {
+    ...runtimeConfig,
+    providers,
+    ...(isCurrentModel ? { contextWindowTokens } : (runtimeConfig.contextWindowTokens === undefined ? {} : { contextWindowTokens: runtimeConfig.contextWindowTokens }))
   };
 }
 
@@ -116,6 +157,8 @@ export function loadRuntimeConfig(workspaceRoot: string): RuntimeConfig {
     ?? selectedConfiguredProvider?.temperature;
   const toolChoice = envToolChoice
     ?? selectedConfiguredProvider?.toolChoice;
+  const selectedModel = selectedConfiguredProvider?.models.find((item) => item.id === model);
+  const contextWindowTokens = selectedModel?.contextWindowTokens;
 
   if (baseUrl === undefined || baseUrl === "") {
     throw new Error("Missing provider base URL. Run `recode setup` or set RECODE_BASE_URL.");
@@ -152,6 +195,7 @@ export function loadRuntimeConfig(workspaceRoot: string): RuntimeConfig {
     ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
     ...(temperature === undefined ? {} : { temperature }),
     ...(toolChoice === undefined ? {} : { toolChoice }),
+    ...(contextWindowTokens === undefined ? {} : { contextWindowTokens }),
     ...(apiKey === undefined ? {} : { apiKey })
   };
 }
@@ -244,7 +288,7 @@ function buildRuntimeProviders(
     baseUrl: envBaseUrl ?? existingProvider?.baseUrl ?? "https://api.openai.com/v1",
     models: envModel === undefined
       ? existingProvider?.models ?? []
-      : [{ id: envModel }],
+      : [existingProvider?.models.find((model) => model.id === envModel) ?? { id: envModel }],
     ...(envModel === undefined
       ? (existingProvider?.defaultModelId === undefined ? {} : { defaultModelId: existingProvider.defaultModelId })
       : { defaultModelId: envModel }),

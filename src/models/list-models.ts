@@ -160,7 +160,12 @@ function mergeConfiguredAndRemoteModels(
   }
 
   for (const model of remoteModels) {
-    merged.set(model.id, model);
+    const existingModel = merged.get(model.id);
+    merged.set(model.id, {
+      ...(existingModel ?? {}),
+      ...model,
+      ...(existingModel?.contextWindowTokens === undefined ? {} : { contextWindowTokens: existingModel.contextWindowTokens })
+    });
   }
 
   return [...merged.values()].sort((left, right) => left.id.localeCompare(right.id));

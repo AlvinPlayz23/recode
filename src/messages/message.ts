@@ -47,6 +47,37 @@ export interface ToolResultMessage {
 }
 
 /**
+ * Compacted continuation summary preserved in the transcript.
+ */
+export interface ContinuationSummaryMessage {
+  readonly role: "summary";
+  readonly kind: "continuation";
+  readonly content: string;
+}
+
+/**
  * Union of all internal conversation message types used by Recode.
  */
-export type ConversationMessage = UserMessage | AssistantMessage | ToolResultMessage;
+export type ConversationMessage = UserMessage | AssistantMessage | ToolResultMessage | ContinuationSummaryMessage;
+
+const CONTINUATION_SUMMARY_PREFIX = "System-generated continuation summary:\n";
+
+/**
+ * Format one continuation summary for provider message serialization.
+ */
+export function formatContinuationSummaryForModel(content: string): string {
+  const normalized = content.trim();
+  return normalized === ""
+    ? CONTINUATION_SUMMARY_PREFIX.trimEnd()
+    : `${CONTINUATION_SUMMARY_PREFIX}${normalized}`;
+}
+
+/**
+ * Format one continuation summary for transcript display.
+ */
+export function formatContinuationSummaryForDisplay(content: string): string {
+  const normalized = content.trim();
+  return normalized === ""
+    ? "## Continuation Summary"
+    : `## Continuation Summary\n\n${normalized}`;
+}
