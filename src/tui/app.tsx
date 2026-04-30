@@ -28,6 +28,7 @@ import {
   stripAnsiSequences,
   TextAttributes,
   InputRenderable,
+  type ScrollBoxRenderable,
   type KeyBinding as TextareaKeyBinding,
   type TextareaRenderable,
   defaultTextareaKeyBindings,
@@ -240,16 +241,19 @@ export function TuiApp(props: TuiAppProps) {
   const [modelPickerGroups, setModelPickerGroups] = createSignal<readonly ListedModelGroup[]>([]);
   const [modelPickerSelectedIndex, setModelPickerSelectedIndex] = createSignal(0);
   const [modelPickerWindowStart, setModelPickerWindowStart] = createSignal(0);
+  const [modelPickerScrollBox, setModelPickerScrollBox] = createSignal<ScrollBoxRenderable | undefined>(undefined);
   const [historyPickerOpen, setHistoryPickerOpen] = createSignal(false);
   const [historyPickerBusy, setHistoryPickerBusy] = createSignal(false);
   const [historyPickerQuery, setHistoryPickerQuery] = createSignal("");
   const [historyPickerItems, setHistoryPickerItems] = createSignal<readonly HistoryPickerItem[]>([]);
   const [historyPickerSelectedIndex, setHistoryPickerSelectedIndex] = createSignal(0);
   const [historyPickerWindowStart, setHistoryPickerWindowStart] = createSignal(0);
+  const [historyPickerScrollBox, setHistoryPickerScrollBox] = createSignal<ScrollBoxRenderable | undefined>(undefined);
   const [themePickerOpen, setThemePickerOpen] = createSignal(false);
   const [themePickerQuery, setThemePickerQuery] = createSignal("");
   const [themePickerSelectedIndex, setThemePickerSelectedIndex] = createSignal(0);
   const [themePickerWindowStart, setThemePickerWindowStart] = createSignal(0);
+  const [themePickerScrollBox, setThemePickerScrollBox] = createSignal<ScrollBoxRenderable | undefined>(undefined);
   const [customizePickerOpen, setCustomizePickerOpen] = createSignal(false);
   const [customizePickerSelectedRow, setCustomizePickerSelectedRow] = createSignal(0);
   const [approvalMode, setApprovalMode] = createSignal<ApprovalMode>(props.runtimeConfig.approvalMode);
@@ -257,6 +261,7 @@ export function TuiApp(props: TuiAppProps) {
   const [approvalModePickerOpen, setApprovalModePickerOpen] = createSignal(false);
   const [approvalModePickerSelectedIndex, setApprovalModePickerSelectedIndex] = createSignal(0);
   const [approvalModePickerWindowStart, setApprovalModePickerWindowStart] = createSignal(0);
+  const [approvalModePickerScrollBox, setApprovalModePickerScrollBox] = createSignal<ScrollBoxRenderable | undefined>(undefined);
   const [activeApprovalRequest, setActiveApprovalRequest] = createSignal<ActiveApprovalRequest | undefined>(undefined);
   const [activeQuestionRequest, setActiveQuestionRequest] = createSignal<ActiveQuestionRequest | undefined>(undefined);
   const [activeToast, setActiveToast] = createSignal<ActiveToast | undefined>(undefined);
@@ -267,6 +272,7 @@ export function TuiApp(props: TuiAppProps) {
   const [layoutPickerOpen, setLayoutPickerOpen] = createSignal(false);
   const [layoutPickerSelectedIndex, setLayoutPickerSelectedIndex] = createSignal(0);
   const [layoutPickerWindowStart, setLayoutPickerWindowStart] = createSignal(0);
+  const [layoutPickerScrollBox, setLayoutPickerScrollBox] = createSignal<ScrollBoxRenderable | undefined>(undefined);
   const [footerTipIndex, setFooterTipIndex] = createSignal(0);
   const [busyPhase, setBusyPhase] = createSignal<SpinnerPhase>("thinking");
   const [fileSuggestionVersion, setFileSuggestionVersion] = createSignal(0);
@@ -337,6 +343,10 @@ export function TuiApp(props: TuiAppProps) {
   const approvalModePickerTotalOptionCount = createMemo(() => approvalModePickerItems().length);
   const themeDefinition = createMemo(() => getThemeDefinition(themeName()));
   const toolMarkerDefinition = createMemo(() => getToolMarkerDefinition(toolMarkerName()));
+  const modelPickerRenderedLines = createMemo(() => renderModelPickerLines(
+    modelPickerOptions(),
+    normalizeBuiltinCommandSelectionIndex(modelPickerSelectedIndex(), modelPickerTotalOptionCount())
+  ));
   const activeSystemPrompt = createMemo(() => sessionMode() === "plan" ? PLAN_SYSTEM_PROMPT : props.systemPrompt);
   const activeToolRegistry = createMemo(() => createToolRegistryForMode(props.toolRegistry, sessionMode()));
   const customizeRows = createMemo(() => buildCustomizeRows(themeName(), toolMarkerName()));
@@ -361,7 +371,11 @@ export function TuiApp(props: TuiAppProps) {
   );
   const showSplashLogo = createMemo(() => !minimalMode() && !hasConversationStarted());
   const conversationFlowWidth = createMemo(() => Math.max(24, terminal().width - 10));
-  const effectiveSplashDetailsVisible = createMemo(() => splashDetailsVisible() && terminal().height >= 24);
+  const effectiveSplashDetailsVisible = createMemo(() =>
+    splashDetailsVisible()
+    && terminal().height >= 24
+    && draft().trim() === ""
+  );
   const headerHeight = createMemo(() => estimateHeaderHeight(minimalMode(), showSplashLogo(), effectiveSplashDetailsVisible()));
   const availableConversationHeight = createMemo(() => Math.max(1, terminal().height - headerHeight() - 4));
   const composerDocked = createMemo(() => estimateConversationFlowHeight(
@@ -604,6 +618,70 @@ export function TuiApp(props: TuiAppProps) {
     applyInputCursorStyle(modelPickerInputRef, cursorColor);
     applyInputCursorStyle(historyPickerInputRef, cursorColor);
     applyInputCursorStyle(themePickerInputRef, cursorColor);
+  });
+
+  createEffect(() => {
+    const scrollBox = modelPickerScrollBox();
+    const renderedLines = modelPickerRenderedLines();
+    const windowStart = modelPickerWindowStart();
+
+    if (!modelPickerOpen() || scrollBox === undefined || renderedLines.length <= 0) {
+      return;
+    }
+
+    scrollBox.scrollTo(windowStart);
+  });
+
+  createEffect(() => {
+    const items = filteredHistoryPickerItems();
+    if (items.length <= 0) {
+      return;
+    }
+
+    syncScrollBoxSelection(
+      historyPickerOpen(),
+      historyPickerScrollBox(),
+      getIndexedPickerChildId("history-picker-item", historyPickerSelectedIndex(), items.length)
+    );
+  });
+
+  createEffect(() => {
+    const items = themePickerItems();
+    if (items.length <= 0) {
+      return;
+    }
+
+    syncScrollBoxSelection(
+      themePickerOpen(),
+      themePickerScrollBox(),
+      getIndexedPickerChildId("theme-picker-item", themePickerSelectedIndex(), items.length)
+    );
+  });
+
+  createEffect(() => {
+    const items = approvalModePickerItems();
+    if (items.length <= 0) {
+      return;
+    }
+
+    syncScrollBoxSelection(
+      approvalModePickerOpen(),
+      approvalModePickerScrollBox(),
+      getIndexedPickerChildId("approval-mode-picker-item", approvalModePickerSelectedIndex(), items.length)
+    );
+  });
+
+  createEffect(() => {
+    const items = layoutPickerItems();
+    if (items.length <= 0) {
+      return;
+    }
+
+    syncScrollBoxSelection(
+      layoutPickerOpen(),
+      layoutPickerScrollBox(),
+      getIndexedPickerChildId("layout-picker-item", layoutPickerSelectedIndex(), items.length)
+    );
   });
 
   const handlePromptPaste = (event: Pick<PasteEvent, "preventDefault">, rawText: string): boolean => {
@@ -1961,43 +2039,32 @@ export function TuiApp(props: TuiAppProps) {
             >
               {(() => {
                 const popupHeight = getModelPickerVisibleCount(terminal().height);
-                const renderedLines = renderModelPickerLines(
-                  modelPickerOptions(),
-                  normalizeBuiltinCommandSelectionIndex(modelPickerSelectedIndex(), modelPickerTotalOptionCount())
-                );
-                const windowedLines = buildVisibleWindowFromStart(
-                  renderedLines,
-                  modelPickerWindowStart(),
-                  popupHeight
-                );
 
                 return (
-                  <box flexDirection="column" height={popupHeight}>
-                    <Show when={windowedLines.hiddenBeforeCount > 0}>
-                      <text fg={t().hintText} attributes={TextAttributes.DIM}>
-                        {`↑ ${windowedLines.hiddenBeforeCount} more`}
-                      </text>
-                    </Show>
-                    <For each={windowedLines.items}>
-                  {(line) => (
-                    <text
-                      fg={line.selected ? t().brandShimmer : line.kind === "group" ? t().text : t().assistantBody}
-                      attributes={line.kind === "group"
-                        ? TextAttributes.BOLD
-                        : line.selected
-                          ? TextAttributes.BOLD
-                          : TextAttributes.NONE}
-                    >
-                      {line.text}
-                    </text>
-                  )}
-                </For>
-                    <Show when={windowedLines.hiddenAfterCount > 0}>
-                      <text fg={t().hintText} attributes={TextAttributes.DIM}>
-                        {`↓ ${windowedLines.hiddenAfterCount} more`}
-                      </text>
-                    </Show>
-                  </box>
+                  <scrollbox
+                    ref={(value: ScrollBoxRenderable) => {
+                      setModelPickerScrollBox(value);
+                    }}
+                    height={popupHeight}
+                    scrollY
+                  >
+                    <For each={modelPickerRenderedLines()}>
+                      {(line, index) => (
+                        <box id={getIndexedPickerChildId("model-picker-line", index(), modelPickerRenderedLines().length)}>
+                          <text
+                            fg={line.selected ? t().brandShimmer : line.kind === "group" ? t().text : t().assistantBody}
+                            attributes={line.kind === "group"
+                              ? TextAttributes.BOLD
+                              : line.selected
+                                ? TextAttributes.BOLD
+                                : TextAttributes.NONE}
+                          >
+                            {line.text}
+                          </text>
+                        </box>
+                      )}
+                    </For>
+                  </scrollbox>
                 );
               })()}
             </Show>
@@ -2058,29 +2125,31 @@ export function TuiApp(props: TuiAppProps) {
             >
               {(() => {
                 const popupHeight = getHistoryPickerPopupRowBudget(terminal().height);
-                const windowedItems = buildVisibleWindowFromStart(
-                  filteredHistoryPickerItems(),
-                  historyPickerWindowStart(),
-                  getHistoryPickerVisibleCount(terminal().height)
-                );
 
                 return (
-                  <box flexDirection="column" height={popupHeight}>
-                    <Show when={windowedItems.hiddenBeforeCount > 0}>
-                      <text fg={t().hintText} attributes={TextAttributes.DIM}>
-                        {`↑ ${windowedItems.hiddenBeforeCount} more`}
-                      </text>
-                    </Show>
-                    <For each={windowedItems.items}>
+                  <scrollbox
+                    ref={(value: ScrollBoxRenderable) => {
+                      setHistoryPickerScrollBox(value);
+                    }}
+                    height={popupHeight}
+                    scrollY
+                  >
+                    <For each={filteredHistoryPickerItems()}>
                       {(item, index) => {
-                        const actualIndex = () => windowedItems.startIndex + index();
+                        const actualIndex = () => index();
                         const selected = () => actualIndex() === normalizeBuiltinCommandSelectionIndex(
                           historyPickerSelectedIndex(),
                           historyPickerTotalOptionCount()
                         );
 
                         return (
-                          <box flexDirection="column" marginBottom={1} paddingLeft={1} paddingRight={1}>
+                          <box
+                            id={getIndexedPickerChildId("history-picker-item", actualIndex(), filteredHistoryPickerItems().length)}
+                            flexDirection="column"
+                            marginBottom={1}
+                            paddingLeft={1}
+                            paddingRight={1}
+                          >
                             <text
                               fg={selected() ? t().brandShimmer : t().text}
                               attributes={selected() ? TextAttributes.BOLD : TextAttributes.NONE}
@@ -2093,12 +2162,7 @@ export function TuiApp(props: TuiAppProps) {
                         );
                       }}
                     </For>
-                    <Show when={windowedItems.hiddenAfterCount > 0}>
-                      <text fg={t().hintText} attributes={TextAttributes.DIM}>
-                        {`↓ ${windowedItems.hiddenAfterCount} more`}
-                      </text>
-                    </Show>
-                  </box>
+                  </scrollbox>
                 );
               })()}
             </Show>
@@ -2155,24 +2219,31 @@ export function TuiApp(props: TuiAppProps) {
           >
             {(() => {
               const popupHeight = getThemePickerPopupRowBudget(terminal().height);
-              const windowedItems = buildVisibleWindowFromStart(
-                themePickerItems(),
-                themePickerWindowStart(),
-                getThemePickerVisibleCount(terminal().height)
-              );
 
               return (
-                <scrollbox height={popupHeight} scrollY>
-                  <For each={windowedItems.items}>
+                <scrollbox
+                  ref={(value: ScrollBoxRenderable) => {
+                    setThemePickerScrollBox(value);
+                  }}
+                  height={popupHeight}
+                  scrollY
+                >
+                  <For each={themePickerItems()}>
                     {(item, index) => {
-                      const actualIndex = () => windowedItems.startIndex + index();
+                      const actualIndex = () => index();
                       const selected = () => actualIndex() === normalizeBuiltinCommandSelectionIndex(
                         themePickerSelectedIndex(),
                         themePickerTotalOptionCount()
                       );
 
                       return (
-                        <box flexDirection="column" marginBottom={1} paddingLeft={1} paddingRight={1}>
+                        <box
+                          id={getIndexedPickerChildId("theme-picker-item", actualIndex(), themePickerItems().length)}
+                          flexDirection="column"
+                          marginBottom={1}
+                          paddingLeft={1}
+                          paddingRight={1}
+                        >
                           <text
                             fg={selected() ? t().brandShimmer : t().text}
                             attributes={selected() ? TextAttributes.BOLD : TextAttributes.NONE}
@@ -2252,29 +2323,32 @@ export function TuiApp(props: TuiAppProps) {
           <text fg={t().hintText}>Use arrows to navigate. Press Enter to select. Press ESC to close.</text>
           {(() => {
             const popupHeight = getApprovalModePickerPopupRowBudget(terminal().height);
-            const windowedItems = buildVisibleWindowFromStart(
-              approvalModePickerItems(),
-              approvalModePickerWindowStart(),
-              getApprovalModePickerVisibleCount(terminal().height)
-            );
 
             return (
-              <box flexDirection="column" height={popupHeight} marginTop={1}>
-                <Show when={windowedItems.hiddenBeforeCount > 0}>
-                  <text fg={t().hintText} attributes={TextAttributes.DIM}>
-                    {`↑ ${windowedItems.hiddenBeforeCount} more`}
-                  </text>
-                </Show>
-                <For each={windowedItems.items}>
+              <scrollbox
+                ref={(value: ScrollBoxRenderable) => {
+                  setApprovalModePickerScrollBox(value);
+                }}
+                height={popupHeight}
+                scrollY
+                marginTop={1}
+              >
+                <For each={approvalModePickerItems()}>
                   {(item, index) => {
-                    const actualIndex = () => windowedItems.startIndex + index();
+                    const actualIndex = () => index();
                     const selected = () => actualIndex() === normalizeBuiltinCommandSelectionIndex(
                       approvalModePickerSelectedIndex(),
                       approvalModePickerTotalOptionCount()
                     );
 
                     return (
-                      <box flexDirection="column" marginBottom={1} paddingLeft={1} paddingRight={1}>
+                      <box
+                        id={getIndexedPickerChildId("approval-mode-picker-item", actualIndex(), approvalModePickerItems().length)}
+                        flexDirection="column"
+                        marginBottom={1}
+                        paddingLeft={1}
+                        paddingRight={1}
+                      >
                         <text
                           fg={selected() ? t().brandShimmer : t().text}
                           attributes={selected() ? TextAttributes.BOLD : TextAttributes.NONE}
@@ -2286,12 +2360,7 @@ export function TuiApp(props: TuiAppProps) {
                     );
                   }}
                 </For>
-                <Show when={windowedItems.hiddenAfterCount > 0}>
-                  <text fg={t().hintText} attributes={TextAttributes.DIM}>
-                    {`↓ ${windowedItems.hiddenAfterCount} more`}
-                  </text>
-                </Show>
-              </box>
+              </scrollbox>
             );
           })()}
         </box>
@@ -2315,29 +2384,32 @@ export function TuiApp(props: TuiAppProps) {
           <text fg={t().hintText}>Use arrows to navigate. Press Enter to toggle. Press ESC to close.</text>
           {(() => {
             const popupHeight = getLayoutPickerPopupRowBudget(terminal().height);
-            const windowedItems = buildVisibleWindowFromStart(
-              layoutPickerItems(),
-              layoutPickerWindowStart(),
-              getLayoutPickerVisibleCount(terminal().height)
-            );
 
             return (
-              <box flexDirection="column" height={popupHeight} marginTop={1}>
-                <Show when={windowedItems.hiddenBeforeCount > 0}>
-                  <text fg={t().hintText} attributes={TextAttributes.DIM}>
-                    {`↑ ${windowedItems.hiddenBeforeCount} more`}
-                  </text>
-                </Show>
-                <For each={windowedItems.items}>
+              <scrollbox
+                ref={(value: ScrollBoxRenderable) => {
+                  setLayoutPickerScrollBox(value);
+                }}
+                height={popupHeight}
+                scrollY
+                marginTop={1}
+              >
+                <For each={layoutPickerItems()}>
                   {(item, index) => {
-                    const actualIndex = () => windowedItems.startIndex + index();
+                    const actualIndex = () => index();
                     const selected = () => actualIndex() === normalizeBuiltinCommandSelectionIndex(
                       layoutPickerSelectedIndex(),
                       layoutPickerTotalOptionCount()
                     );
 
                     return (
-                      <box flexDirection="column" marginBottom={1} paddingLeft={1} paddingRight={1}>
+                      <box
+                        id={getIndexedPickerChildId("layout-picker-item", actualIndex(), layoutPickerItems().length)}
+                        flexDirection="column"
+                        marginBottom={1}
+                        paddingLeft={1}
+                        paddingRight={1}
+                      >
                         <text
                           fg={selected() ? t().brandShimmer : t().text}
                           attributes={selected() ? TextAttributes.BOLD : TextAttributes.NONE}
@@ -2349,12 +2421,7 @@ export function TuiApp(props: TuiAppProps) {
                     );
                   }}
                 </For>
-                <Show when={windowedItems.hiddenAfterCount > 0}>
-                  <text fg={t().hintText} attributes={TextAttributes.DIM}>
-                    {`↓ ${windowedItems.hiddenAfterCount} more`}
-                  </text>
-                </Show>
-              </box>
+              </scrollbox>
             );
           })()}
         </box>
@@ -3791,6 +3858,25 @@ function renderModelPickerLines(
 function findSelectedRenderedLineIndex(lines: readonly ModelPickerRenderedLine[]): number {
   const selectedIndex = lines.findIndex((line) => line.selected);
   return selectedIndex === -1 ? 0 : selectedIndex;
+}
+
+function getIndexedPickerChildId(prefix: string, index: number, totalCount: number): string {
+  const normalizedIndex = totalCount <= 0
+    ? 0
+    : normalizeBuiltinCommandSelectionIndex(index, totalCount);
+  return `${prefix}-${normalizedIndex}`;
+}
+
+function syncScrollBoxSelection(
+  open: boolean,
+  scrollBox: ScrollBoxRenderable | undefined,
+  childId: string
+): void {
+  if (!open || scrollBox === undefined) {
+    return;
+  }
+
+  scrollBox.scrollChildIntoView(childId);
 }
 
 function buildVisibleWindowFromStart<TItem>(
