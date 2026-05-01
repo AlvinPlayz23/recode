@@ -9,6 +9,10 @@ import { join, relative } from "node:path";
 import { ToolExecutionError } from "../errors/recode-error.ts";
 import { resolveSafePath } from "./safe-path.ts";
 import type { ToolArguments, ToolDefinition, ToolExecutionContext, ToolResult } from "./tool.ts";
+import {
+  readOptionalNonEmptyString,
+  readRequiredNonEmptyString
+} from "./tool-input.ts";
 
 interface GlobToolInput {
   readonly pattern: string;
@@ -84,16 +88,16 @@ function toPortableRelativePath(value: string): string {
 }
 
 function parseGlobToolInput(arguments_: ToolArguments): GlobToolInput {
-  const pattern = arguments_["pattern"];
-  const path = arguments_["path"];
-
-  if (typeof pattern !== "string" || pattern.trim() === "") {
-    throw new ToolExecutionError("Glob tool requires a non-empty 'pattern' string.");
-  }
-
-  if (path !== undefined && (typeof path !== "string" || path.trim() === "")) {
-    throw new ToolExecutionError("Glob tool requires 'path' to be a non-empty string when provided.");
-  }
+  const pattern = readRequiredNonEmptyString(
+    arguments_,
+    "pattern",
+    "Glob tool requires a non-empty 'pattern' string."
+  );
+  const path = readOptionalNonEmptyString(
+    arguments_,
+    "path",
+    "Glob tool requires 'path' to be a non-empty string when provided."
+  );
 
   return {
     pattern,

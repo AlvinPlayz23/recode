@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import type { ConversationMessage } from "../messages/message.ts";
@@ -76,6 +76,96 @@ describe("recode history", () => {
       version: 1,
       conversations: []
     });
+  });
+
+  it("drops malformed history index entries instead of throwing", () => {
+    const historyRoot = mkdtempSync(join(tmpdir(), "recode-history-malformed-index-"));
+    mkdirSync(historyRoot, { recursive: true });
+    writeFileSync(
+      join(historyRoot, "index.json"),
+      JSON.stringify({
+        version: 1,
+        lastConversationId: "valid-conversation",
+        conversations: [
+          {
+            id: "valid-conversation",
+            title: "Valid",
+            preview: "Preview",
+            workspaceRoot: "/workspace/app-one",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+            providerId: "openai",
+            providerName: "OpenAI",
+            model: "gpt-4.1",
+            mode: "build",
+            messageCount: 1
+          },
+          {
+            id: "missing-required-fields"
+          }
+        ]
+      }),
+      "utf8"
+    );
+
+    const index = loadHistoryIndex(historyRoot);
+
+    expect(index.lastConversationId).toBe("valid-conversation");
+    expect(index.conversations.map((conversation) => conversation.id)).toEqual(["valid-conversation"]);
+  });
+
+  it("returns undefined for malformed conversation records", () => {
+    const historyRoot = mkdtempSync(join(tmpdir(), "recode-history-malformed-conversation-"));
+    mkdirSync(historyRoot, { recursive: true });
+    writeFileSync(
+      join(historyRoot, "bad-conversation.json"),
+      JSON.stringify({
+        id: "bad-conversation",
+        title: "Broken",
+        transcript: [{ role: "user", content: "hello" }]
+      }),
+      "utf8"
+    );
+
+    expect(loadConversation(historyRoot, "bad-conversation")).toBeUndefined();
+  });
+
+  it("filters malformed transcript messages from otherwise valid records", () => {
+    const historyRoot = mkdtempSync(join(tmpdir(), "recode-history-malformed-transcript-"));
+    mkdirSync(historyRoot, { recursive: true });
+    writeFileSync(
+      join(historyRoot, "conversation-1.json"),
+      JSON.stringify({
+        id: "conversation-1",
+        title: "Partially valid",
+        preview: "Preview",
+        workspaceRoot: "/workspace/app-one",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        providerId: "openai",
+        providerName: "OpenAI",
+        model: "gpt-4.1",
+        mode: "build",
+        messageCount: 2,
+        transcript: [
+          { role: "user", content: "hello" },
+          { role: "assistant", content: "invalid tool call is dropped", toolCalls: [{ id: "call_1" }] },
+          { role: "assistant", content: "valid", toolCalls: [] },
+          { role: "tool", toolCallId: "call_1", toolName: "Read", content: "ok", isError: false },
+          { role: "unknown", content: "skip me" }
+        ]
+      }),
+      "utf8"
+    );
+
+    const conversation = loadConversation(historyRoot, "conversation-1");
+
+    expect(conversation?.transcript).toEqual([
+      { role: "user", content: "hello" },
+      { role: "assistant", content: "invalid tool call is dropped", toolCalls: [] },
+      { role: "assistant", content: "valid", toolCalls: [] },
+      { role: "tool", toolCallId: "call_1", toolName: "Read", content: "ok", isError: false }
+    ]);
   });
 
   it("builds conversation metadata from the transcript", () => {

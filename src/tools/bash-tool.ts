@@ -4,9 +4,9 @@
  * @author dev
  */
 
-import { ToolExecutionError } from "../errors/recode-error.ts";
 import type { ToolArguments, ToolDefinition, ToolExecutionContext, ToolResult } from "./tool.ts";
 import { resolveBashExecutionPolicy } from "./bash-execution-policy.ts";
+import { readRequiredNonEmptyString } from "./tool-input.ts";
 
 interface BashToolInput {
   readonly command: string;
@@ -71,13 +71,13 @@ export function createBashTool(): ToolDefinition {
 }
 
 function parseBashToolInput(arguments_: ToolArguments): BashToolInput {
-  const command = arguments_["command"];
-
-  if (typeof command !== "string" || command.trim() === "") {
-    throw new ToolExecutionError("Bash tool requires a non-empty 'command' string.");
-  }
-
-  return { command };
+  return {
+    command: readRequiredNonEmptyString(
+      arguments_,
+      "command",
+      "Bash tool requires a non-empty 'command' string."
+    )
+  };
 }
 
 async function streamToText(stream: ReadableStream<Uint8Array> | number | null): Promise<string> {

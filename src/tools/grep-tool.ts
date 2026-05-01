@@ -9,6 +9,10 @@ import { join, relative } from "node:path";
 import { ToolExecutionError } from "../errors/recode-error.ts";
 import { resolveSafePath } from "./safe-path.ts";
 import type { ToolArguments, ToolDefinition, ToolExecutionContext, ToolResult } from "./tool.ts";
+import {
+  readOptionalNonEmptyString,
+  readRequiredNonEmptyString
+} from "./tool-input.ts";
 
 interface GrepToolInput {
   readonly pattern: string;
@@ -102,22 +106,22 @@ export function createGrepTool(): ToolDefinition {
 }
 
 function parseGrepToolInput(arguments_: ToolArguments): GrepToolInput {
-  const pattern = arguments_["pattern"];
-  const path = arguments_["path"];
-  const include = arguments_["include"];
+  const pattern = readRequiredNonEmptyString(
+    arguments_,
+    "pattern",
+    "Grep tool requires a non-empty 'pattern' string."
+  );
+  const path = readOptionalNonEmptyString(
+    arguments_,
+    "path",
+    "Grep tool requires 'path' to be a non-empty string when provided."
+  );
+  const include = readOptionalNonEmptyString(
+    arguments_,
+    "include",
+    "Grep tool requires 'include' to be a non-empty string when provided."
+  );
   const outputMode = arguments_["outputMode"];
-
-  if (typeof pattern !== "string" || pattern.trim() === "") {
-    throw new ToolExecutionError("Grep tool requires a non-empty 'pattern' string.");
-  }
-
-  if (path !== undefined && (typeof path !== "string" || path.trim() === "")) {
-    throw new ToolExecutionError("Grep tool requires 'path' to be a non-empty string when provided.");
-  }
-
-  if (include !== undefined && (typeof include !== "string" || include.trim() === "")) {
-    throw new ToolExecutionError("Grep tool requires 'include' to be a non-empty string when provided.");
-  }
 
   if (
     outputMode !== undefined

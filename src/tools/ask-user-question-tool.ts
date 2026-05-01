@@ -16,6 +16,12 @@ import type {
   ToolExecutionContext,
   ToolResult
 } from "./tool.ts";
+import {
+  readRequiredArray,
+  readRequiredBoolean,
+  readRequiredNonEmptyString,
+  readToolInputRecord
+} from "./tool-input.ts";
 
 const ASK_USER_QUESTION_TOOL_NAME = "AskUserQuestion";
 
@@ -57,11 +63,11 @@ export function createAskUserQuestionTool(): ToolDefinition {
  * Parse AskUserQuestion arguments into a validated request payload.
  */
 export function parseQuestionToolRequest(arguments_: ToolArguments): QuestionToolRequest {
-  const questionsValue = arguments_["questions"];
-
-  if (!Array.isArray(questionsValue)) {
-    throw new ToolExecutionError("AskUserQuestion requires a 'questions' array.");
-  }
+  const questionsValue = readRequiredArray(
+    arguments_,
+    "questions",
+    "AskUserQuestion requires a 'questions' array."
+  );
 
   if (questionsValue.length === 0) {
     throw new ToolExecutionError("AskUserQuestion requires at least one question.");
@@ -156,18 +162,16 @@ const QUESTION_TOOL_INPUT_SCHEMA: JsonSchemaObject = {
 };
 
 function parseQuestionPrompt(value: unknown, index: number): QuestionPrompt {
-  if (!isRecord(value)) {
-    throw new ToolExecutionError(`AskUserQuestion question #${index + 1} must be an object.`);
-  }
+  const questionRecord = readToolInputRecord(value, `AskUserQuestion question #${index + 1} must be an object.`);
 
-  const id = readRequiredString(value, "id", `AskUserQuestion question #${index + 1} requires a non-empty 'id'.`);
-  const header = readRequiredString(value, "header", `AskUserQuestion question '${id}' requires a non-empty 'header'.`);
-  const question = readRequiredString(value, "question", `AskUserQuestion question '${id}' requires a non-empty 'question'.`);
-  const multiSelect = readRequiredBoolean(value, "multiSelect", `AskUserQuestion question '${id}' requires a boolean 'multiSelect'.`);
-  const allowCustomText = readRequiredBoolean(value, "allowCustomText", `AskUserQuestion question '${id}' requires a boolean 'allowCustomText'.`);
-  const optionsValue = value["options"];
+  const id = readRequiredNonEmptyString(questionRecord, "id", `AskUserQuestion question #${index + 1} requires a non-empty 'id'.`).trim();
+  const header = readRequiredNonEmptyString(questionRecord, "header", `AskUserQuestion question '${id}' requires a non-empty 'header'.`).trim();
+  const question = readRequiredNonEmptyString(questionRecord, "question", `AskUserQuestion question '${id}' requires a non-empty 'question'.`).trim();
+  const multiSelect = readRequiredBoolean(questionRecord, "multiSelect", `AskUserQuestion question '${id}' requires a boolean 'multiSelect'.`);
+  const allowCustomText = readRequiredBoolean(questionRecord, "allowCustomText", `AskUserQuestion question '${id}' requires a boolean 'allowCustomText'.`);
+  const optionsValue = readRequiredArray(questionRecord, "options", `AskUserQuestion question '${id}' requires a non-empty 'options' array.`);
 
-  if (!Array.isArray(optionsValue) || optionsValue.length === 0) {
+  if (optionsValue.length === 0) {
     throw new ToolExecutionError(`AskUserQuestion question '${id}' requires a non-empty 'options' array.`);
   }
 
@@ -183,17 +187,15 @@ function parseQuestionPrompt(value: unknown, index: number): QuestionPrompt {
 }
 
 function parseQuestionOption(value: unknown, questionId: string, index: number): QuestionOption {
-  if (!isRecord(value)) {
-    throw new ToolExecutionError(`AskUserQuestion question '${questionId}' option #${index + 1} must be an object.`);
-  }
+  const optionRecord = readToolInputRecord(value, `AskUserQuestion question '${questionId}' option #${index + 1} must be an object.`);
 
   return {
-    label: readRequiredString(value, "label", `AskUserQuestion question '${questionId}' option #${index + 1} requires a non-empty 'label'.`),
-    description: readRequiredString(
-      value,
+    label: readRequiredNonEmptyString(optionRecord, "label", `AskUserQuestion question '${questionId}' option #${index + 1} requires a non-empty 'label'.`).trim(),
+    description: readRequiredNonEmptyString(
+      optionRecord,
       "description",
       `AskUserQuestion question '${questionId}' option #${index + 1} requires a non-empty 'description'.`
-    )
+    ).trim()
   };
 }
 
@@ -260,22 +262,4 @@ function parseQuestionAnswer(value: unknown): QuestionAnswer | undefined {
     selectedOptionLabels,
     customText
   };
-}
-
-function readRequiredString(record: Record<string, unknown>, key: string, message: string): string {
-  const value = record[key];
-  if (typeof value !== "string" || value.trim() === "") {
-    throw new ToolExecutionError(message);
-  }
-
-  return value.trim();
-}
-
-function readRequiredBoolean(record: Record<string, unknown>, key: string, message: string): boolean {
-  const value = record[key];
-  if (typeof value !== "boolean") {
-    throw new ToolExecutionError(message);
-  }
-
-  return value;
 }

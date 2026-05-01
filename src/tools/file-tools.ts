@@ -9,6 +9,10 @@ import { dirname } from "node:path";
 import { ToolExecutionError } from "../errors/recode-error.ts";
 import { resolveSafePath } from "./safe-path.ts";
 import type { ToolArguments, ToolDefinition, ToolExecutionContext, ToolResult } from "./tool.ts";
+import {
+  readRequiredNonEmptyString,
+  readRequiredString
+} from "./tool-input.ts";
 
 const MAX_READ_FILE_BYTES = 1_000_000;
 
@@ -169,48 +173,48 @@ export function createEditFileTool(): ToolDefinition {
 }
 
 function parseReadFileInput(arguments_: ToolArguments): ReadFileInput {
-  const path = arguments_["path"];
-
-  if (typeof path !== "string" || path.trim() === "") {
-    throw new ToolExecutionError("Read tool requires a non-empty 'path' string.");
-  }
-
-  return { path };
+  return {
+    path: readRequiredNonEmptyString(
+      arguments_,
+      "path",
+      "Read tool requires a non-empty 'path' string."
+    )
+  };
 }
 
 function parseWriteFileInput(arguments_: ToolArguments): WriteFileInput {
-  const path = arguments_["path"];
-  const content = arguments_["content"];
-
-  if (typeof path !== "string" || path.trim() === "") {
-    throw new ToolExecutionError("Write tool requires a non-empty 'path' string.");
-  }
-
-  if (typeof content !== "string") {
-    throw new ToolExecutionError("Write tool requires a string 'content' field.");
-  }
-
-  return { path, content };
+  return {
+    path: readRequiredNonEmptyString(
+      arguments_,
+      "path",
+      "Write tool requires a non-empty 'path' string."
+    ),
+    content: readRequiredString(
+      arguments_,
+      "content",
+      "Write tool requires a string 'content' field."
+    )
+  };
 }
 
 function parseEditFileInput(arguments_: ToolArguments): EditFileInput {
-  const path = arguments_["path"];
-  const oldText = arguments_["oldText"];
-  const newText = arguments_["newText"];
-
-  if (typeof path !== "string" || path.trim() === "") {
-    throw new ToolExecutionError("Edit tool requires a non-empty 'path' string.");
-  }
-
-  if (typeof oldText !== "string" || oldText === "") {
-    throw new ToolExecutionError("Edit tool requires a non-empty 'oldText' string.");
-  }
-
-  if (typeof newText !== "string") {
-    throw new ToolExecutionError("Edit tool requires a string 'newText' field.");
-  }
-
-  return { path, oldText, newText };
+  return {
+    path: readRequiredNonEmptyString(
+      arguments_,
+      "path",
+      "Edit tool requires a non-empty 'path' string."
+    ),
+    oldText: readRequiredNonEmptyString(
+      arguments_,
+      "oldText",
+      "Edit tool requires a non-empty 'oldText' string."
+    ),
+    newText: readRequiredString(
+      arguments_,
+      "newText",
+      "Edit tool requires a string 'newText' field."
+    )
+  };
 }
 
 function countOccurrences(content: string, target: string): number {
