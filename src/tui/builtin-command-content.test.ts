@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { saveRecodeConfigFile, type RecodeConfigFile } from "../config/recode-config.ts";
-import type { ConversationMessage } from "../messages/message.ts";
+import type { ConversationMessage } from "../transcript/message.ts";
 import type { RuntimeConfig, RuntimeProviderConfig } from "../runtime/runtime-config.ts";
 import {
   buildBuiltinConfigBody,

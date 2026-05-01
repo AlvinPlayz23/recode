@@ -11,7 +11,7 @@ import type {
   ToolCall,
   ToolResultMessage,
   UserMessage
-} from "../messages/message.ts";
+} from "../transcript/message.ts";
 import type { EditToolResultMetadata, ToolResultMetadata } from "../tools/tool.ts";
 import type {
   RecodeHistoryIndex,

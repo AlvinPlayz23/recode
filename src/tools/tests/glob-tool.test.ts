@@ -8,7 +8,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createGlobTool } from "./glob-tool.ts";
+import { createGlobTool } from "../glob-tool.ts";
 
 describe("Glob tool", () => {
   it("finds matching files under the workspace", async () => {

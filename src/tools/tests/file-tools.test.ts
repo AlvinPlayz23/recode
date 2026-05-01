@@ -8,7 +8,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createEditFileTool } from "./file-tools.ts";
+import { createEditFileTool } from "../file-tools.ts";
 
 describe("Edit tool", () => {
   it("writes replacement text literally even when it contains dollar patterns", async () => {

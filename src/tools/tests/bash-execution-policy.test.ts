@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { validateCommandForGuardedDirectExecution } from "./bash-execution-policy.ts";
+import { validateCommandForGuardedDirectExecution } from "../bash-execution-policy.ts";
 
 const WORKSPACE = "/tmp/recode-sandbox-test";
 

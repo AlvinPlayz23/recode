@@ -12,7 +12,7 @@ import {
   saveConversation,
   type SavedConversationRecord
 } from "../history/recode-history.ts";
-import type { ConversationMessage } from "../messages/message.ts";
+import type { ConversationMessage } from "../transcript/message.ts";
 import {
   selectRuntimeProviderModel,
   type RuntimeConfig

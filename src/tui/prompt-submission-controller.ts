@@ -5,7 +5,7 @@
 import type { AgentRunResult, TextDeltaObserver } from "../agent/run-agent-loop.ts";
 import { runAgentLoop } from "../agent/run-agent-loop.ts";
 import type { AiModel } from "../ai/types.ts";
-import type { ConversationMessage, ToolCall } from "../messages/message.ts";
+import type { ConversationMessage, ToolCall } from "../transcript/message.ts";
 import type { ToolExecutionContext } from "../tools/tool.ts";
 import type { ToolRegistry } from "../tools/tool-registry.ts";
 

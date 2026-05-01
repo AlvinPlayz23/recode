@@ -14,7 +14,7 @@ import {
   type SavedConversationMeta,
   type SavedConversationRecord
 } from "../history/recode-history.ts";
-import type { ConversationMessage } from "../messages/message.ts";
+import type { ConversationMessage } from "../transcript/message.ts";
 import type { RuntimeConfig } from "../runtime/runtime-config.ts";
 import { restoreSavedConversationRuntime } from "./conversation-session.ts";
 

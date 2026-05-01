@@ -9,7 +9,7 @@ import {
 } from "../agent/compact-conversation.ts";
 import { addStepTokenUsage } from "../agent/step-stats.ts";
 import { loadRecodeConfigFile } from "../config/recode-config.ts";
-import type { ConversationMessage } from "../messages/message.ts";
+import type { ConversationMessage } from "../transcript/message.ts";
 import type { RuntimeConfig } from "../runtime/runtime-config.ts";
 import { getBuiltinCommands } from "./message-format.ts";
 import { getSessionModeLabel, type SessionMode } from "./session-mode.ts";

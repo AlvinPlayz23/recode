@@ -3,13 +3,13 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { ToolExecutionError } from "../errors/recode-error.ts";
+import { ToolExecutionError } from "../../errors/recode-error.ts";
 import {
   createAskUserQuestionTool,
   formatQuestionAnswerSummary,
   parseQuestionToolRequest,
   parseQuestionToolResult
-} from "./ask-user-question-tool.ts";
+} from "../ask-user-question-tool.ts";
 
 describe("AskUserQuestion tool", () => {
   it("rejects an empty question list", () => {

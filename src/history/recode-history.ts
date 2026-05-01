@@ -11,7 +11,7 @@ import type {
   ContinuationSummaryMessage,
   ConversationMessage,
   UserMessage
-} from "../messages/message.ts";
+} from "../transcript/message.ts";
 import type { SessionMode } from "../tui/session-mode.ts";
 import {
   conversationToMeta,

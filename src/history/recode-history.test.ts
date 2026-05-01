@@ -8,7 +8,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import type { ConversationMessage } from "../messages/message.ts";
+import type { ConversationMessage } from "../transcript/message.ts";
 import {
   buildConversationMeta,
   createConversationRecord,

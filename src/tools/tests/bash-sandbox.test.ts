@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { validateCommand } from "./bash-sandbox.ts";
+import { validateCommand } from "../bash-sandbox.ts";
 
 const WORKSPACE = "/tmp/recode-sandbox-test";
 

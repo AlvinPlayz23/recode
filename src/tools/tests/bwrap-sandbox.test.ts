@@ -12,7 +12,7 @@ import {
   isBubblewrapAvailable,
   spawnDirect,
   spawnSandboxed
-} from "./bwrap-sandbox.ts";
+} from "../bwrap-sandbox.ts";
 
 const SPAWN_OPTIONS = { stdout: "pipe" as const, stderr: "pipe" as const, stdin: "ignore" as const };
 

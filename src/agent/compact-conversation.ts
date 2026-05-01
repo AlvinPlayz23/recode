@@ -15,7 +15,7 @@ import {
 import type {
   ContinuationSummaryMessage,
   ConversationMessage
-} from "../messages/message.ts";
+} from "../transcript/message.ts";
 import type { StepTokenUsage } from "./step-stats.ts";
 
 const DEFAULT_SUMMARY_CONTEXT_WINDOW_TOKENS = 200_000;

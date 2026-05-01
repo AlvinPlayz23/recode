@@ -6,8 +6,8 @@
 
 import { describe, expect, it } from "bun:test";
 import { resolve } from "node:path";
-import { PathSecurityError } from "../errors/recode-error.ts";
-import { resolveSafePath } from "./safe-path.ts";
+import { PathSecurityError } from "../../errors/recode-error.ts";
+import { resolveSafePath } from "../safe-path.ts";
 
 describe("resolveSafePath", () => {
   it("resolves a child path inside workspace", () => {

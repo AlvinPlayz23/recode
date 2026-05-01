@@ -64,7 +64,7 @@ import {
   formatContinuationSummaryForDisplay,
   type ConversationMessage,
   type ToolCall
-} from "../messages/message.ts";
+} from "../transcript/message.ts";
 import { createLanguageModel } from "../models/create-model-client.ts";
 import { listModelsForProvider, type ListedModelGroup } from "../models/list-models.ts";
 import { PLAN_SYSTEM_PROMPT } from "../prompt/plan-system-prompt.ts";

@@ -3,7 +3,7 @@
  */
 
 import type { RuntimeConfig } from "../runtime/runtime-config.ts";
-import type { ConversationMessage } from "../messages/message.ts";
+import type { ConversationMessage } from "../transcript/message.ts";
 import type { ToolDefinition } from "../tools/tool.ts";
 import type { StepTokenUsage } from "../agent/step-stats.ts";
 

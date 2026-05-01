@@ -6,7 +6,7 @@
 
 import type { AiModel } from "../ai/types.ts";
 import { OperationAbortedError } from "../errors/recode-error.ts";
-import type { ConversationMessage } from "../messages/message.ts";
+import type { ConversationMessage } from "../transcript/message.ts";
 import type { ToolExecutionContext } from "../tools/tool.ts";
 import { ToolRegistry } from "../tools/tool-registry.ts";
 import type { StepStats } from "./step-stats.ts";

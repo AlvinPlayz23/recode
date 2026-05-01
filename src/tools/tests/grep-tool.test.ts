@@ -8,7 +8,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createGrepTool } from "./grep-tool.ts";
+import { createGrepTool } from "../grep-tool.ts";
 
 describe("Grep tool", () => {
   it("returns matching content lines with line numbers", async () => {

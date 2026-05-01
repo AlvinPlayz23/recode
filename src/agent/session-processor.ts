@@ -5,7 +5,7 @@
 import { streamAssistantResponse } from "../ai/stream-assistant-response.ts";
 import type { AiModel } from "../ai/types.ts";
 import { DoomLoopDetectedError, ModelResponseError, OperationAbortedError } from "../errors/recode-error.ts";
-import type { ConversationMessage, ToolCall, ToolResultMessage } from "../messages/message.ts";
+import type { ConversationMessage, ToolCall, ToolResultMessage } from "../transcript/message.ts";
 import { formatQuestionAnswerSummary, parseQuestionToolResult } from "../tools/ask-user-question-tool.ts";
 import { executeToolCall } from "../tools/execute-tool-call.ts";
 import type { ToolExecutionContext } from "../tools/tool.ts";

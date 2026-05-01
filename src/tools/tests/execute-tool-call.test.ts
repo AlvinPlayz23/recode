@@ -5,10 +5,10 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import type { ToolCall } from "../messages/message.ts";
-import { executeToolCall } from "./execute-tool-call.ts";
-import { ToolRegistry } from "./tool-registry.ts";
-import type { ToolDefinition } from "./tool.ts";
+import type { ToolCall } from "../../transcript/message.ts";
+import { executeToolCall } from "../execute-tool-call.ts";
+import { ToolRegistry } from "../tool-registry.ts";
+import type { ToolDefinition } from "../tool.ts";
 
 const EDIT_TOOL: ToolDefinition = {
   name: "Edit",

@@ -2,7 +2,7 @@
  * Persistent conversation history types.
  */
 
-import type { ConversationMessage } from "../messages/message.ts";
+import type { ConversationMessage } from "../transcript/message.ts";
 import type { SessionMode } from "../tui/session-mode.ts";
 
 /**

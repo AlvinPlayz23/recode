@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it, mock, beforeEach } from "bun:test";
-import type { ConversationMessage } from "../messages/message.ts";
+import type { ConversationMessage } from "../transcript/message.ts";
 import type { AiResponseStream } from "../ai/types.ts";
 import type { ToolArguments, ToolDefinition, ToolExecutionContext, ToolResult } from "../tools/tool.ts";
 import { ToolRegistry } from "../tools/tool-registry.ts";

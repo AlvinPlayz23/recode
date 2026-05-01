@@ -2,7 +2,7 @@
  * Streaming adapter for the OpenAI Responses API.
  */
 
-import { formatContinuationSummaryForModel, type ConversationMessage } from "../../messages/message.ts";
+import { formatContinuationSummaryForModel, type ConversationMessage } from "../../transcript/message.ts";
 import type { ToolDefinition } from "../../tools/tool.ts";
 import { joinUrl, readErrorMessage } from "../http.ts";
 import { parseProviderToolArguments } from "../json.ts";

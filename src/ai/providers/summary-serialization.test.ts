@@ -5,7 +5,7 @@
  */
 
 import { afterEach, describe, expect, it } from "bun:test";
-import type { ConversationMessage } from "../../messages/message.ts";
+import type { ConversationMessage } from "../../transcript/message.ts";
 import { streamAnthropicMessages } from "./anthropic.ts";
 import { streamOpenAiChat } from "./openai-chat.ts";
 import { streamOpenAiResponses } from "./openai-responses.ts";

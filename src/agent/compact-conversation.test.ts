@@ -6,7 +6,7 @@
 
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import type { AiResponseStream } from "../ai/types.ts";
-import type { ConversationMessage } from "../messages/message.ts";
+import type { ConversationMessage } from "../transcript/message.ts";
 
 type StreamPart =
   | { type: "text-delta"; text: string }
