@@ -29,8 +29,7 @@ import {
   type ScrollBoxRenderable,
   type KeyBinding as TextareaKeyBinding,
   type TextareaRenderable,
-  defaultTextareaKeyBindings,
-  type SyntaxStyle
+  defaultTextareaKeyBindings
 } from "@opentui/core";
 import { useKeyboard, usePaste, useRenderer, useSelectionHandler, useTerminalDimensions } from "@opentui/solid";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
@@ -61,9 +60,7 @@ import {
   type SavedConversationRecord
 } from "../history/recode-history.ts";
 import {
-  formatContinuationSummaryForDisplay,
-  type ConversationMessage,
-  type ToolCall
+  type ConversationMessage
 } from "../transcript/message.ts";
 import { createLanguageModel } from "../models/create-model-client.ts";
 import { listModelsForProvider, type ListedModelGroup } from "../models/list-models.ts";
@@ -75,11 +72,8 @@ import {
 } from "../runtime/runtime-config.ts";
 import type {
   ApprovalMode,
-  EditToolResultMetadata,
-  QuestionAnswer,
   QuestionToolDecision,
   QuestionToolRequest,
-  ToolResultMetadata,
   ToolApprovalDecision,
   ToolApprovalRequest,
   ToolApprovalScope,
@@ -90,8 +84,7 @@ import {
   findBuiltinCommands,
   moveBuiltinCommandSelectionIndex,
   normalizeBuiltinCommandSelectionIndex,
-  parseBuiltinCommand,
-  toDisplayLines
+  parseBuiltinCommand
 } from "./message-format.ts";
 import {
   buildBuiltinConfigBody,
@@ -167,10 +160,7 @@ import {
 } from "./theme.ts";
 import { ThemePickerOverlay } from "./theme-picker-overlay.tsx";
 import { ToastOverlay } from "./toast-overlay.tsx";
-import {
-  ToolApprovalOverlay,
-  type ApprovalDecisionOption
-} from "./tool-approval-overlay.tsx";
+import { ToolApprovalOverlay } from "./tool-approval-overlay.tsx";
 import {
   handleCommandPanelKey,
   handleCustomizePickerKey,
@@ -185,6 +175,37 @@ import {
   runSingleTurn,
   type PendingPaste
 } from "./prompt-submission-controller.ts";
+import {
+  APPROVAL_DECISIONS,
+  buildQuestionSubmission,
+  createActiveApprovalRequest,
+  createActiveQuestionRequest,
+  formatApprovalRequestDescription,
+  formatApprovalRequestTitle,
+  getNextApprovalAllowlist,
+  isContextWindowQuestionRequest,
+  moveQuestionIndex,
+  moveQuestionOptionIndex,
+  toggleQuestionOption,
+  updateQuestionCustomText
+} from "./interactive-prompts.ts";
+import {
+  appendToolCallEntryAndCreateAssistantPlaceholder,
+  finalizeAssistantStreamEntry,
+  persistPromptTranscript
+} from "./submission-session.ts";
+import {
+  renderEntry
+} from "./transcript-entry.tsx";
+import {
+  appendEntry,
+  createEntry,
+  createToolResultEntry,
+  rehydrateEntriesFromTranscript,
+  renderVisibleEntries,
+  updateEntryBody,
+  type UiEntry
+} from "./transcript-entry-state.ts";
 import type {
   ActiveApprovalRequest,
   ActiveQuestionRequest,
@@ -195,14 +216,6 @@ import type {
   ModelPickerOption,
   ThemePickerItem
 } from "./tui-app-types.ts";
-
-interface UiEntry {
-  readonly id: string;
-  readonly kind: "user" | "assistant" | "tool" | "tool-preview" | "tool-group" | "error" | "status";
-  readonly title: string;
-  readonly body: string;
-  readonly metadata?: ToolResultMetadata;
-}
 
 type PromptRenderable = InputRenderable | TextareaRenderable;
 
@@ -622,30 +635,13 @@ export function TuiApp(props: TuiAppProps) {
 
   function requestToolApproval(request: ToolApprovalRequest): Promise<ToolApprovalDecision> {
     return new Promise((resolve) => {
-      setActiveApprovalRequest({
-        ...request,
-        selectedIndex: 0,
-        resolve
-      });
+      setActiveApprovalRequest(createActiveApprovalRequest(request, resolve));
     });
   }
 
   function requestQuestionAnswers(request: QuestionToolRequest): Promise<QuestionToolDecision> {
     return new Promise((resolve) => {
-      setActiveQuestionRequest({
-        ...request,
-        currentQuestionIndex: 0,
-        selectedOptionIndex: 0,
-        answers: Object.fromEntries(request.questions.map((question) => [
-          question.id,
-          {
-            questionId: question.id,
-            selectedOptionLabels: [],
-            customText: ""
-          } satisfies QuestionAnswer
-        ])),
-        resolve
-      });
+      setActiveQuestionRequest(createActiveQuestionRequest(request, resolve));
       queueMicrotask(() => {
         questionCustomInputRef?.focus();
       });
@@ -1330,9 +1326,7 @@ export function TuiApp(props: TuiAppProps) {
     }
 
     if (decision === "allow-always") {
-      const nextAllowlist = request.scope === "read" || approvalAllowlist().includes(request.scope)
-        ? approvalAllowlist()
-        : [...approvalAllowlist(), request.scope];
+      const nextAllowlist = getNextApprovalAllowlist(decision, request.scope, approvalAllowlist());
 
       if (nextAllowlist !== approvalAllowlist()) {
         try {
@@ -1366,124 +1360,22 @@ export function TuiApp(props: TuiAppProps) {
   };
 
   const moveActiveQuestionIndex = (direction: -1 | 1) => {
-    setActiveQuestionRequest((current) => {
-      if (current === undefined) {
-        return current;
-      }
-
-      const nextIndex = (current.currentQuestionIndex + direction + current.questions.length) % current.questions.length;
-      const nextQuestion = current.questions[nextIndex];
-      return nextQuestion === undefined
-        ? current
-        : {
-            ...current,
-            currentQuestionIndex: nextIndex,
-            selectedOptionIndex: normalizeBuiltinCommandSelectionIndex(
-              current.selectedOptionIndex,
-              nextQuestion.options.length
-            )
-          };
-    });
+    setActiveQuestionRequest((current) => moveQuestionIndex(current, direction));
     queueMicrotask(() => {
       questionCustomInputRef?.focus();
     });
   };
 
   const moveActiveQuestionOptionIndex = (direction: -1 | 1) => {
-    setActiveQuestionRequest((current) => {
-      if (current === undefined) {
-        return current;
-      }
-
-      const activeQuestion = current.questions[current.currentQuestionIndex];
-      if (activeQuestion === undefined) {
-        return current;
-      }
-
-      return {
-        ...current,
-        selectedOptionIndex: moveBuiltinCommandSelectionIndex(
-          current.selectedOptionIndex,
-          activeQuestion.options.length,
-          direction
-        )
-      };
-    });
+    setActiveQuestionRequest((current) => moveQuestionOptionIndex(current, direction));
   };
 
   const toggleActiveQuestionOption = () => {
-    setActiveQuestionRequest((current) => {
-      if (current === undefined) {
-        return current;
-      }
-
-      const activeQuestion = current.questions[current.currentQuestionIndex];
-      if (activeQuestion === undefined) {
-        return current;
-      }
-
-      const option = activeQuestion.options[
-        normalizeBuiltinCommandSelectionIndex(current.selectedOptionIndex, activeQuestion.options.length)
-      ];
-      if (option === undefined) {
-        return current;
-      }
-
-      const answer = current.answers[activeQuestion.id] ?? {
-        questionId: activeQuestion.id,
-        selectedOptionLabels: [],
-        customText: ""
-      };
-      const isSelected = answer.selectedOptionLabels.includes(option.label);
-      const selectedOptionLabels = activeQuestion.multiSelect
-        ? isSelected
-          ? answer.selectedOptionLabels.filter((label) => label !== option.label)
-          : [...answer.selectedOptionLabels, option.label]
-        : isSelected
-          ? []
-          : [option.label];
-
-      return {
-        ...current,
-        answers: {
-          ...current.answers,
-          [activeQuestion.id]: {
-            ...answer,
-            selectedOptionLabels
-          }
-        }
-      };
-    });
+    setActiveQuestionRequest(toggleQuestionOption);
   };
 
   const updateActiveQuestionCustomText = (value: string) => {
-    setActiveQuestionRequest((current) => {
-      if (current === undefined) {
-        return current;
-      }
-
-      const currentQuestion = current.questions[current.currentQuestionIndex];
-      if (currentQuestion === undefined) {
-        return current;
-      }
-
-      const currentAnswer = current.answers[currentQuestion.id] ?? {
-        questionId: currentQuestion.id,
-        selectedOptionLabels: [],
-        customText: ""
-      };
-
-      return {
-        ...current,
-        answers: {
-          ...current.answers,
-          [currentQuestion.id]: {
-            ...currentAnswer,
-            customText: value
-          }
-        }
-      };
-    });
+    setActiveQuestionRequest((current) => updateQuestionCustomText(current, value));
   };
 
   const submitActiveQuestionRequest = () => {
@@ -1492,36 +1384,16 @@ export function TuiApp(props: TuiAppProps) {
       return;
     }
 
-    const answers = request.questions.map((question) => request.answers[question.id] ?? {
-      questionId: question.id,
-      selectedOptionLabels: [],
-      customText: ""
-    });
-
-    const unanswered = request.questions.find((question, index) => {
-      const answer = answers[index];
-      return answer !== undefined
-        && answer.selectedOptionLabels.length === 0
-        && answer.customText.trim() === "";
-    });
-
-    if (unanswered !== undefined) {
-      if (isContextWindowQuestionRequest(request)) {
-        resolveQuestionRequest(buildContextWindowFallbackDecision(request));
-        return;
-      }
-
+    const submission = buildQuestionSubmission(request);
+    if (submission.kind === "missing-answer") {
       appendEntry(
         setEntries,
-        createEntry("status", "status", `Answer '${unanswered.header}' or press ESC to dismiss.`)
+        createEntry("status", "status", `Answer '${submission.header}' or press ESC to dismiss.`)
       );
       return;
     }
 
-    resolveQuestionRequest({
-      dismissed: false,
-      answers
-    });
+    resolveQuestionRequest(submission.decision);
   };
 
   const submitPrompt = async (value: string) => {
@@ -1781,30 +1653,15 @@ export function TuiApp(props: TuiAppProps) {
         onToolCall(toolCall) {
           setBusyPhase("tool");
           flushAndResetPendingStreamText();
-          const currentId = currentStreamingId;
-          if (currentId === undefined) {
-            return;
-          }
-          const currentBody = streamingBody();
-
-          if (currentBody !== "") {
-            updateEntryBody(setEntries, currentId, () => currentBody);
-          }
-
-          setEntries((prev) => {
-            const current = prev.find((e) => e.id === currentId);
-            // Replace the empty assistant placeholder with a tool entry when no text was streamed.
-            if (current !== undefined && current.body === "" && currentBody === "") {
-              return [...prev.filter((e) => e.id !== currentId), createEntry("tool", "tool", formatToolCallEntry(toolCall))];
-            }
-            return [...prev, createEntry("tool", "tool", formatToolCallEntry(toolCall))];
+          const nextEntry = appendToolCallEntryAndCreateAssistantPlaceholder({
+            currentStreamingId: currentStreamingId,
+            currentStreamingBody: streamingBody(),
+            toolCall,
+            setEntries
           });
-
-          const nextEntry = createEntry("assistant", "Recode", "");
-          currentStreamingId = nextEntry.id;
+          currentStreamingId = nextEntry?.id;
           setStreamingBody("");
           setStreamingEntryId(currentStreamingId);
-          appendEntry(setEntries, nextEntry);
         },
         onTextDelta(delta) {
           if (currentStreamingId !== undefined) {
@@ -1831,33 +1688,19 @@ export function TuiApp(props: TuiAppProps) {
       flushAndResetPendingStreamText();
       const lastId = currentStreamingId;
       const finalBody = result.finalText !== "" ? result.finalText : streamingBody();
-      if (lastId !== undefined) {
-      setEntries((prev) => {
-        const last = prev.find((e) => e.id === lastId);
-        if (last === undefined) {
-          return prev;
-        }
-        if (finalBody !== "") {
-          return prev.map((e) => e.id === lastId ? { ...e, body: finalBody } : e);
-        }
-        if (last.body === "") {
-          return prev.filter((e) => e.id !== lastId);
-        }
-        return prev;
-      });
-      }
+      finalizeAssistantStreamEntry(setEntries, lastId, finalBody);
 
-      setPreviousMessages(result.transcript);
-      setLastContextEstimate(estimateConversationContextTokens(result.transcript));
       setBusyPhase("saving-history");
-      const persistedConversation = persistConversationSession(
-        historyRoot(),
-        sessionRuntimeConfig(),
-        result.transcript,
-        currentConversation(),
-        sessionMode()
-      );
-      setCurrentConversation(persistedConversation);
+      persistPromptTranscript({
+        historyRoot: historyRoot(),
+        runtimeConfig: sessionRuntimeConfig(),
+        transcript: result.transcript,
+        currentConversation: currentConversation(),
+        sessionMode: sessionMode(),
+        setPreviousMessages,
+        setLastContextEstimate,
+        setConversation: setCurrentConversation
+      });
       appendEntry(
         setEntries,
         createEntry("status", "status", `✓ ${result.iterations} turns`)
@@ -1871,17 +1714,17 @@ export function TuiApp(props: TuiAppProps) {
       }
       if (!(error instanceof OperationAbortedError)) {
         if (latestTranscript !== undefined && latestTranscript.length > 0) {
-          setPreviousMessages(latestTranscript);
-          setLastContextEstimate(estimateConversationContextTokens(latestTranscript));
           setBusyPhase("saving-history");
-          const persistedConversation = persistConversationSession(
-            historyRoot(),
-            sessionRuntimeConfig(),
-            latestTranscript,
-            currentConversation(),
-            sessionMode()
-          );
-          setCurrentConversation(persistedConversation);
+          persistPromptTranscript({
+            historyRoot: historyRoot(),
+            runtimeConfig: sessionRuntimeConfig(),
+            transcript: latestTranscript,
+            currentConversation: currentConversation(),
+            sessionMode: sessionMode(),
+            setPreviousMessages,
+            setLastContextEstimate,
+            setConversation: setCurrentConversation
+          });
         }
         appendEntry(setEntries, createEntry("error", "error", toErrorMessage(error)));
       }
@@ -2288,30 +2131,6 @@ function applyInputCursorStyle(input: PromptRenderable | undefined, color: strin
   input.cursorColor = color;
 }
 
-function isContextWindowQuestionRequest(
-  request: Pick<QuestionToolRequest, "questions"> | undefined
-): boolean {
-  return request?.questions.length === 1 && request.questions[0]?.id === "context-window";
-}
-
-function buildContextWindowFallbackDecision(
-  request: Pick<QuestionToolRequest, "questions">
-): QuestionToolDecision {
-  const question = request.questions[0];
-  const fallbackLabel = question?.options[0]?.label;
-
-  return {
-    dismissed: false,
-    answers: [
-      {
-        questionId: question?.id ?? "context-window",
-        selectedOptionLabels: fallbackLabel === undefined ? [] : [fallbackLabel],
-        customText: ""
-      }
-    ]
-  };
-}
-
 interface BuiltinCommandHandlerOptions {
   readonly commandName: "help" | "status" | "config";
   readonly runtimeConfig: RuntimeConfig;
@@ -2436,41 +2255,6 @@ function normalizeDraftInput(previousDraft: string, nextValue: string): string {
   return nextValue;
 }
 
-function rehydrateEntriesFromTranscript(transcript: readonly ConversationMessage[]): readonly UiEntry[] {
-  const entries: UiEntry[] = [];
-
-  for (const message of transcript) {
-    switch (message.role) {
-      case "user":
-        entries.push(createEntry("user", "You", message.content));
-        break;
-      case "assistant":
-        if (message.content.trim() !== "") {
-          entries.push(createEntry("assistant", "Recode", message.content));
-        }
-        for (const toolCall of message.toolCalls) {
-          entries.push(createEntry("tool", "tool", formatToolCallEntry(toolCall)));
-        }
-        break;
-      case "summary":
-        entries.push(createEntry("assistant", "Recode", formatContinuationSummaryForDisplay(message.content)));
-        break;
-      case "tool":
-        if (message.isError) {
-          entries.push(createEntry("error", "error", `${message.toolName} failed: ${message.content}`));
-        } else {
-          const toolResultEntry = createToolResultEntry(message.toolName, message.content, message.metadata);
-          if (toolResultEntry !== undefined) {
-            entries.push(toolResultEntry);
-          }
-        }
-        break;
-    }
-  }
-
-  return entries;
-}
-
 function buildThemePickerItems(activeThemeName: ThemeName, query: string): readonly ThemePickerItem[] {
   const normalizedQuery = query.trim().toLowerCase();
 
@@ -2541,28 +2325,6 @@ async function submitSelectedThemePickerItem(options: SubmitThemePickerSelection
     options.appendEntry(createEntry("error", "error", toErrorMessage(error)));
   }
 }
-
-const APPROVAL_DECISIONS: readonly ApprovalDecisionOption[] = [
-  {
-    decision: "allow-once",
-    label: "Allow once",
-    description: "Run this tool call now and ask again next time."
-  },
-  {
-    decision: "allow-always",
-    label: "Always allow this scope",
-    description: "Persist this tool scope in the config allowlist."
-  },
-  {
-    decision: "deny",
-    label: "Deny",
-    description: "Reject this tool call."
-  }
-] as const satisfies readonly {
-  readonly decision: ToolApprovalDecision;
-  readonly label: string;
-  readonly description: string;
-}[];
 
 function buildApprovalModePickerItems(activeMode: ApprovalMode): readonly ApprovalModePickerItem[] {
   return [
@@ -2654,17 +2416,6 @@ function persistSelectedApprovalAllowlist(
   const config = loadRecodeConfigFile(configPath);
   const nextConfig = selectConfiguredApprovalAllowlist(config, approvalAllowlist);
   saveRecodeConfigFile(configPath, nextConfig);
-}
-
-function formatApprovalRequestTitle(request: ToolApprovalRequest): string {
-  return `${request.toolName} wants ${request.scope} access.`;
-}
-
-function formatApprovalRequestDescription(request: ToolApprovalRequest): string {
-  const summary = summarizeToolArguments(request.toolName, JSON.stringify(request.arguments));
-  return summary === ""
-    ? "Choose how Recode should handle this tool call."
-    : `Details: ${summary}`;
 }
 
 function countPastedLines(value: string): number {
@@ -3027,326 +2778,6 @@ function cycleCustomizeSetting(options: CycleCustomizeSettingOptions): void {
   persistSelectedTheme(options.configPath, nextTheme.name);
 }
 
-function formatToolCallEntry(toolCall: ToolCall): string {
-  const displayName = toToolDisplayName(toolCall.name);
-  const summary = summarizeToolArguments(toolCall.name, toolCall.argumentsJson);
-
-  if (summary === "") {
-    return displayName;
-  }
-
-  return `${displayName} · ${summary}`;
-}
-
-function toToolDisplayName(toolName: string): string {
-  switch (toolName) {
-    case "Bash":
-      return "Bash";
-    case "AskUserQuestion":
-      return "Ask";
-    case "Read":
-      return "Read";
-    case "Write":
-      return "Write";
-    case "Edit":
-      return "Edit";
-    case "Glob":
-      return "Glob";
-    case "Grep":
-      return "Grep";
-    // TODO: Future tools should continue using unified PascalCase names.
-    // case "Todo": return "Todo";
-    // case "Task": return "Task";
-    // case "Fetch": return "Fetch";
-    // case "Search": return "Search";
-    default:
-      return toTitleCase(toolName.replaceAll("_", " "));
-  }
-}
-
-function summarizeToolArguments(toolName: string, argumentsJson: string): string {
-  const args = parseToolArguments(argumentsJson);
-
-  switch (toolName) {
-    case "Bash":
-      return readTrimmedString(args, "command", 72);
-    case "AskUserQuestion": {
-      const questions = args?.["questions"];
-      return Array.isArray(questions)
-        ? `${questions.length} question${questions.length === 1 ? "" : "s"}`
-        : "";
-    }
-    case "Read":
-    case "Write":
-    case "Edit":
-      return readTrimmedString(args, "path", 72);
-    case "Glob":
-      return readTrimmedString(args, "pattern", 72);
-    case "Grep": {
-      const pattern = readTrimmedString(args, "pattern", 44);
-      const include = readTrimmedString(args, "include", 24);
-      if (pattern !== "" && include !== "") {
-        return `${pattern} in ${include}`;
-      }
-      return pattern || include;
-    }
-    // TODO: Future tools should continue using unified PascalCase names.
-    // case "Todo": return readTrimmedString(args, "todos", 72);
-    // case "Task": return readTrimmedString(args, "description", 72) || readTrimmedString(args, "prompt", 72);
-    // case "Fetch": return readTrimmedString(args, "url", 72);
-    // case "Search": return readTrimmedString(args, "query", 72);
-    default:
-      return "";
-  }
-}
-
-function parseToolArguments(argumentsJson: string): Record<string, unknown> | undefined {
-  try {
-    const parsedValue: unknown = JSON.parse(argumentsJson);
-
-    if (parsedValue !== null && typeof parsedValue === "object" && !Array.isArray(parsedValue)) {
-      return parsedValue as Record<string, unknown>;
-    }
-  } catch {
-    return undefined;
-  }
-
-  return undefined;
-}
-
-function readTrimmedString(
-  record: Record<string, unknown> | undefined,
-  key: string,
-  maxLength: number
-): string {
-  const value = record?.[key];
-
-  if (typeof value !== "string") {
-    return "";
-  }
-
-  const normalized = value.trim().replace(/\s+/g, " ");
-
-  if (normalized.length <= maxLength) {
-    return normalized;
-  }
-
-  return `${normalized.slice(0, maxLength - 1)}…`;
-}
-
-function toTitleCase(value: string): string {
-  return value
-    .split(" ")
-    .filter((part) => part !== "")
-    .map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
-    .join(" ");
-}
-
-function renderEntry(
-  entry: UiEntry,
-  t: () => ReturnType<typeof getTheme>,
-  mdStyle: () => SyntaxStyle,
-  currentStreamingId: () => string | undefined,
-  currentStreamingBody: () => string,
-  layout: () => LayoutMode,
-  toolMarker: () => string
-) {
-  const compact = () => layout() === "compact";
-  const userMarginY = () => compact() ? 0 : 1;
-
-  switch (entry.kind) {
-    case "user":
-      return (
-        <box
-          flexDirection="column"
-          marginTop={userMarginY()}
-          marginBottom={userMarginY()}
-          marginLeft={2}
-          marginRight={2}
-          border
-          borderColor={t().userMessageBackground}
-          paddingLeft={1}
-          paddingRight={1}
-          paddingTop={compact() ? 0 : 0}
-          paddingBottom={compact() ? 0 : 0}
-        >
-          <box flexDirection="row">
-            <text fg={t().user}>◈ </text>
-            <box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
-              <For each={toDisplayLines(entry.body)}>
-                {(line) => <text fg={t().user}>{line}</text>}
-              </For>
-            </box>
-          </box>
-        </box>
-      );
-
-    case "assistant":
-      return (
-        <Show when={entry.id === currentStreamingId() ? currentStreamingBody() !== "" : entry.body !== ""}>
-          <box width="100%" flexDirection="row" marginTop={compact() ? 0 : 1} marginBottom={0} paddingLeft={2}>
-            <box width={2} flexShrink={0}>
-              <text fg={t().assistantLabel}>❀ </text>
-            </box>
-            <box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0} paddingRight={1}>
-              <markdown
-                content={entry.id === currentStreamingId() ? currentStreamingBody() : entry.body}
-                syntaxStyle={mdStyle()}
-                fg={t().assistantBody}
-                conceal={entry.id !== currentStreamingId()}
-                streaming={entry.id === currentStreamingId()}
-                width="100%"
-                flexShrink={1}
-                tableOptions={{
-                  widthMode: "content",
-                  columnFitter: "balanced",
-                  wrapMode: "word",
-                  cellPadding: 1,
-                  borders: true,
-                  outerBorder: true,
-                  borderStyle: "single",
-                  borderColor: t().divider,
-                  selectable: true
-                }}
-              />
-            </box>
-          </box>
-        </Show>
-      );
-
-    case "tool":
-      return (
-        <box flexDirection="row" paddingLeft={4} marginTop={0} marginBottom={0}>
-          <text fg={t().tool} attributes={TextAttributes.DIM}>{toolMarker()} </text>
-          <text fg={t().tool} attributes={TextAttributes.DIM}>{entry.body}</text>
-        </box>
-      );
-
-    case "tool-preview": {
-      const metadata = entry.metadata;
-      return (
-        <box flexDirection="column" paddingLeft={4} marginTop={compact() ? 0 : 1} marginBottom={0}>
-          <box flexDirection="row">
-            <text fg={t().tool} attributes={TextAttributes.DIM}>{toolMarker()} </text>
-            <text fg={t().tool} attributes={TextAttributes.DIM}>{entry.body}</text>
-          </box>
-          <Show when={metadata?.kind === "edit-preview"}>
-            <box paddingLeft={2} paddingTop={1} paddingRight={1}>
-              <diff
-                oldCode={(metadata as EditToolResultMetadata | undefined)?.oldText ?? ""}
-                newCode={(metadata as EditToolResultMetadata | undefined)?.newText ?? ""}
-                language={resolveDiffLanguage((metadata as EditToolResultMetadata | undefined)?.path ?? "")}
-                mode="unified"
-                showLineNumbers={true}
-                context={2}
-                addedLineColor={t().diffAdded}
-                removedLineColor={t().diffRemoved}
-                unchangedLineColor="transparent"
-                width="100%"
-              />
-            </box>
-          </Show>
-        </box>
-      );
-    }
-
-    case "tool-group":
-      return (
-        <box flexDirection="row" paddingLeft={4} marginTop={0} marginBottom={0}>
-          <text fg={t().tool} attributes={TextAttributes.DIM}>{toolMarker()} </text>
-          <text fg={t().tool} attributes={TextAttributes.DIM}>{entry.body}</text>
-        </box>
-      );
-
-    case "error":
-      return (
-        <box flexDirection="column" marginTop={compact() ? 0 : 1} paddingLeft={3}>
-          <text fg={t().error}>⚠ {entry.body}</text>
-        </box>
-      );
-
-    case "status":
-      return (
-        <box flexDirection="row" marginTop={0} marginBottom={0} paddingLeft={3}>
-          <text fg={t().statusText} attributes={TextAttributes.DIM}>◌ {entry.body}</text>
-        </box>
-      );
-  }
-}
-
-function createEntry(kind: UiEntry["kind"], title: string, body: string): UiEntry {
-  return {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    kind,
-    title,
-    body
-  };
-}
-
-function createToolResultEntry(
-  toolName: string,
-  _content: string,
-  metadata: ToolResultMetadata | undefined
-): UiEntry | undefined {
-  if (metadata?.kind === "edit-preview") {
-    return {
-      ...createEntry("tool-preview", "tool", `${toToolDisplayName(toolName)} · ${metadata.path}`),
-      metadata
-    };
-  }
-
-  return undefined;
-}
-
-function resolveDiffLanguage(path: string): string {
-  const normalized = path.trim().toLowerCase();
-
-  if (normalized.endsWith(".tsx") || normalized.endsWith(".ts") || normalized.endsWith(".jsx") || normalized.endsWith(".js")) {
-    return "typescript";
-  }
-
-  if (normalized.endsWith(".json")) {
-    return "json";
-  }
-
-  if (normalized.endsWith(".md")) {
-    return "markdown";
-  }
-
-  if (normalized.endsWith(".css")) {
-    return "css";
-  }
-
-  if (normalized.endsWith(".html")) {
-    return "html";
-  }
-
-  if (normalized.endsWith(".sh")) {
-    return "bash";
-  }
-
-  return "text";
-}
-
-function appendEntry(
-  setEntries: (setter: (previous: readonly UiEntry[]) => readonly UiEntry[]) => void,
-  entry: UiEntry
-): void {
-  setEntries((previous) => [...previous, entry]);
-}
-
-function updateEntryBody(
-  setEntries: (setter: (previous: readonly UiEntry[]) => readonly UiEntry[]) => void,
-  entryId: string,
-  updateBody: (body: string) => string
-): void {
-  setEntries((previous) => previous.map((entry) =>
-    entry.id === entryId
-      ? { ...entry, body: updateBody(entry.body) }
-      : entry
-  ));
-}
-
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -3545,53 +2976,4 @@ function persistMinimalMode(configPath: string, enabled: boolean): void {
   const config = loadRecodeConfigFile(configPath);
   const nextConfig = selectConfiguredMinimalMode(config, enabled);
   saveRecodeConfigFile(configPath, nextConfig);
-}
-
-// ── Collapsible Tool Output ──
-
-function renderVisibleEntries(
-  entries: readonly UiEntry[],
-  collapsed: boolean
-): readonly UiEntry[] {
-  if (!collapsed) {
-    return entries;
-  }
-
-  const result: UiEntry[] = [];
-  let toolRunCount = 0;
-  let toolRunStartIndex = -1;
-
-  for (let i = 0; i <= entries.length; i++) {
-    const entry = entries[i];
-    const isTool = entry !== undefined && entry.kind === "tool";
-
-    if (isTool) {
-      if (toolRunCount === 0) {
-        toolRunStartIndex = i;
-      }
-      toolRunCount += 1;
-      continue;
-    }
-
-    // Flush any pending tool run.
-    if (toolRunCount > 0) {
-      if (toolRunCount === 1) {
-        result.push(entries[toolRunStartIndex]!);
-      } else {
-        result.push(createEntry(
-          "tool-group",
-          "tool",
-          `${toolRunCount} tool calls (collapsed)`
-        ));
-      }
-      toolRunCount = 0;
-      toolRunStartIndex = -1;
-    }
-
-    if (entry !== undefined) {
-      result.push(entry);
-    }
-  }
-
-  return result;
 }

@@ -153,15 +153,14 @@ Conversations are stored as JSON files plus a global `index.json`.
 
 The main TUI screen still centers on [src/tui/app.tsx](./src/tui/app.tsx), but it has been actively reduced and split into smaller modules.
 
-- Current `app.tsx` size: `3233` lines
+- Current `app.tsx` size: `2979` lines
 - Refactor history and extraction map: [src/tui/REFACTOR-HISTORY.md](./src/tui/REFACTOR-HISTORY.md)
-- Recent extractions include session persistence, file suggestions, built-in command content, history helpers, shared selector math, popup/overlay components, keyboard routing helpers, and prompt submission helpers
+- Recent extractions include session persistence, file suggestions, built-in command content, history helpers, shared selector math, popup/overlay components, keyboard routing helpers, prompt submission helpers, interactive prompt workflows, and transcript entry rendering/state
 
 The biggest remaining refactor seams are:
 - built-in command dispatch
-- deeper prompt submission and agent orchestration
-- transcript rehydration and entry rendering
 - layout/composer measurement helpers
+- deeper prompt-run orchestration once surrounding state is thinner
 
 ## Core Refactor Status
 

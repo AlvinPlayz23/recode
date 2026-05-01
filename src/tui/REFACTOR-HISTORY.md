@@ -4,9 +4,9 @@ This file tracks responsibility extractions from [app.tsx](./app.tsx) so future 
 
 ## Current Size
 
-- Current [app.tsx](./app.tsx): `3576` lines
+- Current [app.tsx](./app.tsx): `2979` lines
 - Starting point for this refactor effort: `4632` lines
-- Net reduction so far: `1056` lines
+- Net reduction so far: `1653` lines
 
 | Pass | What Was Refactored Out of `app.tsx` | New File |
 | --- | --- | --- |
@@ -28,6 +28,10 @@ This file tracks responsibility extractions from [app.tsx](./app.tsx) so future 
 | 5 | Keyboard routing helpers for question prompts, tool approval, pickers, `@file` suggestions, and slash-command suggestions | [keyboard-router.ts](./keyboard-router.ts) |
 | 5 | Single-turn agent runner and compact paste expansion helpers used during prompt submission | [prompt-submission-controller.ts](./prompt-submission-controller.ts) |
 | 5 | Slash-command textarea caret stabilization after visible-draft sync and prompt remounts | [app.tsx](./app.tsx) |
+| 6 | Transcript entry state, mutation helpers, tool-call formatting, transcript rehydration, and collapsed-tool grouping | [transcript-entry-state.ts](./transcript-entry-state.ts) |
+| 6 | Transcript entry JSX rendering for user, assistant, tool, preview, grouped-tool, error, and status rows | [transcript-entry.tsx](./transcript-entry.tsx) |
+| 6 | Tool approval and question prompt workflow helpers, including context-window fallback submission | [interactive-prompts.ts](./interactive-prompts.ts) |
+| 6 | Prompt-run transcript persistence and assistant/tool streaming-entry transitions | [submission-session.ts](./submission-session.ts) |
 
 ## Stabilization After Pass 5
 
@@ -35,10 +39,16 @@ This file tracks responsibility extractions from [app.tsx](./app.tsx) so future 
 - The history picker now uses compact two-line rows, a short-list non-scroll path, and filtered-list remount keys to reduce scroll-gap regressions.
 - Prompt textarea remounts and same-value visible-draft syncs now restore the slash-command caret to the end instead of letting typed letters insert behind the first character.
 
+## Stabilization After Pass 6
+
+- Failed or partial prompt turns continue to use the partial-transcript preservation path added before this pass; persistence now goes through a shared submission/session helper.
+- Transcript rendering and transcript state shaping are split so pure state behavior can be tested without importing the OpenTUI JSX runtime.
+- Approval/question modal behavior is now expressed through pure workflow helpers instead of being embedded directly in the main app component.
+
 ## Notes
 
-- `app.tsx` still owns the main interaction loop, picker state, streaming state, and built-in command dispatch.
-- The next likely seams are built-in command dispatch, deeper prompt submission orchestration, transcript rehydration, and entry rendering.
+- `app.tsx` still owns picker state, TUI lifecycle effects, draft/input focus, and built-in command dispatch.
+- The next likely seams are built-in command dispatch, layout/composer measurement helpers, and a deeper prompt-run controller once the surrounding state is thinner.
 - When moving logic out of `app.tsx`, prefer modules that are either:
   - pure formatting/data helpers with direct tests, or
   - stateful helpers with a narrow, explicit API and dedicated tests.
