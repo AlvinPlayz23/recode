@@ -10,6 +10,7 @@ import {
   type ConfiguredProvider
 } from "../config/recode-config.ts";
 import type { ProviderKind } from "../providers/provider-kind.ts";
+import { isJsonObject, type JsonObject } from "../shared/json-value.ts";
 import type { ApprovalMode, ToolApprovalScope } from "../tools/tool.ts";
 import {
   buildRuntimeProviders,
@@ -32,6 +33,8 @@ export interface RuntimeConfig {
   readonly approvalMode: ApprovalMode;
   readonly approvalAllowlist: readonly ToolApprovalScope[];
   readonly apiKey?: string;
+  readonly providerHeaders?: Readonly<Record<string, string>>;
+  readonly providerOptions?: JsonObject;
   readonly baseUrl: string;
   readonly maxOutputTokens?: number;
   readonly temperature?: number;
@@ -80,6 +83,8 @@ export function selectRuntimeProviderModel(
     ...(selectedProvider.temperature === undefined ? {} : { temperature: selectedProvider.temperature }),
     ...(selectedProvider.toolChoice === undefined ? {} : { toolChoice: selectedProvider.toolChoice }),
     ...(selectedModel?.contextWindowTokens === undefined ? {} : { contextWindowTokens: selectedModel.contextWindowTokens }),
+    ...(selectedProvider.headers === undefined ? {} : { providerHeaders: selectedProvider.headers }),
+    ...(selectedProvider.options === undefined ? {} : { providerOptions: selectedProvider.options }),
     ...(selectedProvider.apiKey === undefined ? {} : { apiKey: selectedProvider.apiKey })
   };
 }
@@ -131,6 +136,8 @@ export function loadRuntimeConfig(workspaceRoot: string): RuntimeConfig {
   const envApiKey = readOptionalEnv("RECODE_API_KEY");
   const envBaseUrl = readOptionalEnv("RECODE_BASE_URL");
   const envModel = readOptionalEnv("RECODE_MODEL");
+  const envHeaders = readOptionalStringRecordJsonEnv("RECODE_PROVIDER_HEADERS");
+  const envProviderOptions = readOptionalJsonObjectEnv("RECODE_PROVIDER_OPTIONS");
   const envMaxOutputTokens = readOptionalPositiveIntegerEnv("RECODE_MAX_OUTPUT_TOKENS");
   const envTemperature = readOptionalFiniteNumberEnv("RECODE_TEMPERATURE");
   const envToolChoice = parseToolChoice(readOptionalEnv("RECODE_TOOL_CHOICE"));
@@ -150,6 +157,10 @@ export function loadRuntimeConfig(workspaceRoot: string): RuntimeConfig {
     ?? selectedConfiguredProvider?.models[0]?.id;
   const apiKey = envApiKey
     ?? selectedConfiguredProvider?.apiKey;
+  const providerHeaders = envHeaders
+    ?? selectedConfiguredProvider?.headers;
+  const providerOptions = envProviderOptions
+    ?? selectedConfiguredProvider?.options;
   const maxOutputTokens = envMaxOutputTokens
     ?? selectedConfiguredProvider?.maxOutputTokens;
   const temperature = envTemperature
@@ -173,6 +184,8 @@ export function loadRuntimeConfig(workspaceRoot: string): RuntimeConfig {
       ...(envProviderKind === undefined ? {} : { kind: envProviderKind }),
       ...(envBaseUrl === undefined ? {} : { baseUrl: envBaseUrl }),
       ...(envApiKey === undefined ? {} : { apiKey: envApiKey }),
+      ...(envHeaders === undefined ? {} : { headers: envHeaders }),
+      ...(envProviderOptions === undefined ? {} : { options: envProviderOptions }),
       ...(envModel === undefined ? {} : { model: envModel }),
       ...(envMaxOutputTokens === undefined ? {} : { maxOutputTokens: envMaxOutputTokens }),
       ...(envTemperature === undefined ? {} : { temperature: envTemperature }),
@@ -181,6 +194,9 @@ export function loadRuntimeConfig(workspaceRoot: string): RuntimeConfig {
     providerId,
     providerName
   );
+  const activeRuntimeProvider = providers.find((provider) => provider.id === providerId);
+  const effectiveProviderHeaders = activeRuntimeProvider?.headers ?? providerHeaders;
+  const effectiveProviderOptions = activeRuntimeProvider?.options ?? providerOptions;
 
   return {
     workspaceRoot,
@@ -197,6 +213,8 @@ export function loadRuntimeConfig(workspaceRoot: string): RuntimeConfig {
     ...(temperature === undefined ? {} : { temperature }),
     ...(toolChoice === undefined ? {} : { toolChoice }),
     ...(contextWindowTokens === undefined ? {} : { contextWindowTokens }),
+    ...(effectiveProviderHeaders === undefined ? {} : { providerHeaders: effectiveProviderHeaders }),
+    ...(effectiveProviderOptions === undefined ? {} : { providerOptions: effectiveProviderOptions }),
     ...(apiKey === undefined ? {} : { apiKey })
   };
 }
@@ -219,6 +237,44 @@ function parseProviderKind(value: string | undefined): ProviderKind | undefined 
 function readOptionalEnv(key: string): string | undefined {
   const value = Bun.env[key]?.trim();
   return value === undefined || value === "" ? undefined : value;
+}
+
+function readOptionalStringRecordJsonEnv(key: string): Readonly<Record<string, string>> | undefined {
+  const value = readOptionalEnv(key);
+  if (value === undefined) {
+    return undefined;
+  }
+
+  try {
+    const parsedValue: unknown = JSON.parse(value);
+    if (typeof parsedValue !== "object" || parsedValue === null || Array.isArray(parsedValue)) {
+      return undefined;
+    }
+
+    const entries = Object.entries(parsedValue)
+      .filter((entry): entry is [string, string] =>
+        typeof entry[1] === "string" && entry[1].trim() !== ""
+      )
+      .map(([entryKey, entryValue]) => [entryKey, entryValue.trim()] as const);
+
+    return entries.length === 0 ? undefined : Object.fromEntries(entries);
+  } catch {
+    return undefined;
+  }
+}
+
+function readOptionalJsonObjectEnv(key: string): JsonObject | undefined {
+  const value = readOptionalEnv(key);
+  if (value === undefined) {
+    return undefined;
+  }
+
+  try {
+    const parsedValue: unknown = JSON.parse(value);
+    return isJsonObject(parsedValue) ? parsedValue : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function readOptionalPositiveIntegerEnv(key: string): number | undefined {

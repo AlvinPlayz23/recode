@@ -52,7 +52,9 @@ describe("loadRuntimeConfig", () => {
           defaultModelId: "openai/gpt-4.1-mini",
           maxOutputTokens: 1024,
           temperature: 0.1,
-          toolChoice: "auto"
+          toolChoice: "auto",
+          headers: { "x-test": "from-config" },
+          options: { provider: { sort: "throughput" } }
         }
       ]
     });
@@ -71,6 +73,8 @@ describe("loadRuntimeConfig", () => {
       expect(config.temperature).toBe(0.1);
       expect(config.toolChoice).toBe("auto");
       expect(config.contextWindowTokens).toBe(128000);
+      expect(config.providerHeaders).toEqual({ "x-test": "from-config" });
+      expect(config.providerOptions).toEqual({ provider: { sort: "throughput" } });
     });
   });
 
@@ -131,7 +135,9 @@ describe("loadRuntimeConfig", () => {
         RECODE_CONFIG_PATH: ".recode/config.json",
         RECODE_MAX_OUTPUT_TOKENS: "4096",
         RECODE_TEMPERATURE: "0.3",
-        RECODE_TOOL_CHOICE: "required"
+        RECODE_TOOL_CHOICE: "required",
+        RECODE_PROVIDER_HEADERS: "{\"x-env\":\"yes\"}",
+        RECODE_PROVIDER_OPTIONS: "{\"timeoutMs\":1000,\"provider\":{\"order\":[\"fast\"]}}"
       },
       () => {
         const config = loadRuntimeConfig(workspaceRoot);
@@ -140,11 +146,21 @@ describe("loadRuntimeConfig", () => {
         expect(config.maxOutputTokens).toBe(4096);
         expect(config.temperature).toBe(0.3);
         expect(config.toolChoice).toBe("required");
+        expect(config.providerHeaders).toEqual({ "x-env": "yes" });
+        expect(config.providerOptions).toEqual({
+          timeoutMs: 1000,
+          provider: { order: ["fast"] }
+        });
         expect(provider?.source).toBe("env");
         expect(provider?.maxOutputTokens).toBe(4096);
         expect(provider?.temperature).toBe(0.3);
         expect(provider?.toolChoice).toBe("required");
         expect(provider?.apiKey).toBe("or-key");
+        expect(provider?.headers).toEqual({ "x-env": "yes" });
+        expect(provider?.options).toEqual({
+          timeoutMs: 1000,
+          provider: { order: ["fast"] }
+        });
       }
     );
   });
@@ -189,6 +205,8 @@ interface EnvOverrides {
   readonly RECODE_API_KEY?: string;
   readonly RECODE_BASE_URL?: string;
   readonly RECODE_MODEL?: string;
+  readonly RECODE_PROVIDER_HEADERS?: string;
+  readonly RECODE_PROVIDER_OPTIONS?: string;
   readonly RECODE_MAX_OUTPUT_TOKENS?: string;
   readonly RECODE_TEMPERATURE?: string;
   readonly RECODE_TOOL_CHOICE?: string;
@@ -202,6 +220,8 @@ function withEnv(overrides: EnvOverrides, fn: () => void): void {
     "RECODE_API_KEY",
     "RECODE_BASE_URL",
     "RECODE_MODEL",
+    "RECODE_PROVIDER_HEADERS",
+    "RECODE_PROVIDER_OPTIONS",
     "RECODE_MAX_OUTPUT_TOKENS",
     "RECODE_TEMPERATURE",
     "RECODE_TOOL_CHOICE"

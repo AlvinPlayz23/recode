@@ -4,8 +4,14 @@
 
 import { formatContinuationSummaryForModel, type ConversationMessage } from "../../transcript/message.ts";
 import type { ToolDefinition } from "../../tools/tool.ts";
-import { joinUrl, readErrorMessage } from "../http.ts";
+import { joinUrl } from "../http.ts";
 import { parseProviderToolArguments } from "../json.ts";
+import {
+  buildProviderBodyOptions,
+  buildProviderHeaders,
+  mergeRequestBodyOptions
+} from "../provider-request-options.ts";
+import { fetchProviderJson } from "../provider-transport.ts";
 import { iterateSseMessages } from "../sse.ts";
 import type { AiModel, AiStreamPart } from "../types.ts";
 import { createEmptyStepTokenUsage, type StepTokenUsage } from "../../agent/step-stats.ts";
@@ -32,22 +38,22 @@ export async function* streamOpenAiChat(
   systemPrompt: string,
   messages: readonly ConversationMessage[],
   tools: readonly ToolDefinition[],
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  requestAffinityKey?: string
 ): AsyncGenerator<AiStreamPart> {
   try {
-    const response = await fetch(joinUrl(model.baseUrl ?? "https://api.openai.com/v1", "/chat/completions"), {
-      method: "POST",
-      headers: {
+    const { response, timing } = await fetchProviderJson({
+      model,
+      operation: "openai-chat-completions",
+      url: joinUrl(model.baseUrl ?? "https://api.openai.com/v1", "/chat/completions"),
+      headers: buildProviderHeaders(model, {
         "content-type": "application/json",
-        authorization: `Bearer ${model.apiKey}`
-      },
-      body: JSON.stringify(buildChatCompletionsRequestBody(model, systemPrompt, messages, tools)),
-      ...(abortSignal === undefined ? {} : { signal: abortSignal })
+        ...(model.apiKey === "" ? {} : { authorization: `Bearer ${model.apiKey}` })
+      }, requestAffinityKey),
+      body: buildChatCompletionsRequestBody(model, systemPrompt, messages, tools, requestAffinityKey),
+      ...(abortSignal === undefined ? {} : { abortSignal }),
+      ...(requestAffinityKey === undefined ? {} : { requestAffinityKey })
     });
-
-    if (!response.ok) {
-      throw new Error(await readErrorMessage(response));
-    }
 
     if (response.body === null) {
       throw new Error("OpenAI Chat Completions API returned an empty response body.");
@@ -57,7 +63,11 @@ export async function* streamOpenAiChat(
     let finishReason: string | undefined;
     let tokenUsage: StepTokenUsage | undefined;
 
-    for await (const sse of iterateSseMessages(response.body, abortSignal)) {
+    for await (const sse of iterateSseMessages(response.body, abortSignal, {
+      onChunk() {
+        timing.markOnce("first-sse-chunk");
+      }
+    })) {
       if (sse.data === "[DONE]") {
         break;
       }
@@ -100,6 +110,7 @@ export async function* streamOpenAiChat(
       if (delta !== undefined) {
         const content = readOptionalString(delta, "content");
         if (content !== undefined && content !== "") {
+          timing.markOnce("first-text-delta");
           yield { type: "text-delta", text: content };
         }
 
@@ -153,6 +164,7 @@ export async function* streamOpenAiChat(
     }
 
     if (abortSignal?.aborted ?? false) {
+      timing.mark("request-abort");
       yield { type: "abort" };
       return;
     }
@@ -164,6 +176,9 @@ export async function* streamOpenAiChat(
         ...(tokenUsage === undefined ? {} : { tokenUsage })
       }
     };
+    timing.mark("request-finish", {
+      ...(finishReason === undefined ? {} : { finishReason })
+    });
     yield { type: "finish" };
   } catch (error) {
     if (abortSignal?.aborted ?? false) {
@@ -179,9 +194,10 @@ function buildChatCompletionsRequestBody(
   model: AiModel,
   systemPrompt: string,
   messages: readonly ConversationMessage[],
-  tools: readonly ToolDefinition[]
+  tools: readonly ToolDefinition[],
+  requestAffinityKey: string | undefined
 ): Record<string, unknown> {
-  return {
+  return mergeRequestBodyOptions({
     model: model.modelId,
     messages: messagesToChatMessages(systemPrompt, messages),
     ...(tools.length === 0 ? {} : { tools: toolsToChatTools(tools) }),
@@ -190,7 +206,7 @@ function buildChatCompletionsRequestBody(
     ...(model.toolChoice === undefined ? {} : { tool_choice: model.toolChoice }),
     ...(supportsUsageStreaming(model) ? { stream_options: { include_usage: true } } : {}),
     stream: true
-  };
+  }, buildProviderBodyOptions(model, requestAffinityKey));
 }
 
 function supportsUsageStreaming(model: AiModel): boolean {

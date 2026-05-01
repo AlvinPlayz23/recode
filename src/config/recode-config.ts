@@ -9,6 +9,7 @@ import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import type { ProviderKind } from "../providers/provider-kind.ts";
 import { isRecord } from "../shared/is-record.ts";
+import { isJsonObject, type JsonObject } from "../shared/json-value.ts";
 import { patchRecodeConfig } from "./recode-config-update.ts";
 import {
   isLayoutMode,
@@ -38,6 +39,8 @@ export interface ConfiguredProvider {
   readonly kind: ProviderKind;
   readonly baseUrl: string;
   readonly apiKey?: string;
+  readonly headers?: Readonly<Record<string, string>>;
+  readonly options?: JsonObject;
   readonly models: readonly ConfiguredModel[];
   readonly defaultModelId?: string;
   readonly maxOutputTokens?: number;
@@ -294,6 +297,8 @@ function parseConfiguredProvider(value: unknown): ConfiguredProvider | undefined
   const maxOutputTokens = readOptionalPositiveInteger(value, "maxOutputTokens");
   const temperature = readOptionalFiniteNumber(value, "temperature");
   const toolChoice = readOptionalToolChoice(value, "toolChoice");
+  const headers = readOptionalStringRecord(value, "headers");
+  const options = readOptionalJsonObject(value, "options");
   const modelsValue = value["models"];
   const models = Array.isArray(modelsValue)
     ? modelsValue.map(parseConfiguredModel).filter((model) => model !== undefined)
@@ -306,6 +311,8 @@ function parseConfiguredProvider(value: unknown): ConfiguredProvider | undefined
     baseUrl,
     models,
     ...(apiKey === undefined ? {} : { apiKey }),
+    ...(headers === undefined ? {} : { headers }),
+    ...(options === undefined ? {} : { options }),
     ...(defaultModelId === undefined ? {} : { defaultModelId }),
     ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
     ...(temperature === undefined ? {} : { temperature }),
@@ -340,6 +347,29 @@ function readOptionalNonEmptyString(record: Record<string, unknown>, key: string
 
   const trimmed = value.trim();
   return trimmed === "" ? undefined : trimmed;
+}
+
+function readOptionalStringRecord(
+  record: Record<string, unknown>,
+  key: string
+): Readonly<Record<string, string>> | undefined {
+  const value = record[key];
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const entries = Object.entries(value)
+    .filter((entry): entry is [string, string] =>
+      typeof entry[1] === "string" && entry[1].trim() !== ""
+    )
+    .map(([entryKey, entryValue]) => [entryKey, entryValue.trim()] as const);
+
+  return entries.length === 0 ? undefined : Object.fromEntries(entries);
+}
+
+function readOptionalJsonObject(record: Record<string, unknown>, key: string): JsonObject | undefined {
+  const value = record[key];
+  return isJsonObject(value) ? value : undefined;
 }
 
 function readOptionalProviderKind(record: Record<string, unknown>, key: string): ProviderKind | undefined {

@@ -50,6 +50,7 @@ export interface AgentSessionStepOptions {
   readonly languageModel: AiModel;
   readonly toolRegistry: ToolRegistry;
   readonly abortSignal?: AbortSignal;
+  readonly requestAffinityKey?: string;
   readonly onToolCall?: ToolCallObserver;
   readonly onTextDelta?: TextDeltaObserver;
 }
@@ -114,7 +115,8 @@ export async function processAgentSessionStep(
     systemPrompt: options.systemPrompt,
     messages,
     tools: options.toolRegistry.list(),
-    ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal })
+    ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
+    ...(options.requestAffinityKey === undefined ? {} : { requestAffinityKey: options.requestAffinityKey })
   });
 
   let accumulatedText = "";

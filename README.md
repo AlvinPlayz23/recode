@@ -1,10 +1,8 @@
 # Recode
 
-**Recode** is a coding agent built with TypeScript and [Bun](https://bun.sh), with a Senren-inspired TUI terminal interface.
+**Recode** is an early-alpha local coding agent built with TypeScript and [Bun](https://bun.sh).
 
-The project keeps a light Senren-inspired aesthetic in the UI, but the focus is still a practical local coding agent CLI.
-
-> Warning: this project is still in an early stage. Do not use it in production. The shell sandbox is useful, but it should not be treated as a complete security boundary.
+It provides an interactive terminal UI, a one-shot CLI mode, persistent conversation history, configurable model providers, and a custom streaming AI transport layer.
 
 ## Features
 
@@ -90,8 +88,14 @@ Each configured provider can define:
 - provider kind (`openai`, `openai-chat`, `anthropic`)
 - base URL
 - optional API key
+- optional extra HTTP headers
+- optional provider request options
 - saved model IDs
 - default model ID
+
+Provider request options are JSON values merged into the model request body. They also support Recode transport controls such as `maxRetries`, `timeoutMs`, and `chunkTimeoutMs`; transport-only controls are not sent to the model provider.
+
+For OpenRouter providers, Recode automatically adds low-latency routing, usage reporting, and a conversation prompt-cache key unless you override those fields in provider options.
 
 The global config can also store:
 - active provider ID
@@ -178,7 +182,12 @@ RECODE_PROVIDER=openai
 RECODE_API_KEY=your-api-key
 RECODE_BASE_URL=https://api.openai.com/v1
 RECODE_MODEL=your-model-id
+RECODE_PROVIDER_HEADERS='{"x-custom":"value"}'
+RECODE_PROVIDER_OPTIONS='{"provider":{"sort":"latency"},"maxRetries":2}'
+RECODE_AI_TIMING=1
 ```
+
+When `RECODE_AI_TIMING=1`, provider timing events are written to `~/.recode/ai-timing.jsonl`. Use `RECODE_AI_TIMING=stderr` to print them to stderr instead, or `RECODE_AI_TIMING_PATH=/path/to/file.jsonl` to choose a custom log file.
 
 ## Approval Modes
 
@@ -291,12 +300,12 @@ recode/
 │   ├── config/      # Persistent user config and config update helpers
 │   ├── errors/      # Error types
 │   ├── history/     # Persistent sessions and HTML export
-│   ├── messages/    # Conversation message model
 │   ├── models/      # Runtime model factory
 │   ├── prompt/      # System prompt
 │   ├── runtime/     # Runtime config loading and provider metadata shaping
 │   ├── shared/      # Shared helpers
 │   ├── tools/       # Tool system
+│   ├── transcript/  # Conversation transcript model
 │   ├── tui/         # OpenTUI UI
 │   └── index.ts     # CLI entrypoint
 ├── scripts/

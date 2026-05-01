@@ -71,6 +71,8 @@ describe("compact conversation", () => {
       transcript,
       languageModel: {
         provider: "openai",
+        providerId: "openai",
+        providerName: "OpenAI",
         modelId: "gpt-4.1",
         apiKey: "test",
         api: "openai-responses"
@@ -114,6 +116,8 @@ describe("compact conversation", () => {
       ],
       languageModel: {
         provider: "openai",
+        providerId: "openai",
+        providerName: "OpenAI",
         modelId: "gpt-4.1",
         apiKey: "test",
         api: "openai-responses"
@@ -141,6 +145,8 @@ describe("compact conversation", () => {
       ],
       languageModel: {
         provider: "openai",
+        providerId: "openai",
+        providerName: "OpenAI",
         modelId: "gpt-4.1",
         apiKey: "test",
         api: "openai-responses"

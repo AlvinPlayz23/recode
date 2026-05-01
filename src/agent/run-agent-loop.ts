@@ -28,6 +28,13 @@ export type {
 } from "./session-processor.ts";
 
 /**
+ * Transcript update observer.
+ */
+export interface TranscriptObserver {
+  (transcript: readonly ConversationMessage[]): void;
+}
+
+/**
  * Agent execution options.
  */
 export interface AgentRunOptions {
@@ -38,10 +45,12 @@ export interface AgentRunOptions {
   readonly toolRegistry: ToolRegistry;
   readonly toolContext: ToolExecutionContext;
   readonly abortSignal?: AbortSignal;
+  readonly requestAffinityKey?: string;
   readonly onToolCall?: ToolCallObserver;
   readonly onTextDelta?: TextDeltaObserver;
   readonly onToolResult?: ToolResultObserver;
   readonly onStepComplete?: StepObserver;
+  readonly onTranscriptUpdate?: TranscriptObserver;
 }
 
 /**
@@ -69,6 +78,7 @@ export async function runAgentLoop(options: AgentRunOptions): Promise<AgentRunRe
       content: options.initialUserPrompt
     }
   ];
+  publishTranscriptUpdate(options.onTranscriptUpdate, messages);
 
   let iterations = 0;
   const steps: StepStats[] = [];
@@ -80,11 +90,13 @@ export async function runAgentLoop(options: AgentRunOptions): Promise<AgentRunRe
       languageModel: options.languageModel,
       toolRegistry: options.toolRegistry,
       ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
+      ...(options.requestAffinityKey === undefined ? {} : { requestAffinityKey: options.requestAffinityKey }),
       ...(options.onToolCall === undefined ? {} : { onToolCall: options.onToolCall }),
       ...(options.onTextDelta === undefined ? {} : { onTextDelta: options.onTextDelta })
     }, messages);
 
     messages.push(step.assistantMessage);
+    publishTranscriptUpdate(options.onTranscriptUpdate, messages);
     steps.push(step.stepStats);
     options.onStepComplete?.(step.stepStats);
 
@@ -106,5 +118,13 @@ export async function runAgentLoop(options: AgentRunOptions): Promise<AgentRunRe
       ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
       ...(options.onToolResult === undefined ? {} : { onToolResult: options.onToolResult })
     }));
+    publishTranscriptUpdate(options.onTranscriptUpdate, messages);
   }
+}
+
+function publishTranscriptUpdate(
+  observer: TranscriptObserver | undefined,
+  messages: readonly ConversationMessage[]
+): void {
+  observer?.([...messages]);
 }

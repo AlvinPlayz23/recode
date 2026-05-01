@@ -17,6 +17,7 @@ import {
 } from "../config/recode-config.ts";
 import { fetchOpenAiCompatibleModels } from "../models/list-models.ts";
 import type { ProviderKind } from "../providers/provider-kind.ts";
+import { isJsonObject, type JsonObject } from "../shared/json-value.ts";
 
 interface ProviderSetupResult {
   readonly provider: ConfiguredProvider;
@@ -102,6 +103,16 @@ async function promptForProvider(
     rl,
     existingProvider?.toolChoice
   );
+  const headers = await askOptionalStringRecordJson(
+    rl,
+    "Extra HTTP headers as JSON (leave blank for none)",
+    existingProvider?.headers
+  );
+  const options = await askOptionalJsonObject(
+    rl,
+    "Provider request options as JSON (leave blank for defaults)",
+    existingProvider?.options
+  );
   const shouldFetchModels = providerKind === "anthropic"
     ? false
     : await promptBooleanSelect(rl, "How should models be added?", true, "Fetch from /models", "Enter model IDs manually");
@@ -175,6 +186,8 @@ async function promptForProvider(
       ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
       ...(temperature === undefined ? {} : { temperature }),
       ...(toolChoice === undefined ? {} : { toolChoice }),
+      ...(headers === undefined ? {} : { headers }),
+      ...(options === undefined ? {} : { options }),
       ...(apiKey === undefined || apiKey === "" ? {} : { apiKey })
     },
     makeActive
@@ -311,6 +324,61 @@ async function askOptionalNumber(
   }
 }
 
+async function askOptionalStringRecordJson(
+  rl: Interface,
+  label: string,
+  defaultValue?: Readonly<Record<string, string>>
+): Promise<Readonly<Record<string, string>> | undefined> {
+  while (true) {
+    const answer = await askOptional(rl, label, formatJsonDefault(defaultValue));
+    if (answer === undefined || answer.trim() === "") {
+      return undefined;
+    }
+
+    try {
+      const parsedValue: unknown = JSON.parse(answer);
+      if (typeof parsedValue !== "object" || parsedValue === null || Array.isArray(parsedValue)) {
+        console.log(`${label} must be a JSON object with string values.`);
+        continue;
+      }
+
+      const entries = Object.entries(parsedValue);
+      if (!entries.every((entry): entry is [string, string] => typeof entry[1] === "string")) {
+        console.log(`${label} must be a JSON object with string values.`);
+        continue;
+      }
+
+      return Object.fromEntries(entries.filter(([, value]) => value.trim() !== ""));
+    } catch {
+      console.log(`${label} must be valid JSON.`);
+    }
+  }
+}
+
+async function askOptionalJsonObject(
+  rl: Interface,
+  label: string,
+  defaultValue?: JsonObject
+): Promise<JsonObject | undefined> {
+  while (true) {
+    const answer = await askOptional(rl, label, formatJsonDefault(defaultValue));
+    if (answer === undefined || answer.trim() === "") {
+      return undefined;
+    }
+
+    try {
+      const parsedValue: unknown = JSON.parse(answer);
+      if (isJsonObject(parsedValue)) {
+        return parsedValue;
+      }
+
+      console.log(`${label} must be a JSON object.`);
+    } catch {
+      console.log(`${label} must be valid JSON.`);
+    }
+  }
+}
+
 async function askOptionalToolChoice(
   rl: Interface,
   defaultValue?: "auto" | "required"
@@ -329,6 +397,10 @@ async function askOptionalToolChoice(
   );
 
   return selection === defaultOptionValue ? undefined : selection;
+}
+
+function formatJsonDefault(value: JsonObject | Readonly<Record<string, string>> | undefined): string | undefined {
+  return value === undefined ? undefined : JSON.stringify(value);
 }
 
 function parseManualModels(value: string | undefined): readonly ConfiguredModel[] {

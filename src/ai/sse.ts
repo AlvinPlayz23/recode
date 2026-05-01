@@ -10,6 +10,13 @@ export interface ServerSentEvent {
   readonly data: string;
 }
 
+/**
+ * Optional hooks for stream diagnostics.
+ */
+export interface SseIterationOptions {
+  readonly onChunk?: () => void;
+}
+
 interface SseState {
   event: string | undefined;
   data: string[];
@@ -20,7 +27,8 @@ interface SseState {
  */
 export async function* iterateSseMessages(
   body: ReadableStream<Uint8Array>,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  options: SseIterationOptions = {}
 ): AsyncGenerator<ServerSentEvent> {
   const chunks = body as ReadableStream<Uint8Array> & AsyncIterable<Uint8Array>;
   const decoder = new TextDecoder();
@@ -33,6 +41,7 @@ export async function* iterateSseMessages(
         return;
       }
 
+      options.onChunk?.();
       buffer += decoder.decode(chunk, { stream: true });
       const consumed = consumeBuffer(buffer, state, false);
 

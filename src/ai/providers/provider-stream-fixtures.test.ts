@@ -146,6 +146,35 @@ describe("provider stream fixtures", () => {
     ]);
   });
 
+  it("adds OpenRouter low-latency routing and prompt cache affinity", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    globalThis.fetch = (async (_input, init) => {
+      requestBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        status: 200,
+        headers: { "content-type": "text/event-stream" }
+      });
+    }) as typeof fetch;
+
+    await collectParts(streamOpenAiChat(
+      {
+        ...openAiChatModel(),
+        providerId: "openrouter",
+        providerName: "OpenRouter",
+        baseUrl: "https://openrouter.ai/api/v1"
+      },
+      "",
+      [],
+      [],
+      undefined,
+      "conversation-1"
+    ));
+
+    expect(requestBody?.usage).toEqual({ include: true });
+    expect(requestBody?.provider).toEqual({ sort: "latency" });
+    expect(requestBody?.prompt_cache_key).toBe("conversation-1");
+  });
+
   it("parses Anthropic text, tool use blocks, and usage", async () => {
     stubSseFetch([
       sse({
@@ -244,6 +273,8 @@ async function collectParts(stream: AsyncIterable<AiStreamPart>): Promise<readon
 function openAiResponsesModel(): AiModel {
   return {
     provider: "openai",
+    providerId: "openai",
+    providerName: "OpenAI",
     modelId: "gpt-4.1",
     apiKey: "test",
     baseUrl: "https://example.com/v1",
@@ -254,6 +285,8 @@ function openAiResponsesModel(): AiModel {
 function openAiChatModel(): AiModel {
   return {
     provider: "openai-chat",
+    providerId: "openai-chat",
+    providerName: "OpenAI Chat",
     modelId: "gpt-4.1",
     apiKey: "test",
     baseUrl: "https://example.com/v1",
@@ -264,6 +297,8 @@ function openAiChatModel(): AiModel {
 function anthropicModel(): AiModel {
   return {
     provider: "anthropic",
+    providerId: "anthropic",
+    providerName: "Anthropic",
     modelId: "claude-sonnet",
     apiKey: "test",
     baseUrl: "https://example.com/v1",

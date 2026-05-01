@@ -17,9 +17,13 @@ import type { RuntimeConfig } from "../runtime/runtime-config.ts";
 export function createLanguageModel(config: RuntimeConfig): AiModel {
   return {
     provider: config.provider,
+    providerId: config.providerId,
+    providerName: config.providerName,
     modelId: config.model,
     apiKey: config.apiKey ?? "",
     ...(config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl }),
+    ...(config.providerHeaders === undefined ? {} : { providerHeaders: config.providerHeaders }),
+    ...(config.providerOptions === undefined ? {} : { providerOptions: config.providerOptions }),
     ...(config.maxOutputTokens === undefined ? {} : { maxOutputTokens: config.maxOutputTokens }),
     ...(config.temperature === undefined ? {} : { temperature: config.temperature }),
     ...(config.toolChoice === undefined ? {} : { toolChoice: config.toolChoice }),

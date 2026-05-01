@@ -3,6 +3,7 @@
  */
 
 import type { RuntimeConfig } from "../runtime/runtime-config.ts";
+import type { JsonObject } from "../shared/json-value.ts";
 import type { ConversationMessage } from "../transcript/message.ts";
 import type { ToolDefinition } from "../tools/tool.ts";
 import type { StepTokenUsage } from "../agent/step-stats.ts";
@@ -17,9 +18,13 @@ export type AiApiKind = "openai-responses" | "openai-chat-completions" | "anthro
  */
 export interface AiModel {
   readonly provider: RuntimeConfig["provider"];
+  readonly providerId: string;
+  readonly providerName: string;
   readonly modelId: string;
   readonly apiKey: string;
   readonly baseUrl?: string;
+  readonly providerHeaders?: Readonly<Record<string, string>>;
+  readonly providerOptions?: JsonObject;
   readonly api: AiApiKind;
   readonly maxOutputTokens?: number;
   readonly temperature?: number;
@@ -68,4 +73,5 @@ export interface StreamAssistantResponseOptions {
   readonly messages: readonly ConversationMessage[];
   readonly tools: readonly ToolDefinition[];
   readonly abortSignal?: AbortSignal;
+  readonly requestAffinityKey?: string;
 }

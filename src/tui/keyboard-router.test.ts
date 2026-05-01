@@ -6,6 +6,7 @@ import { describe, expect, it } from "bun:test";
 import {
   handleCommandPanelKey,
   handleFileSuggestionPanelKey,
+  handleQuestionRequestKey,
   handleLinearPickerKey,
   type TuiKeyEvent
 } from "./keyboard-router.ts";
@@ -112,6 +113,58 @@ describe("keyboard router helpers", () => {
     expect(key.prevented).toBe(true);
     expect(key.stopped).toBe(true);
     expect(submitted).toBe("/history");
+  });
+
+  it("consumes enter while submitting an active question prompt", () => {
+    const key = createKey("enter");
+    let submitted = false;
+
+    const handled = handleQuestionRequestKey({
+      key,
+      request: {
+        questions: [{
+          id: "choice",
+          header: "Choice",
+          question: "Pick one",
+          multiSelect: false,
+          allowCustomText: false,
+          options: [{ label: "Yes", description: "Confirm" }]
+        }],
+        currentQuestionIndex: 0,
+        selectedOptionIndex: 0,
+        answers: {
+          choice: {
+            questionId: "choice",
+            selectedOptionLabels: ["Yes"],
+            customText: ""
+          }
+        },
+        resolve() {
+          throw new Error("should not resolve directly");
+        }
+      },
+      contextWindowRequest: false,
+      dismiss() {
+        throw new Error("should not dismiss");
+      },
+      submit() {
+        submitted = true;
+      },
+      moveQuestion() {
+        throw new Error("should not move question");
+      },
+      moveOption() {
+        throw new Error("should not move option");
+      },
+      toggleOption() {
+        throw new Error("should not toggle");
+      }
+    });
+
+    expect(handled).toBe(true);
+    expect(key.prevented).toBe(true);
+    expect(key.stopped).toBe(true);
+    expect(submitted).toBe(true);
   });
 });
 

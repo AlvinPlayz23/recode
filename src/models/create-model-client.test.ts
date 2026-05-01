@@ -21,6 +21,8 @@ describe("createLanguageModel", () => {
       approvalAllowlist: [],
       apiKey: "sk-test",
       baseUrl: "https://api.openai.com/v1",
+      providerHeaders: { "x-test": "yes" },
+      providerOptions: { timeoutMs: 1000 },
       maxOutputTokens: 2048,
       temperature: 0.2,
       toolChoice: "required",
@@ -33,6 +35,8 @@ describe("createLanguageModel", () => {
     expect(model.temperature).toBe(0.2);
     expect(model.toolChoice).toBe("required");
     expect(model.contextWindowTokens).toBe(128000);
+    expect(model.providerHeaders).toEqual({ "x-test": "yes" });
+    expect(model.providerOptions).toEqual({ timeoutMs: 1000 });
   });
 
   it("maps openai-chat to the chat completions adapter", () => {

@@ -30,6 +30,8 @@ describe("continuation summary serialization", () => {
     await consumeStream(streamOpenAiChat(
       {
         provider: "openai-chat",
+        providerId: "openai-chat",
+        providerName: "OpenAI Chat",
         modelId: "gpt-4.1-mini",
         apiKey: "test",
         baseUrl: "https://example.com/v1",
@@ -62,6 +64,8 @@ describe("continuation summary serialization", () => {
     await consumeStream(streamOpenAiResponses(
       {
         provider: "openai",
+        providerId: "openai",
+        providerName: "OpenAI",
         modelId: "gpt-4.1",
         apiKey: "test",
         baseUrl: "https://example.com/v1",
@@ -98,6 +102,8 @@ describe("continuation summary serialization", () => {
     await consumeStream(streamAnthropicMessages(
       {
         provider: "anthropic",
+        providerId: "anthropic",
+        providerName: "Anthropic",
         modelId: "claude-sonnet",
         apiKey: "test",
         baseUrl: "https://example.com/v1",

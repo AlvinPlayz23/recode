@@ -28,9 +28,11 @@ export interface SingleTurnOptions {
   readonly toolRegistry: ToolRegistry;
   readonly toolContext: ToolExecutionContext;
   readonly abortSignal?: AbortSignal;
+  readonly requestAffinityKey?: string;
   readonly onToolCall: (toolCall: ToolCall) => void;
   readonly onTextDelta: TextDeltaObserver;
   readonly onToolResult?: (toolResult: Extract<ConversationMessage, { role: "tool" }>) => void;
+  readonly onTranscriptUpdate?: (transcript: readonly ConversationMessage[]) => void;
 }
 
 /**
@@ -45,6 +47,7 @@ export async function runSingleTurn(options: SingleTurnOptions): Promise<AgentRu
     toolRegistry: options.toolRegistry,
     toolContext: options.toolContext,
     ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
+    ...(options.requestAffinityKey === undefined ? {} : { requestAffinityKey: options.requestAffinityKey }),
     onToolCall(toolCall) {
       options.onToolCall(toolCall);
     },
@@ -53,6 +56,9 @@ export async function runSingleTurn(options: SingleTurnOptions): Promise<AgentRu
     },
     onToolResult(toolResult) {
       options.onToolResult?.(toolResult);
+    },
+    onTranscriptUpdate(transcript) {
+      options.onTranscriptUpdate?.(transcript);
     }
   });
 }

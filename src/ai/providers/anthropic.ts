@@ -4,8 +4,14 @@
 
 import { formatContinuationSummaryForModel, type ConversationMessage } from "../../transcript/message.ts";
 import type { ToolDefinition } from "../../tools/tool.ts";
-import { joinUrl, readErrorMessage } from "../http.ts";
+import { joinUrl } from "../http.ts";
 import { parseProviderToolArguments } from "../json.ts";
+import {
+  buildProviderBodyOptions,
+  buildProviderHeaders,
+  mergeRequestBodyOptions
+} from "../provider-request-options.ts";
+import { fetchProviderJson } from "../provider-transport.ts";
 import { iterateSseMessages } from "../sse.ts";
 import type { AiModel, AiStreamPart } from "../types.ts";
 import { createEmptyStepTokenUsage, type StepTokenUsage } from "../../agent/step-stats.ts";
@@ -33,23 +39,23 @@ export async function* streamAnthropicMessages(
   systemPrompt: string,
   messages: readonly ConversationMessage[],
   tools: readonly ToolDefinition[],
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  requestAffinityKey?: string
 ): AsyncGenerator<AiStreamPart> {
   try {
-    const response = await fetch(joinUrl(model.baseUrl ?? "https://api.anthropic.com/v1", "/messages"), {
-      method: "POST",
-      headers: {
+    const { response, timing } = await fetchProviderJson({
+      model,
+      operation: "anthropic-messages",
+      url: joinUrl(model.baseUrl ?? "https://api.anthropic.com/v1", "/messages"),
+      headers: buildProviderHeaders(model, {
         "content-type": "application/json",
         "x-api-key": model.apiKey,
         "anthropic-version": "2023-06-01"
-      },
-      body: JSON.stringify(buildAnthropicRequestBody(model, systemPrompt, messages, tools)),
-      ...(abortSignal === undefined ? {} : { signal: abortSignal })
+      }, requestAffinityKey),
+      body: buildAnthropicRequestBody(model, systemPrompt, messages, tools, requestAffinityKey),
+      ...(abortSignal === undefined ? {} : { abortSignal }),
+      ...(requestAffinityKey === undefined ? {} : { requestAffinityKey })
     });
-
-    if (!response.ok) {
-      throw new Error(await readErrorMessage(response));
-    }
 
     if (response.body === null) {
       throw new Error("Anthropic Messages API returned an empty response body.");
@@ -63,7 +69,11 @@ export async function* streamAnthropicMessages(
     let cacheWriteTokens = 0;
     let hasUsage = false;
 
-    for await (const sse of iterateSseMessages(response.body, abortSignal)) {
+    for await (const sse of iterateSseMessages(response.body, abortSignal, {
+      onChunk() {
+        timing.markOnce("first-sse-chunk");
+      }
+    })) {
       if (sse.data === "[DONE]") {
         continue;
       }
@@ -95,6 +105,7 @@ export async function* streamAnthropicMessages(
           if (deltaType === "text_delta") {
             const text = readString(delta, "text");
             if (text !== "") {
+              timing.markOnce("first-text-delta");
               yield { type: "text-delta", text };
             }
           } else if (deltaType === "input_json_delta") {
@@ -154,6 +165,7 @@ export async function* streamAnthropicMessages(
     }
 
     if (abortSignal?.aborted ?? false) {
+      timing.mark("request-abort");
       yield { type: "abort" };
       return;
     }
@@ -175,6 +187,9 @@ export async function* streamAnthropicMessages(
           : {})
       }
     };
+    timing.mark("request-finish", {
+      ...(finishReason === undefined ? {} : { finishReason })
+    });
     yield { type: "finish" };
   } catch (error) {
     if (abortSignal?.aborted ?? false) {
@@ -190,9 +205,10 @@ function buildAnthropicRequestBody(
   model: AiModel,
   systemPrompt: string,
   messages: readonly ConversationMessage[],
-  tools: readonly ToolDefinition[]
+  tools: readonly ToolDefinition[],
+  requestAffinityKey: string | undefined
 ): Record<string, unknown> {
-  return {
+  return mergeRequestBodyOptions({
     model: model.modelId,
     max_tokens: model.maxOutputTokens ?? 4096,
     ...(systemPrompt.trim() === "" ? {} : { system: systemPrompt }),
@@ -201,7 +217,7 @@ function buildAnthropicRequestBody(
     ...(model.temperature === undefined ? {} : { temperature: model.temperature }),
     ...(model.toolChoice === undefined ? {} : { tool_choice: { type: model.toolChoice === "required" ? "any" : "auto" } }),
     stream: true
-  };
+  }, buildProviderBodyOptions(model, requestAffinityKey));
 }
 
 function messagesToAnthropicMessages(messages: readonly ConversationMessage[]): readonly Record<string, unknown>[] {

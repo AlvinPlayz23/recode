@@ -7,6 +7,7 @@ import type {
   ConfiguredProvider
 } from "../config/recode-config.ts";
 import type { ProviderKind } from "../providers/provider-kind.ts";
+import { mergeJsonObjects, type JsonObject } from "../shared/json-value.ts";
 
 /**
  * Runtime provider metadata.
@@ -22,6 +23,8 @@ export interface RuntimeProviderOverrides {
   readonly kind?: ProviderKind;
   readonly baseUrl?: string;
   readonly apiKey?: string;
+  readonly headers?: Readonly<Record<string, string>>;
+  readonly options?: JsonObject;
   readonly model?: string;
   readonly maxOutputTokens?: number;
   readonly temperature?: number;
@@ -61,6 +64,8 @@ function hasProviderOverrides(overrides: RuntimeProviderOverrides): boolean {
   return overrides.kind !== undefined
     || overrides.baseUrl !== undefined
     || overrides.apiKey !== undefined
+    || overrides.headers !== undefined
+    || overrides.options !== undefined
     || overrides.model !== undefined
     || overrides.maxOutputTokens !== undefined
     || overrides.temperature !== undefined
@@ -94,6 +99,8 @@ function buildEnvProvider(
     ...(overrides.apiKey === undefined
       ? (existingProvider?.apiKey === undefined ? {} : { apiKey: existingProvider.apiKey })
       : { apiKey: overrides.apiKey }),
+    ...mergeOptionalStringRecords("headers", existingProvider?.headers, overrides.headers),
+    ...mergeOptionalJsonObjects("options", existingProvider?.options, overrides.options),
     source: "env"
   };
 }
@@ -109,4 +116,32 @@ function buildRuntimeModels(
   return [
     existingProvider?.models.find((model) => model.id === overrideModel) ?? { id: overrideModel }
   ];
+}
+
+function mergeOptionalStringRecords<TKey extends string>(
+  key: TKey,
+  base: Readonly<Record<string, string>> | undefined,
+  override: Readonly<Record<string, string>> | undefined
+): { readonly [K in TKey]?: Readonly<Record<string, string>> } {
+  if (base === undefined && override === undefined) {
+    return {};
+  }
+
+  return {
+    [key]: {
+      ...(base ?? {}),
+      ...(override ?? {})
+    }
+  } as { readonly [K in TKey]?: Readonly<Record<string, string>> };
+}
+
+function mergeOptionalJsonObjects<TKey extends string>(
+  key: TKey,
+  base: JsonObject | undefined,
+  override: JsonObject | undefined
+): { readonly [K in TKey]?: JsonObject } {
+  const merged = mergeJsonObjects(base, override);
+  return merged === undefined
+    ? {}
+    : { [key]: merged } as { readonly [K in TKey]?: JsonObject };
 }

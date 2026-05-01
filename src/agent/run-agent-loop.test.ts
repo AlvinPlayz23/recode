@@ -224,6 +224,58 @@ describe("runAgentLoop", () => {
     ]);
   });
 
+  it("publishes partial transcript updates before a later model error", async () => {
+    fakeStreamAssistantResponse
+      .mockImplementationOnce(() => makeStreamResult([
+        toolCallPart("call_4", "failing_tool", { text: "project" }),
+        ...finishParts()
+      ]))
+      .mockImplementationOnce(() => makeStreamResult([
+        { type: "error", error: new Error("provider timeout") }
+      ]));
+
+    const updates: ConversationMessage[][] = [];
+    const registry = new ToolRegistry([createFailingTool()]);
+
+    await expect(runAgentLoop({
+      systemPrompt: "test",
+      initialUserPrompt: "what is this project",
+      languageModel: {} as never,
+      toolRegistry: registry,
+      toolContext: { workspaceRoot: "/tmp/recode", approvalMode: "yolo" },
+      onTranscriptUpdate(transcript) {
+        updates.push([...transcript]);
+      }
+    })).rejects.toThrow("provider timeout");
+
+    expect(updates.at(-1)).toEqual([
+      { role: "user", content: "what is this project" },
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: "call_4",
+            name: "failing_tool",
+            argumentsJson: "{\"text\":\"project\"}"
+          }
+        ],
+        stepStats: {
+          finishReason: "tool_calls",
+          durationMs: expect.any(Number) as unknown as number,
+          toolCallCount: 1
+        }
+      },
+      {
+        role: "tool",
+        toolCallId: "call_4",
+        toolName: "failing_tool",
+        content: "Tool execution failed: tool timed out",
+        isError: true
+      }
+    ]);
+  });
+
   it("throws when the stream emits an error part", async () => {
     fakeStreamAssistantResponse.mockImplementationOnce(() => makeStreamResult([
       { type: "error", error: new Error("boom") }
@@ -310,6 +362,22 @@ function createEchoTool(): ToolDefinition {
         content: `echo: ${text}`,
         isError: false
       };
+    }
+  };
+}
+
+function createFailingTool(): ToolDefinition {
+  return {
+    name: "failing_tool",
+    description: "Always fail.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: true
+    },
+    async execute(_arguments_: ToolArguments, _context: ToolExecutionContext): Promise<ToolResult> {
+      throw new Error("tool timed out");
     }
   };
 }

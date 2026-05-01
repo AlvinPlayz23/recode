@@ -49,14 +49,17 @@ export function handleQuestionRequestKey(options: {
     switch (options.key.name) {
       case "escape":
         options.key.preventDefault();
+        options.key.stopPropagation();
         options.dismiss({ dismissed: true });
         return true;
       case "return":
       case "enter":
         options.key.preventDefault();
+        options.key.stopPropagation();
         options.submit();
         return true;
       default:
+        options.key.stopPropagation();
         return true;
     }
   }
@@ -64,32 +67,39 @@ export function handleQuestionRequestKey(options: {
   switch (options.key.name) {
     case "escape":
       options.key.preventDefault();
+      options.key.stopPropagation();
       options.dismiss({ dismissed: true });
       return true;
     case "left":
       options.key.preventDefault();
+      options.key.stopPropagation();
       options.moveQuestion(-1);
       return true;
     case "right":
     case "tab":
       options.key.preventDefault();
+      options.key.stopPropagation();
       options.moveQuestion(1);
       return true;
     case "up":
       options.key.preventDefault();
+      options.key.stopPropagation();
       options.moveOption(-1);
       return true;
     case "down":
       options.key.preventDefault();
+      options.key.stopPropagation();
       options.moveOption(1);
       return true;
     case "space":
       options.key.preventDefault();
+      options.key.stopPropagation();
       options.toggleOption();
       return true;
     case "return":
     case "enter":
       options.key.preventDefault();
+      options.key.stopPropagation();
       if (options.key.shift) {
         options.toggleOption();
         return true;
@@ -97,6 +107,7 @@ export function handleQuestionRequestKey(options: {
       options.submit();
       return true;
     default:
+      options.key.stopPropagation();
       return true;
   }
 }

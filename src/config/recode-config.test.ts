@@ -49,6 +49,8 @@ describe("recode config", () => {
         kind: "openai",
         baseUrl: "https://api.openai.com/v1",
         apiKey: "sk-test",
+        headers: { "x-test": "yes" },
+        options: { timeoutMs: 1000, provider: { sort: "throughput" } },
         models: [{ id: "gpt-4.1", contextWindowTokens: 128000 }],
         defaultModelId: "gpt-4.1"
       },

@@ -1756,6 +1756,7 @@ export function TuiApp(props: TuiAppProps) {
     const abortController = new AbortController();
     activeAbortController = abortController;
     let currentStreamingId: string | undefined;
+    let latestTranscript: readonly ConversationMessage[] | undefined;
 
     try {
       const preparedTranscript = await prepareTranscriptForPendingPrompt(expandedPrompt, abortController.signal);
@@ -1766,6 +1767,7 @@ export function TuiApp(props: TuiAppProps) {
       setStreamingBody("");
       setStreamingEntryId(currentStreamingId);
       appendEntry(setEntries, streamingEntry);
+      const requestAffinityKey = currentConversation()?.id;
 
       const result = await runSingleTurn({
         systemPrompt: activeSystemPrompt(),
@@ -1775,6 +1777,7 @@ export function TuiApp(props: TuiAppProps) {
         toolRegistry: activeToolRegistry(),
         toolContext: sessionToolContext(),
         abortSignal: abortController.signal,
+        ...(requestAffinityKey === undefined ? {} : { requestAffinityKey }),
         onToolCall(toolCall) {
           setBusyPhase("tool");
           flushAndResetPendingStreamText();
@@ -1816,6 +1819,11 @@ export function TuiApp(props: TuiAppProps) {
           if (toolResultEntry !== undefined) {
             appendEntry(setEntries, toolResultEntry);
           }
+        },
+        onTranscriptUpdate(transcript) {
+          latestTranscript = transcript;
+          setPreviousMessages(transcript);
+          setLastContextEstimate(estimateConversationContextTokens(transcript));
         }
       });
 
@@ -1862,6 +1870,19 @@ export function TuiApp(props: TuiAppProps) {
         updateEntryBody(setEntries, currentId, () => partialBody);
       }
       if (!(error instanceof OperationAbortedError)) {
+        if (latestTranscript !== undefined && latestTranscript.length > 0) {
+          setPreviousMessages(latestTranscript);
+          setLastContextEstimate(estimateConversationContextTokens(latestTranscript));
+          setBusyPhase("saving-history");
+          const persistedConversation = persistConversationSession(
+            historyRoot(),
+            sessionRuntimeConfig(),
+            latestTranscript,
+            currentConversation(),
+            sessionMode()
+          );
+          setCurrentConversation(persistedConversation);
+        }
         appendEntry(setEntries, createEntry("error", "error", toErrorMessage(error)));
       }
     } finally {

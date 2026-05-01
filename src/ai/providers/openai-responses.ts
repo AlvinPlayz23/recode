@@ -4,8 +4,14 @@
 
 import { formatContinuationSummaryForModel, type ConversationMessage } from "../../transcript/message.ts";
 import type { ToolDefinition } from "../../tools/tool.ts";
-import { joinUrl, readErrorMessage } from "../http.ts";
+import { joinUrl } from "../http.ts";
 import { parseProviderToolArguments } from "../json.ts";
+import {
+  buildProviderBodyOptions,
+  buildProviderHeaders,
+  mergeRequestBodyOptions
+} from "../provider-request-options.ts";
+import { fetchProviderJson } from "../provider-transport.ts";
 import { iterateSseMessages } from "../sse.ts";
 import type { AiModel, AiStreamPart } from "../types.ts";
 import { createEmptyStepTokenUsage, type StepTokenUsage } from "../../agent/step-stats.ts";
@@ -18,7 +24,7 @@ import {
   splitToolCallId
 } from "./provider-json.ts";
 
-interface ResponsesRequestBody {
+interface ResponsesRequestBody extends Record<string, unknown> {
   readonly model: string;
   readonly instructions?: string;
   readonly input: readonly unknown[];
@@ -27,7 +33,7 @@ interface ResponsesRequestBody {
   readonly temperature?: number;
   readonly tool_choice?: "auto" | "required";
   readonly stream: true;
-  readonly store: false;
+  readonly store: boolean;
 }
 
 interface PendingFunctionCall {
@@ -45,22 +51,22 @@ export async function* streamOpenAiResponses(
   systemPrompt: string,
   messages: readonly ConversationMessage[],
   tools: readonly ToolDefinition[],
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  requestAffinityKey?: string
 ): AsyncGenerator<AiStreamPart> {
   try {
-    const response = await fetch(joinUrl(model.baseUrl ?? "https://api.openai.com/v1", "/responses"), {
-      method: "POST",
-      headers: {
+    const { response, timing } = await fetchProviderJson({
+      model,
+      operation: "openai-responses",
+      url: joinUrl(model.baseUrl ?? "https://api.openai.com/v1", "/responses"),
+      headers: buildProviderHeaders(model, {
         "content-type": "application/json",
-        authorization: `Bearer ${model.apiKey}`
-      },
-      body: JSON.stringify(buildResponsesRequestBody(model, systemPrompt, messages, tools)),
-      ...(abortSignal === undefined ? {} : { signal: abortSignal })
+        ...(model.apiKey === "" ? {} : { authorization: `Bearer ${model.apiKey}` })
+      }, requestAffinityKey),
+      body: buildResponsesRequestBody(model, systemPrompt, messages, tools, requestAffinityKey),
+      ...(abortSignal === undefined ? {} : { abortSignal }),
+      ...(requestAffinityKey === undefined ? {} : { requestAffinityKey })
     });
-
-    if (!response.ok) {
-      throw new Error(await readErrorMessage(response));
-    }
 
     if (response.body === null) {
       throw new Error("OpenAI Responses API returned an empty response body.");
@@ -69,7 +75,11 @@ export async function* streamOpenAiResponses(
     let pendingFunctionCall: PendingFunctionCall | undefined;
     let finishInfo: { finishReason?: string; costUsd?: number; tokenUsage?: StepTokenUsage } | undefined;
 
-    for await (const sse of iterateSseMessages(response.body, abortSignal)) {
+    for await (const sse of iterateSseMessages(response.body, abortSignal, {
+      onChunk() {
+        timing.markOnce("first-sse-chunk");
+      }
+    })) {
       if (sse.data === "[DONE]") {
         continue;
       }
@@ -97,6 +107,7 @@ export async function* streamOpenAiResponses(
         case "response.refusal.delta": {
           const delta = readString(event, "delta");
           if (delta !== "") {
+            timing.markOnce("first-text-delta");
             yield { type: "text-delta", text: delta };
           }
           break;
@@ -170,11 +181,15 @@ export async function* streamOpenAiResponses(
     }
 
     if (abortSignal?.aborted ?? false) {
+      timing.mark("request-abort");
       yield { type: "abort" };
       return;
     }
 
     yield { type: "finish-step", ...(finishInfo === undefined ? {} : { info: finishInfo }) };
+    timing.mark("request-finish", {
+      ...(finishInfo?.finishReason === undefined ? {} : { finishReason: finishInfo.finishReason })
+    });
     yield { type: "finish" };
   } catch (error) {
     if (abortSignal?.aborted ?? false) {
@@ -190,9 +205,10 @@ function buildResponsesRequestBody(
   model: AiModel,
   systemPrompt: string,
   messages: readonly ConversationMessage[],
-  tools: readonly ToolDefinition[]
+  tools: readonly ToolDefinition[],
+  requestAffinityKey: string | undefined
 ): ResponsesRequestBody {
-  return {
+  return mergeRequestBodyOptions({
     model: model.modelId,
     ...(systemPrompt.trim() === "" ? {} : { instructions: systemPrompt }),
     input: messagesToResponsesInput(messages),
@@ -202,7 +218,7 @@ function buildResponsesRequestBody(
     ...(model.toolChoice === undefined ? {} : { tool_choice: model.toolChoice }),
     stream: true,
     store: false
-  };
+  }, buildProviderBodyOptions(model, requestAffinityKey)) as ResponsesRequestBody;
 }
 
 function messagesToResponsesInput(messages: readonly ConversationMessage[]): readonly unknown[] {

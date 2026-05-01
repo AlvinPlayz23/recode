@@ -12,7 +12,7 @@
     "check": "tsc --noEmit",
     "build": "bun run scripts/build.ts --single",
     "build:all": "bun run scripts/build.ts",
-    "test": "bun test ./src/agent ./src/cli ./src/config ./src/history ./src/models ./src/runtime ./src/tools ./src/tui"
+    "test": "bun test ./src/agent ./src/ai ./src/cli ./src/config ./src/history ./src/models ./src/runtime ./src/tools ./src/tui"
   },
   "dependencies": {
     "@opentui/core": "^0.1.99",
