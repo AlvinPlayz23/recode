@@ -9,6 +9,14 @@ import { parseProviderToolArguments } from "../json.ts";
 import { iterateSseMessages } from "../sse.ts";
 import type { AiModel, AiStreamPart } from "../types.ts";
 import { createEmptyStepTokenUsage, type StepTokenUsage } from "../../agent/step-stats.ts";
+import {
+  readOptionalNumber,
+  readOptionalRecord,
+  readOptionalString,
+  readRecord,
+  readString,
+  splitToolCallId
+} from "./provider-json.ts";
 
 interface ResponsesRequestBody {
   readonly model: string;
@@ -254,42 +262,8 @@ function toolsToResponsesTools(tools: readonly ToolDefinition[]): readonly unkno
   }));
 }
 
-function splitToolCallId(toolCallId: string): string {
-  const separatorIndex = toolCallId.indexOf("|");
-  return separatorIndex === -1 ? toolCallId : toolCallId.slice(0, separatorIndex);
-}
-
 function buildResponsesToolCallId(callId: string, itemId: string | undefined): string {
   return itemId === undefined || itemId === "" ? callId : `${callId}|${itemId}`;
-}
-
-function readRecord(record: Record<string, unknown>, key: string): Record<string, unknown> {
-  const value = record[key];
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`Expected '${key}' to be an object.`);
-  }
-  return value as Record<string, unknown>;
-}
-
-function readOptionalRecord(record: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
-  const value = record[key];
-  if (value === undefined) {
-    return undefined;
-  }
-  return readRecord(record, key);
-}
-
-function readString(record: Record<string, unknown>, key: string): string {
-  const value = record[key];
-  if (typeof value !== "string") {
-    throw new Error(`Expected '${key}' to be a string.`);
-  }
-  return value;
-}
-
-function readOptionalString(record: Record<string, unknown>, key: string): string | undefined {
-  const value = record[key];
-  return typeof value === "string" ? value : undefined;
 }
 
 function readResponsesFinishInfo(response: Record<string, unknown>): {
@@ -312,18 +286,4 @@ function readResponsesFinishInfo(response: Record<string, unknown>): {
     ...(status === undefined ? {} : { finishReason: status }),
     ...(tokenUsage === undefined ? {} : { tokenUsage })
   };
-}
-
-function readOptionalNumber(record: Record<string, unknown>, key: string): number | undefined {
-  if (key.includes(".")) {
-    const [head, ...tail] = key.split(".");
-    const next = head === undefined ? undefined : record[head];
-    if (tail.length === 0 || next === undefined || next === null || typeof next !== "object" || Array.isArray(next)) {
-      return undefined;
-    }
-    return readOptionalNumber(next as Record<string, unknown>, tail.join("."));
-  }
-
-  const value = record[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }

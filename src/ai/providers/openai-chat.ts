@@ -9,6 +9,13 @@ import { parseProviderToolArguments } from "../json.ts";
 import { iterateSseMessages } from "../sse.ts";
 import type { AiModel, AiStreamPart } from "../types.ts";
 import { createEmptyStepTokenUsage, type StepTokenUsage } from "../../agent/step-stats.ts";
+import {
+  readNumber,
+  readOptionalNumber,
+  readOptionalRecord,
+  readOptionalString,
+  splitToolCallId
+} from "./provider-json.ts";
 
 interface PendingChatToolCall {
   id: string;
@@ -254,44 +261,4 @@ function toolsToChatTools(tools: readonly ToolDefinition[]): readonly Record<str
       parameters: tool.inputSchema
     }
   }));
-}
-
-function splitToolCallId(toolCallId: string): string {
-  const separatorIndex = toolCallId.indexOf("|");
-  return separatorIndex === -1 ? toolCallId : toolCallId.slice(0, separatorIndex);
-}
-
-function readOptionalRecord(record: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
-  const value = record[key];
-  if (value === undefined || value === null || typeof value !== "object" || Array.isArray(value)) {
-    return undefined;
-  }
-  return value as Record<string, unknown>;
-}
-
-function readOptionalString(record: Record<string, unknown>, key: string): string | undefined {
-  const value = record[key];
-  return typeof value === "string" ? value : undefined;
-}
-
-function readNumber(record: Record<string, unknown>, key: string): number {
-  const value = record[key];
-  if (typeof value !== "number") {
-    throw new Error(`Expected '${key}' to be a number.`);
-  }
-  return value;
-}
-
-function readOptionalNumber(record: Record<string, unknown>, key: string): number | undefined {
-  if (key.includes(".")) {
-    const [head, ...tail] = key.split(".");
-    const next = head === undefined ? undefined : record[head];
-    if (tail.length === 0 || next === undefined || next === null || typeof next !== "object" || Array.isArray(next)) {
-      return undefined;
-    }
-    return readOptionalNumber(next as Record<string, unknown>, tail.join("."));
-  }
-
-  const value = record[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }

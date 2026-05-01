@@ -6,8 +6,7 @@
 
 import { ToolExecutionError } from "../errors/recode-error.ts";
 import type { ToolArguments, ToolDefinition, ToolExecutionContext, ToolResult } from "./tool.ts";
-import { validateCommand } from "./bash-sandbox.ts";
-import { isBubblewrapAvailable, spawnDirect, spawnSandboxed } from "./bwrap-sandbox.ts";
+import { resolveBashExecutionPolicy } from "./bash-execution-policy.ts";
 
 interface BashToolInput {
   readonly command: string;
@@ -36,17 +35,15 @@ export function createBashTool(): ToolDefinition {
     },
     async execute(arguments_: ToolArguments, context: ToolExecutionContext): Promise<ToolResult> {
       const input = parseBashToolInput(arguments_);
+      const executionPolicy = await resolveBashExecutionPolicy();
 
-      const validationError = validateCommand(input.command, context.workspaceRoot);
+      const validationError = executionPolicy.validate(input.command, context.workspaceRoot);
       if (validationError !== null) {
         return { content: validationError, isError: true };
       }
 
-      const useSandbox = await isBubblewrapAvailable();
       const spawnOptions = { stdout: "pipe" as const, stderr: "pipe" as const, stdin: "ignore" as const };
-      const process = useSandbox
-        ? spawnSandboxed(input.command, context.workspaceRoot, spawnOptions)
-        : spawnDirect(input.command, context.workspaceRoot, spawnOptions);
+      const process = executionPolicy.spawn(input.command, context.workspaceRoot, spawnOptions);
 
       const timeoutHandle = setTimeout(() => {
         process.kill();

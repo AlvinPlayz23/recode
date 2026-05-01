@@ -9,6 +9,14 @@ import { parseProviderToolArguments } from "../json.ts";
 import { iterateSseMessages } from "../sse.ts";
 import type { AiModel, AiStreamPart } from "../types.ts";
 import { createEmptyStepTokenUsage, type StepTokenUsage } from "../../agent/step-stats.ts";
+import {
+  readNumber,
+  readOptionalNumber,
+  readOptionalRecord,
+  readOptionalString,
+  readRecord,
+  readString
+} from "./provider-json.ts";
 
 interface PendingAnthropicToolUse {
   readonly index: number;
@@ -291,46 +299,4 @@ function toolsToAnthropicTools(tools: readonly ToolDefinition[]): readonly Recor
     description: tool.description,
     input_schema: tool.inputSchema
   }));
-}
-
-function readRecord(record: Record<string, unknown>, key: string): Record<string, unknown> {
-  const value = record[key];
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`Expected '${key}' to be an object.`);
-  }
-  return value as Record<string, unknown>;
-}
-
-function readOptionalRecord(record: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
-  const value = record[key];
-  if (value === undefined) {
-    return undefined;
-  }
-  return readRecord(record, key);
-}
-
-function readString(record: Record<string, unknown>, key: string): string {
-  const value = record[key];
-  if (typeof value !== "string") {
-    throw new Error(`Expected '${key}' to be a string.`);
-  }
-  return value;
-}
-
-function readOptionalString(record: Record<string, unknown>, key: string): string | undefined {
-  const value = record[key];
-  return typeof value === "string" ? value : undefined;
-}
-
-function readOptionalNumber(record: Record<string, unknown>, key: string): number | undefined {
-  const value = record[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function readNumber(record: Record<string, unknown>, key: string): number {
-  const value = record[key];
-  if (typeof value !== "number") {
-    throw new Error(`Expected '${key}' to be a number.`);
-  }
-  return value;
 }
