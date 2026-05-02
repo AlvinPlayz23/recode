@@ -221,7 +221,8 @@ async function waitBeforeRetry(
 ): Promise<void> {
   const delayMs = Math.min(
     settings.retryInitialDelayMs * (2 ** (attempt - 1)),
-    settings.retryMaxDelayMs
+    settings.retryMaxDelayMs,
+    settings.maxRetryDelayMs
   );
   timing.mark("request-retry", {
     attempt,

@@ -2,16 +2,17 @@
  * Streaming adapter for Anthropic Messages.
  */
 
+import type Anthropic from "@anthropic-ai/sdk";
 import { formatContinuationSummaryForModel, type ConversationMessage } from "../../transcript/message.ts";
 import type { ToolDefinition } from "../../tools/tool.ts";
-import { joinUrl } from "../http.ts";
-import { parseProviderToolArguments } from "../json.ts";
+import { parseProviderToolArguments, parseStreamingJsonObject } from "../json.ts";
 import {
   buildProviderBodyOptions,
-  buildProviderHeaders,
   mergeRequestBodyOptions
 } from "../provider-request-options.ts";
-import { fetchProviderJson } from "../provider-transport.ts";
+import { createProviderTimingSpan } from "../provider-timing.ts";
+import { getAnthropicCompat } from "../provider-compat.ts";
+import { buildSdkRequestOptions, createAnthropicSdkClient } from "../sdk-request.ts";
 import { iterateSseMessages } from "../sse.ts";
 import type { AiModel, AiStreamPart } from "../types.ts";
 import { createEmptyStepTokenUsage, type StepTokenUsage } from "../../agent/step-stats.ts";
@@ -28,8 +29,12 @@ interface PendingAnthropicToolUse {
   readonly index: number;
   readonly id: string;
   readonly name: string;
+  readonly inputFromStart: Record<string, unknown>;
   argumentsJson: string;
+  sawArgumentDelta: boolean;
 }
+
+const FINE_GRAINED_TOOL_STREAMING_BETA = "fine-grained-tool-streaming-2025-05-14";
 
 /**
  * Stream a response from the Anthropic Messages API.
@@ -43,19 +48,22 @@ export async function* streamAnthropicMessages(
   requestAffinityKey?: string
 ): AsyncGenerator<AiStreamPart> {
   try {
-    const { response, timing } = await fetchProviderJson({
+    const compat = getAnthropicCompat(model);
+    const betaFeatures = tools.length > 0 && !compat.supportsEagerToolInputStreaming
+      ? [FINE_GRAINED_TOOL_STREAMING_BETA]
+      : [];
+    const timing = createProviderTimingSpan({
       model,
       operation: "anthropic-messages",
-      url: joinUrl(model.baseUrl ?? "https://api.anthropic.com/v1", "/messages"),
-      headers: buildProviderHeaders(model, {
-        "content-type": "application/json",
-        "x-api-key": model.apiKey,
-        "anthropic-version": "2023-06-01"
-      }, requestAffinityKey),
-      body: buildAnthropicRequestBody(model, systemPrompt, messages, tools, requestAffinityKey),
-      ...(abortSignal === undefined ? {} : { abortSignal }),
       ...(requestAffinityKey === undefined ? {} : { requestAffinityKey })
     });
+    timing.mark("request-start", { attempt: 1 });
+    const client = createAnthropicSdkClient(model, requestAffinityKey, betaFeatures);
+    const requestBody = buildAnthropicRequestBody(model, systemPrompt, messages, tools, requestAffinityKey);
+    const response = await client.messages
+      .create(requestBody as unknown as Anthropic.Messages.MessageCreateParamsStreaming, buildSdkRequestOptions(model, abortSignal))
+      .asResponse();
+    timing.mark("response-headers", { attempt: 1, status: response.status });
 
     if (response.body === null) {
       throw new Error("Anthropic Messages API returned an empty response body.");
@@ -88,11 +96,14 @@ export async function* streamAnthropicMessages(
           const contentBlockType = readString(contentBlock, "type");
 
           if (contentBlockType === "tool_use") {
+            const inputFromStart = readOptionalRecord(contentBlock, "input") ?? {};
             pendingToolUses.set(index, {
               index,
-              id: readString(contentBlock, "id"),
+              id: normalizeAnthropicToolCallId(readString(contentBlock, "id")),
               name: readString(contentBlock, "name"),
-              argumentsJson: JSON.stringify(readOptionalRecord(contentBlock, "input") ?? {})
+              inputFromStart,
+              argumentsJson: "",
+              sawArgumentDelta: false
             });
           }
           break;
@@ -111,6 +122,10 @@ export async function* streamAnthropicMessages(
           } else if (deltaType === "input_json_delta") {
             const pendingToolUse = pendingToolUses.get(index);
             if (pendingToolUse !== undefined) {
+              if (!pendingToolUse.sawArgumentDelta) {
+                pendingToolUse.argumentsJson = "";
+                pendingToolUse.sawArgumentDelta = true;
+              }
               pendingToolUse.argumentsJson += readString(delta, "partial_json");
             }
           }
@@ -124,7 +139,9 @@ export async function* streamAnthropicMessages(
               type: "tool-call",
               toolCallId: pendingToolUse.id,
               toolName: pendingToolUse.name,
-              input: parseProviderToolArguments(pendingToolUse.argumentsJson, "anthropic", pendingToolUse.name)
+              input: pendingToolUse.sawArgumentDelta
+                ? parseStreamingJsonObject(pendingToolUse.argumentsJson)
+                : pendingToolUse.inputFromStart
             };
             pendingToolUses.delete(index);
           }
@@ -213,7 +230,7 @@ function buildAnthropicRequestBody(
     max_tokens: model.maxOutputTokens ?? 4096,
     ...(systemPrompt.trim() === "" ? {} : { system: systemPrompt }),
     messages: messagesToAnthropicMessages(messages),
-    ...(tools.length === 0 ? {} : { tools: toolsToAnthropicTools(tools) }),
+    ...(tools.length === 0 ? {} : { tools: toolsToAnthropicTools(tools, getAnthropicCompat(model).supportsEagerToolInputStreaming) }),
     ...(model.temperature === undefined ? {} : { temperature: model.temperature }),
     ...(model.toolChoice === undefined ? {} : { tool_choice: { type: model.toolChoice === "required" ? "any" : "auto" } }),
     stream: true
@@ -231,10 +248,12 @@ function messagesToAnthropicMessages(messages: readonly ConversationMessage[]): 
 
     switch (message.role) {
       case "user":
-        result.push({
-          role: "user",
-          content: message.content
-        });
+        if (message.content.trim() !== "") {
+          result.push({
+            role: "user",
+            content: message.content
+          });
+        }
         break;
       case "summary":
         result.push({
@@ -255,9 +274,9 @@ function messagesToAnthropicMessages(messages: readonly ConversationMessage[]): 
         for (const toolCall of message.toolCalls) {
           contentBlocks.push({
             type: "tool_use",
-            id: toolCall.id,
+            id: normalizeAnthropicToolCallId(toolCall.id),
             name: toolCall.name,
-            input: JSON.parse(toolCall.argumentsJson) as Record<string, unknown>
+            input: parseProviderToolArguments(toolCall.argumentsJson, "anthropic-replay", toolCall.name)
           });
         }
 
@@ -273,7 +292,7 @@ function messagesToAnthropicMessages(messages: readonly ConversationMessage[]): 
         const toolResults: Record<string, unknown>[] = [
           {
             type: "tool_result",
-            tool_use_id: message.toolCallId,
+            tool_use_id: normalizeAnthropicToolCallId(message.toolCallId),
             content: message.content,
             is_error: message.isError
           }
@@ -291,7 +310,7 @@ function messagesToAnthropicMessages(messages: readonly ConversationMessage[]): 
 
           toolResults.push({
             type: "tool_result",
-            tool_use_id: nextToolResult.toolCallId,
+            tool_use_id: normalizeAnthropicToolCallId(nextToolResult.toolCallId),
             content: nextToolResult.content,
             is_error: nextToolResult.isError
           });
@@ -309,10 +328,18 @@ function messagesToAnthropicMessages(messages: readonly ConversationMessage[]): 
   return result;
 }
 
-function toolsToAnthropicTools(tools: readonly ToolDefinition[]): readonly Record<string, unknown>[] {
+function toolsToAnthropicTools(
+  tools: readonly ToolDefinition[],
+  supportsEagerToolInputStreaming: boolean
+): readonly Record<string, unknown>[] {
   return tools.map((tool) => ({
     name: tool.name,
     description: tool.description,
-    input_schema: tool.inputSchema
+    input_schema: tool.inputSchema,
+    ...(supportsEagerToolInputStreaming ? { eager_input_streaming: true } : {})
   }));
+}
+
+function normalizeAnthropicToolCallId(id: string): string {
+  return id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
 }

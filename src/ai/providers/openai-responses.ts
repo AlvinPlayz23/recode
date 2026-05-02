@@ -2,17 +2,16 @@
  * Streaming adapter for the OpenAI Responses API.
  */
 
+import type OpenAI from "openai";
 import { formatContinuationSummaryForModel, type ConversationMessage } from "../../transcript/message.ts";
 import type { ToolDefinition } from "../../tools/tool.ts";
-import { joinUrl } from "../http.ts";
 import { parseProviderToolArguments } from "../json.ts";
 import {
   buildProviderBodyOptions,
-  buildProviderHeaders,
   mergeRequestBodyOptions
 } from "../provider-request-options.ts";
-import { fetchProviderJson } from "../provider-transport.ts";
-import { iterateSseMessages } from "../sse.ts";
+import { createProviderTimingSpan } from "../provider-timing.ts";
+import { buildSdkRequestOptions, createOpenAiSdkClient } from "../sdk-request.ts";
 import type { AiModel, AiStreamPart } from "../types.ts";
 import { createEmptyStepTokenUsage, type StepTokenUsage } from "../../agent/step-stats.ts";
 import {
@@ -55,37 +54,26 @@ export async function* streamOpenAiResponses(
   requestAffinityKey?: string
 ): AsyncGenerator<AiStreamPart> {
   try {
-    const { response, timing } = await fetchProviderJson({
+    const timing = createProviderTimingSpan({
       model,
       operation: "openai-responses",
-      url: joinUrl(model.baseUrl ?? "https://api.openai.com/v1", "/responses"),
-      headers: buildProviderHeaders(model, {
-        "content-type": "application/json",
-        ...(model.apiKey === "" ? {} : { authorization: `Bearer ${model.apiKey}` })
-      }, requestAffinityKey),
-      body: buildResponsesRequestBody(model, systemPrompt, messages, tools, requestAffinityKey),
-      ...(abortSignal === undefined ? {} : { abortSignal }),
       ...(requestAffinityKey === undefined ? {} : { requestAffinityKey })
     });
-
-    if (response.body === null) {
-      throw new Error("OpenAI Responses API returned an empty response body.");
-    }
+    timing.mark("request-start", { attempt: 1 });
+    const client = createOpenAiSdkClient(model, requestAffinityKey);
+    const requestBody = buildResponsesRequestBody(model, systemPrompt, messages, tools, requestAffinityKey);
+    const { data: responseStream, response } = await client.responses
+      .create(requestBody as unknown as OpenAI.Responses.ResponseCreateParamsStreaming, buildSdkRequestOptions(model, abortSignal))
+      .withResponse();
+    timing.mark("response-headers", { attempt: 1, status: response.status });
 
     let pendingFunctionCall: PendingFunctionCall | undefined;
     let finishInfo: { finishReason?: string; costUsd?: number; tokenUsage?: StepTokenUsage } | undefined;
 
-    for await (const sse of iterateSseMessages(response.body, abortSignal, {
-      onChunk() {
-        timing.markOnce("first-sse-chunk");
-      }
-    })) {
-      if (sse.data === "[DONE]") {
-        continue;
-      }
-
-      const event = JSON.parse(sse.data) as Record<string, unknown>;
-      const eventType = typeof event["type"] === "string" ? event["type"] : sse.event;
+    for await (const streamEvent of responseStream) {
+      timing.markOnce("first-sse-chunk");
+      const event = streamEvent as unknown as Record<string, unknown>;
+      const eventType = typeof event["type"] === "string" ? event["type"] : undefined;
 
       switch (eventType) {
         case "response.output_item.added": {
@@ -292,7 +280,7 @@ function readResponsesFinishInfo(response: Record<string, unknown>): {
     ...createEmptyStepTokenUsage(),
     input: readOptionalNumber(usage, "input_tokens") ?? 0,
     output: readOptionalNumber(usage, "output_tokens") ?? 0,
-    reasoning: readOptionalNumber(usage, "reasoning_tokens") ?? 0,
+    reasoning: readOptionalNumber(usage, "output_tokens_details.reasoning_tokens") ?? 0,
     cacheRead: readOptionalNumber(usage, "input_tokens_details.cached_tokens") ?? 0,
     cacheWrite: 0
   };

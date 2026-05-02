@@ -73,6 +73,7 @@ describe("provider request options", () => {
       ...openRouterModel(),
       providerOptions: {
         maxRetries: 4,
+        maxRetryDelayMs: 25,
         retryInitialDelayMs: 10,
         retryMaxDelayMs: 20,
         timeoutMs: 30,
@@ -84,8 +85,25 @@ describe("provider request options", () => {
       maxRetries: 4,
       retryInitialDelayMs: 10,
       retryMaxDelayMs: 20,
+      maxRetryDelayMs: 25,
       timeoutMs: 30,
       chunkTimeoutMs: 40
+    });
+  });
+
+  it("keeps compatibility settings out of provider request bodies", () => {
+    const options = buildProviderBodyOptions({
+      ...openRouterModel(),
+      providerOptions: {
+        compat: { maxTokensField: "max_tokens" },
+        cacheRetention: "long",
+        provider: { sort: "price" }
+      }
+    }, undefined);
+
+    expect(options).toEqual({
+      usage: { include: true },
+      provider: { sort: "price" }
     });
   });
 });

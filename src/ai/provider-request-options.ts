@@ -13,13 +13,22 @@ import {
 const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_RETRY_INITIAL_DELAY_MS = 750;
 const DEFAULT_RETRY_MAX_DELAY_MS = 8_000;
+const DEFAULT_TIMEOUT_MS = 120_000;
+const DEFAULT_CHUNK_TIMEOUT_MS = 45_000;
+const DEFAULT_MAX_RETRY_DELAY_MS = 60_000;
 
 const TRANSPORT_OPTION_KEYS = new Set([
   "timeoutMs",
   "chunkTimeoutMs",
   "maxRetries",
+  "maxRetryDelayMs",
   "retryInitialDelayMs",
   "retryMaxDelayMs"
+]);
+
+const RECODE_OPTION_KEYS = new Set([
+  "compat",
+  "cacheRetention"
 ]);
 
 /**
@@ -29,8 +38,9 @@ export interface ProviderTransportSettings {
   readonly maxRetries: number;
   readonly retryInitialDelayMs: number;
   readonly retryMaxDelayMs: number;
-  readonly timeoutMs?: number;
-  readonly chunkTimeoutMs?: number;
+  readonly maxRetryDelayMs: number;
+  readonly timeoutMs: number;
+  readonly chunkTimeoutMs: number;
 }
 
 /**
@@ -70,8 +80,9 @@ export function buildProviderTransportSettings(model: AiModel): ProviderTranspor
     maxRetries: readPositiveIntegerOption(options, "maxRetries") ?? DEFAULT_MAX_RETRIES,
     retryInitialDelayMs: readPositiveIntegerOption(options, "retryInitialDelayMs") ?? DEFAULT_RETRY_INITIAL_DELAY_MS,
     retryMaxDelayMs: readPositiveIntegerOption(options, "retryMaxDelayMs") ?? DEFAULT_RETRY_MAX_DELAY_MS,
-    ...optionalPositiveIntegerProperty("timeoutMs", readPositiveIntegerOption(options, "timeoutMs")),
-    ...optionalPositiveIntegerProperty("chunkTimeoutMs", readPositiveIntegerOption(options, "chunkTimeoutMs"))
+    maxRetryDelayMs: readPositiveIntegerOption(options, "maxRetryDelayMs") ?? DEFAULT_MAX_RETRY_DELAY_MS,
+    timeoutMs: readPositiveIntegerOption(options, "timeoutMs") ?? DEFAULT_TIMEOUT_MS,
+    chunkTimeoutMs: readPositiveIntegerOption(options, "chunkTimeoutMs") ?? DEFAULT_CHUNK_TIMEOUT_MS
   };
 }
 
@@ -120,7 +131,7 @@ function providerBodyOptions(options: JsonObject | undefined): JsonObject {
   }
 
   return Object.fromEntries(
-    Object.entries(options).filter(([key]) => !TRANSPORT_OPTION_KEYS.has(key))
+    Object.entries(options).filter(([key]) => !TRANSPORT_OPTION_KEYS.has(key) && !RECODE_OPTION_KEYS.has(key))
   );
 }
 
@@ -161,13 +172,4 @@ function readPositiveIntegerOption(options: JsonObject, key: string): number | u
   return typeof value === "number" && Number.isInteger(value) && value > 0
     ? value
     : undefined;
-}
-
-function optionalPositiveIntegerProperty<TKey extends string>(
-  key: TKey,
-  value: number | undefined
-): { readonly [K in TKey]?: number } {
-  return value === undefined
-    ? {}
-    : { [key]: value } as { readonly [K in TKey]?: number };
 }

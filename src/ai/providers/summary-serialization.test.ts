@@ -198,6 +198,154 @@ describe("continuation summary serialization", () => {
       }
     ]);
   });
+
+  it("normalizes Anthropic empty messages and grouped tool results", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    globalThis.fetch = (async (_input, init) => {
+      requestBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        status: 200,
+        headers: { "content-type": "text/event-stream" }
+      });
+    }) as typeof fetch;
+
+    await consumeStream(streamAnthropicMessages(
+      {
+        provider: "anthropic",
+        providerId: "anthropic",
+        providerName: "Anthropic",
+        modelId: "claude-sonnet",
+        apiKey: "test",
+        baseUrl: "https://example.com/v1",
+        api: "anthropic-messages"
+      },
+      "",
+      [
+        {
+          role: "user",
+          content: ""
+        },
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            {
+              id: "toolu/bad+id=",
+              name: "Read",
+              argumentsJson: "{\"path\":\"README.md\"}"
+            }
+          ]
+        },
+        {
+          role: "tool",
+          toolCallId: "toolu/bad+id=",
+          toolName: "Read",
+          content: "one",
+          isError: false
+        },
+        {
+          role: "tool",
+          toolCallId: "toolu:two",
+          toolName: "Grep",
+          content: "two",
+          isError: true
+        }
+      ],
+      []
+    ));
+
+    expect(requestBody?.messages).toEqual([
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_bad_id_",
+            name: "Read",
+            input: { path: "README.md" }
+          }
+        ]
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "toolu_bad_id_",
+            content: "one",
+            is_error: false
+          },
+          {
+            type: "tool_result",
+            tool_use_id: "toolu_two",
+            content: "two",
+            is_error: true
+          }
+        ]
+      }
+    ]);
+  });
+
+  it("omits Anthropic eager tool streaming when compat disables it", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    let requestHeaders: Headers | undefined;
+    globalThis.fetch = (async (_input, init) => {
+      requestHeaders = new Headers(init?.headers);
+      requestBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        status: 200,
+        headers: { "content-type": "text/event-stream" }
+      });
+    }) as typeof fetch;
+
+    await consumeStream(streamAnthropicMessages(
+      {
+        provider: "anthropic",
+        providerId: "anthropic",
+        providerName: "Anthropic",
+        modelId: "claude-sonnet",
+        apiKey: "test",
+        baseUrl: "https://example.com/v1",
+        api: "anthropic-messages",
+        providerOptions: {
+          compat: {
+            supportsEagerToolInputStreaming: false
+          }
+        }
+      },
+      "",
+      [],
+      [
+        {
+          name: "Read",
+          description: "Read a file",
+          inputSchema: {
+            type: "object",
+            properties: {},
+            required: [],
+            additionalProperties: false
+          },
+          async execute() {
+            return { content: "", isError: false };
+          }
+        }
+      ]
+    ));
+
+    expect(requestHeaders?.get("anthropic-beta")).toContain("fine-grained-tool-streaming-2025-05-14");
+    expect(requestBody?.tools).toEqual([
+      {
+        name: "Read",
+        description: "Read a file",
+        input_schema: {
+          type: "object",
+          properties: {},
+          required: [],
+          additionalProperties: false
+        }
+      }
+    ]);
+  });
 });
 
 function buildSummaryMessage(content: string): ConversationMessage {

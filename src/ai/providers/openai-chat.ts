@@ -2,20 +2,20 @@
  * Streaming adapter for OpenAI Chat Completions.
  */
 
+import type OpenAI from "openai";
 import { formatContinuationSummaryForModel, type ConversationMessage } from "../../transcript/message.ts";
 import type { ToolDefinition } from "../../tools/tool.ts";
-import { joinUrl } from "../http.ts";
 import { parseProviderToolArguments } from "../json.ts";
 import {
   buildProviderBodyOptions,
-  buildProviderHeaders,
   mergeRequestBodyOptions
 } from "../provider-request-options.ts";
-import { fetchProviderJson } from "../provider-transport.ts";
-import { iterateSseMessages } from "../sse.ts";
+import { createProviderTimingSpan } from "../provider-timing.ts";
+import { buildSdkRequestOptions, createOpenAiSdkClient } from "../sdk-request.ts";
 import type { AiModel, AiStreamPart } from "../types.ts";
 import { createEmptyStepTokenUsage, type StepTokenUsage } from "../../agent/step-stats.ts";
 import { isJsonObject, type JsonObject } from "../../shared/json-value.ts";
+import { getOpenAiChatCompat, type OpenAiChatCompat } from "../provider-compat.ts";
 import {
   readOptionalNumber,
   readOptionalRecord,
@@ -43,37 +43,26 @@ export async function* streamOpenAiChat(
   requestAffinityKey?: string
 ): AsyncGenerator<AiStreamPart> {
   try {
-    const { response, timing } = await fetchProviderJson({
+    const timing = createProviderTimingSpan({
       model,
       operation: "openai-chat-completions",
-      url: joinUrl(model.baseUrl ?? "https://api.openai.com/v1", "/chat/completions"),
-      headers: buildProviderHeaders(model, {
-        "content-type": "application/json",
-        ...(model.apiKey === "" ? {} : { authorization: `Bearer ${model.apiKey}` })
-      }, requestAffinityKey),
-      body: buildChatCompletionsRequestBody(model, systemPrompt, messages, tools, requestAffinityKey),
-      ...(abortSignal === undefined ? {} : { abortSignal }),
       ...(requestAffinityKey === undefined ? {} : { requestAffinityKey })
     });
-
-    if (response.body === null) {
-      throw new Error("OpenAI Chat Completions API returned an empty response body.");
-    }
+    timing.mark("request-start", { attempt: 1 });
+    const client = createOpenAiSdkClient(model, requestAffinityKey);
+    const requestBody = buildChatCompletionsRequestBody(model, systemPrompt, messages, tools, requestAffinityKey);
+    const { data: responseStream, response } = await client.chat.completions
+      .create(requestBody as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming, buildSdkRequestOptions(model, abortSignal))
+      .withResponse();
+    timing.mark("response-headers", { attempt: 1, status: response.status });
 
     const pendingToolCalls = new Map<number, PendingChatToolCall>();
     let finishReason: string | undefined;
     let tokenUsage: StepTokenUsage | undefined;
 
-    for await (const sse of iterateSseMessages(response.body, abortSignal, {
-      onChunk() {
-        timing.markOnce("first-sse-chunk");
-      }
-    })) {
-      if (sse.data === "[DONE]") {
-        break;
-      }
-
-      const chunk = JSON.parse(sse.data) as Record<string, unknown>;
+    for await (const streamChunk of responseStream) {
+      timing.markOnce("first-sse-chunk");
+      const chunk = streamChunk as unknown as Record<string, unknown>;
       const errorRecord = readOptionalRecord(chunk, "error");
       if (errorRecord !== undefined) {
         throw new Error(readOptionalString(errorRecord, "message") ?? "OpenAI-compatible API reported an error.");
@@ -204,21 +193,25 @@ function buildChatCompletionsRequestBody(
   tools: readonly ToolDefinition[],
   requestAffinityKey: string | undefined
 ): Record<string, unknown> {
-  return mergeRequestBodyOptions({
+  const compat = getOpenAiChatCompat(model);
+  const body: Record<string, unknown> = {
     model: model.modelId,
-    messages: messagesToChatMessages(systemPrompt, messages),
+    messages: messagesToChatMessages(systemPrompt, messages, compat),
     ...(tools.length === 0 ? {} : { tools: toolsToChatTools(tools) }),
-    ...(model.maxOutputTokens === undefined ? {} : { max_tokens: model.maxOutputTokens }),
     ...(model.temperature === undefined ? {} : { temperature: model.temperature }),
     ...(model.toolChoice === undefined ? {} : { tool_choice: model.toolChoice }),
-    ...(supportsUsageStreaming(model) ? { stream_options: { include_usage: true } } : {}),
+    ...(compat.supportsUsageInStreaming ? { stream_options: { include_usage: true } } : {}),
+    ...(compat.supportsStore ? { store: false } : {}),
     stream: true
-  }, buildProviderBodyOptions(model, requestAffinityKey));
-}
+  };
 
-function supportsUsageStreaming(model: AiModel): boolean {
-  const baseUrl = (model.baseUrl ?? "https://api.openai.com/v1").toLowerCase();
-  return baseUrl.includes("api.openai.com");
+  if (model.maxOutputTokens !== undefined) {
+    body[compat.maxTokensField] = model.maxOutputTokens;
+  }
+
+  return mergeRequestBodyOptions({
+    ...body
+  }, buildProviderBodyOptions(model, requestAffinityKey));
 }
 
 function resolveChatToolCallIndex(
@@ -242,7 +235,11 @@ function resolveChatToolCallIndex(
   return arrayIndex;
 }
 
-function messagesToChatMessages(systemPrompt: string, messages: readonly ConversationMessage[]): readonly Record<string, unknown>[] {
+function messagesToChatMessages(
+  systemPrompt: string,
+  messages: readonly ConversationMessage[],
+  compat: OpenAiChatCompat
+): readonly Record<string, unknown>[] {
   const result: Record<string, unknown>[] = [];
 
   if (systemPrompt.trim() !== "") {
@@ -252,7 +249,12 @@ function messagesToChatMessages(systemPrompt: string, messages: readonly Convers
     });
   }
 
-  for (const message of messages) {
+  for (let messageIndex = 0; messageIndex < messages.length; messageIndex += 1) {
+    const message = messages[messageIndex];
+    if (message === undefined) {
+      continue;
+    }
+
     switch (message.role) {
       case "user":
         result.push({
@@ -291,8 +293,15 @@ function messagesToChatMessages(systemPrompt: string, messages: readonly Convers
         result.push({
           role: "tool",
           tool_call_id: splitToolCallId(message.toolCallId),
-          content: message.content
+          content: message.content,
+          ...(compat.requiresToolResultName ? { name: message.toolName } : {})
         });
+        if (compat.requiresAssistantAfterToolResult && messages[messageIndex + 1]?.role === "user") {
+          result.push({
+            role: "assistant",
+            content: "I have processed the tool results."
+          });
+        }
         break;
     }
   }
