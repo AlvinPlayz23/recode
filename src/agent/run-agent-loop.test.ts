@@ -188,6 +188,44 @@ describe("runAgentLoop", () => {
     expect(result.steps[0]?.finishReason).toBe("stop");
   });
 
+  it("forwards provider status events through onProviderStatus", async () => {
+    const providerEvents: unknown[] = [];
+
+    fakeStreamAssistantResponse.mockImplementationOnce((options) => {
+      const onProviderStatus = options.onProviderStatus as ((event: unknown) => void) | undefined;
+      onProviderStatus?.({
+        type: "retry",
+        operation: "openai-chat-completions",
+        attempt: 2,
+        maxAttempts: 3
+      });
+      return makeStreamResult([
+        textPart("done"),
+        ...finishParts()
+      ]);
+    });
+
+    await runAgentLoop({
+      systemPrompt: "test-system-prompt",
+      initialUserPrompt: "hello",
+      languageModel: {} as never,
+      toolRegistry: new ToolRegistry([createEchoTool()]),
+      toolContext: { workspaceRoot: "/tmp/recode", approvalMode: "yolo" },
+      onProviderStatus(event) {
+        providerEvents.push(event);
+      }
+    });
+
+    expect(providerEvents).toEqual([
+      {
+        type: "retry",
+        operation: "openai-chat-completions",
+        attempt: 2,
+        maxAttempts: 3
+      }
+    ]);
+  });
+
   it("emits tool result notifications after tool execution", async () => {
     fakeStreamAssistantResponse
       .mockImplementationOnce(() => makeStreamResult([

@@ -10,9 +10,10 @@ import {
   buildProviderBodyOptions,
   mergeRequestBodyOptions
 } from "../provider-request-options.ts";
+import { formatProviderError } from "../provider-error.ts";
 import { createProviderTimingSpan } from "../provider-timing.ts";
 import { buildSdkRequestOptions, createOpenAiSdkClient } from "../sdk-request.ts";
-import type { AiModel, AiStreamPart } from "../types.ts";
+import type { AiModel, AiStreamPart, ProviderStatusEvent } from "../types.ts";
 import { createEmptyStepTokenUsage, type StepTokenUsage } from "../../agent/step-stats.ts";
 import {
   readOptionalNumber,
@@ -51,7 +52,8 @@ export async function* streamOpenAiResponses(
   messages: readonly ConversationMessage[],
   tools: readonly ToolDefinition[],
   abortSignal?: AbortSignal,
-  requestAffinityKey?: string
+  requestAffinityKey?: string,
+  onProviderStatus?: (event: ProviderStatusEvent) => void
 ): AsyncGenerator<AiStreamPart> {
   try {
     const timing = createProviderTimingSpan({
@@ -60,7 +62,12 @@ export async function* streamOpenAiResponses(
       ...(requestAffinityKey === undefined ? {} : { requestAffinityKey })
     });
     timing.mark("request-start", { attempt: 1 });
-    const client = createOpenAiSdkClient(model, requestAffinityKey);
+    const client = createOpenAiSdkClient(
+      model,
+      requestAffinityKey,
+      "openai-responses",
+      onProviderStatus
+    );
     const requestBody = buildResponsesRequestBody(model, systemPrompt, messages, tools, requestAffinityKey);
     const { data: responseStream, response } = await client.responses
       .create(requestBody as unknown as OpenAI.Responses.ResponseCreateParamsStreaming, buildSdkRequestOptions(model, abortSignal))
@@ -185,7 +192,7 @@ export async function* streamOpenAiResponses(
       return;
     }
 
-    yield { type: "error", error };
+    yield { type: "error", error: formatProviderError(error, model) };
   }
 }
 

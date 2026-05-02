@@ -5,6 +5,7 @@
  */
 
 import { streamAssistantResponse } from "../ai/stream-assistant-response.ts";
+import { formatProviderError } from "../ai/provider-error.ts";
 import type { AiModel } from "../ai/types.ts";
 import {
   ConversationCompactionError,
@@ -337,7 +338,9 @@ async function summarizeCompactionWindow(
       case "tool-call":
         throw new ConversationCompactionError("Compaction unexpectedly attempted to call a tool.");
       case "error":
-        throw new ModelResponseError(String(part.error));
+        throw new ModelResponseError(
+          typeof part.error === "string" ? part.error : formatProviderError(part.error, languageModel)
+        );
       case "abort":
         throw new OperationAbortedError("Request aborted");
       case "finish-step":

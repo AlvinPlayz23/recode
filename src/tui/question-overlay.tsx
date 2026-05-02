@@ -2,7 +2,8 @@
  * Question overlays for the TUI, including the context-window prompt.
  */
 
-import { InputRenderable, type KeyEvent, TextAttributes } from "@opentui/core";
+import { InputRenderable, type KeyEvent, RGBA, TextAttributes } from "@opentui/core";
+import { useTerminalDimensions } from "@opentui/solid";
 import { For, Show } from "solid-js";
 import { normalizeBuiltinCommandSelectionIndex } from "./message-format.ts";
 import type { ThemeColors } from "./theme.ts";
@@ -25,6 +26,7 @@ export interface QuestionOverlayProps {
  * Render the active question overlay.
  */
 export function QuestionOverlay(props: QuestionOverlayProps) {
+  const terminal = useTerminalDimensions();
   return (
     <Show when={props.request !== undefined}>
       <Show
@@ -32,21 +34,27 @@ export function QuestionOverlay(props: QuestionOverlayProps) {
         fallback={
           <box
             position="absolute"
-            left={3}
-            right={3}
-            bottom={1}
+            left={0}
+            top={0}
+            width={terminal().width}
+            height={terminal().height}
             zIndex={2000}
+            backgroundColor={RGBA.fromInts(0, 0, 0, 150)}
+            alignItems="center"
+            paddingTop={Math.floor(terminal().height / 4)}
+            focused={props.request !== undefined}
+            onKeyDown={props.onKeyDown}
+          >
+          <box
+            width={Math.min(terminal().width - 6, 72)}
             flexDirection="column"
             border
             borderColor={props.theme.brandShimmer}
-            backgroundColor={props.theme.bashMessageBackgroundColor}
+            backgroundColor={props.theme.inverseText}
             paddingLeft={1}
             paddingRight={1}
             paddingTop={1}
             paddingBottom={1}
-            flexShrink={0}
-            focused={props.request !== undefined}
-            onKeyDown={props.onKeyDown}
           >
             <text fg={props.theme.brandShimmer} attributes={TextAttributes.BOLD}>Questions</text>
             <Show when={props.request}>
@@ -132,25 +140,32 @@ export function QuestionOverlay(props: QuestionOverlayProps) {
               }}
             </Show>
           </box>
+          </box>
         }
       >
         <box
           position="absolute"
-          left={5}
-          right={5}
-          bottom={1}
+          left={0}
+          top={0}
+          width={terminal().width}
+          height={terminal().height}
           zIndex={2000}
+          backgroundColor={RGBA.fromInts(0, 0, 0, 150)}
+          alignItems="center"
+          paddingTop={Math.floor(terminal().height / 4)}
+          focused={props.request !== undefined}
+          onKeyDown={props.onKeyDown}
+        >
+        <box
+          width={Math.min(terminal().width - 6, 72)}
           flexDirection="column"
           border
           borderColor={props.theme.warning}
-          backgroundColor={props.theme.bashMessageBackgroundColor}
+          backgroundColor={props.theme.inverseText}
           paddingLeft={2}
           paddingRight={2}
           paddingTop={1}
           paddingBottom={1}
-          flexShrink={0}
-          focused={props.request !== undefined}
-          onKeyDown={props.onKeyDown}
         >
           <Show when={props.request}>
             {(request: () => ActiveQuestionRequest) => {
@@ -242,6 +257,7 @@ export function QuestionOverlay(props: QuestionOverlayProps) {
               );
             }}
           </Show>
+        </box>
         </box>
       </Show>
     </Show>

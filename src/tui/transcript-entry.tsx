@@ -1,5 +1,8 @@
 /**
  * Transcript entry renderer for the TUI.
+ *
+ * Tool rows render as compact status pills (status dot · bold name · detail).
+ * Edit previews show a header line with `+N −M` line counts above the diff.
  */
 
 import {
@@ -14,6 +17,57 @@ import {
   type LayoutMode
 } from "./theme.ts";
 import type { UiEntry } from "./transcript-entry-state.ts";
+
+/**
+ * Split a tool entry body string into a badge verb and optional detail.
+ * Bodies are formatted as "Verb · detail" by formatToolCallEntry.
+ */
+function parseToolBadge(body: string): { badge: string; detail: string | undefined } {
+  const sep = " · ";
+  const idx = body.indexOf(sep);
+  if (idx === -1) {
+    return { badge: body, detail: undefined };
+  }
+  return { badge: body.slice(0, idx), detail: body.slice(idx + sep.length) };
+}
+
+/**
+ * Compute simple added/removed line counts between two text bodies.
+ *
+ * Uses a multiset diff: lines present more times in `newText` count as added,
+ * lines present more times in `oldText` count as removed. Cheap and good
+ * enough for a header summary above the actual rendered diff.
+ */
+export function countDiffLines(oldText: string, newText: string): { added: number; removed: number } {
+  const oldLines = oldText.split("\n");
+  const newLines = newText.split("\n");
+  const oldCounts = new Map<string, number>();
+  for (const line of oldLines) {
+    oldCounts.set(line, (oldCounts.get(line) ?? 0) + 1);
+  }
+  const newCounts = new Map<string, number>();
+  for (const line of newLines) {
+    newCounts.set(line, (newCounts.get(line) ?? 0) + 1);
+  }
+
+  let added = 0;
+  let removed = 0;
+  const seen = new Set<string>();
+  for (const line of [...oldCounts.keys(), ...newCounts.keys()]) {
+    if (seen.has(line)) {
+      continue;
+    }
+    seen.add(line);
+    const oldCount = oldCounts.get(line) ?? 0;
+    const newCount = newCounts.get(line) ?? 0;
+    if (newCount > oldCount) {
+      added += newCount - oldCount;
+    } else if (oldCount > newCount) {
+      removed += oldCount - newCount;
+    }
+  }
+  return { added, removed };
+}
 
 /**
  * Render one transcript entry.
@@ -90,28 +144,62 @@ export function renderEntry(
         </Show>
       );
 
-    case "tool":
+    case "tool": {
+      const { badge, detail } = parseToolBadge(entry.body);
       return (
-        <box flexDirection="row" paddingLeft={4} marginTop={0} marginBottom={0}>
-          <text fg={t().tool} attributes={TextAttributes.DIM}>{toolMarker()} </text>
-          <text fg={t().tool} attributes={TextAttributes.DIM}>{entry.body}</text>
+        <box flexDirection="row" paddingLeft={4} marginTop={0} marginBottom={0} alignItems="center">
+          <text fg={t().success}>● </text>
+          <box width={Math.max(6, badge.length + 2)} flexShrink={0}>
+            <text fg={t().tool} attributes={TextAttributes.BOLD}>{badge}</text>
+          </box>
+          <Show when={detail !== undefined}>
+            <box flexGrow={1} flexShrink={1} minWidth={0}>
+              <text fg={t().hintText} attributes={TextAttributes.DIM}>{detail}</text>
+            </box>
+          </Show>
         </box>
       );
+    }
 
     case "tool-preview": {
       const metadata = entry.metadata;
+      const { badge: previewBadge, detail: previewDetail } = parseToolBadge(entry.body);
+      const editMetadata = metadata?.kind === "edit-preview"
+        ? (metadata as EditToolResultMetadata)
+        : undefined;
+      const counts = editMetadata !== undefined
+        ? countDiffLines(editMetadata.oldText ?? "", editMetadata.newText ?? "")
+        : undefined;
+      const summary = counts !== undefined
+        ? `+${counts.added} −${counts.removed}`
+        : undefined;
+
       return (
         <box flexDirection="column" paddingLeft={4} marginTop={compact() ? 0 : 1} marginBottom={0}>
-          <box flexDirection="row">
-            <text fg={t().tool} attributes={TextAttributes.DIM}>{toolMarker()} </text>
-            <text fg={t().tool} attributes={TextAttributes.DIM}>{entry.body}</text>
+          <box flexDirection="row" alignItems="center">
+            <text fg={t().success}>● </text>
+            <box width={Math.max(6, previewBadge.length + 2)} flexShrink={0}>
+              <text fg={t().tool} attributes={TextAttributes.BOLD}>{previewBadge}</text>
+            </box>
+            <Show when={previewDetail !== undefined}>
+              <box flexGrow={1} flexShrink={1} minWidth={0}>
+                <text fg={t().hintText} attributes={TextAttributes.DIM}>{previewDetail}</text>
+              </box>
+            </Show>
+            <Show when={summary !== undefined}>
+              <box flexShrink={0} paddingLeft={2}>
+                <text fg={t().diffAdded} attributes={TextAttributes.BOLD}>{`+${counts?.added ?? 0}`}</text>
+                <text fg={t().hintText} attributes={TextAttributes.DIM}> </text>
+                <text fg={t().diffRemoved} attributes={TextAttributes.BOLD}>{`−${counts?.removed ?? 0}`}</text>
+              </box>
+            </Show>
           </box>
-          <Show when={metadata?.kind === "edit-preview"}>
+          <Show when={editMetadata !== undefined}>
             <box paddingLeft={2} paddingTop={1} paddingRight={1}>
               <diff
-                oldCode={(metadata as EditToolResultMetadata | undefined)?.oldText ?? ""}
-                newCode={(metadata as EditToolResultMetadata | undefined)?.newText ?? ""}
-                language={resolveDiffLanguage((metadata as EditToolResultMetadata | undefined)?.path ?? "")}
+                oldCode={editMetadata?.oldText ?? ""}
+                newCode={editMetadata?.newText ?? ""}
+                language={resolveDiffLanguage(editMetadata?.path ?? "")}
                 mode="unified"
                 showLineNumbers={true}
                 context={2}
@@ -128,16 +216,19 @@ export function renderEntry(
 
     case "tool-group":
       return (
-        <box flexDirection="row" paddingLeft={4} marginTop={0} marginBottom={0}>
-          <text fg={t().tool} attributes={TextAttributes.DIM}>{toolMarker()} </text>
+        <box flexDirection="row" paddingLeft={4} marginTop={0} marginBottom={0} alignItems="center">
+          <text fg={t().tool} attributes={TextAttributes.DIM}>● </text>
           <text fg={t().tool} attributes={TextAttributes.DIM}>{entry.body}</text>
         </box>
       );
 
     case "error":
       return (
-        <box flexDirection="column" marginTop={compact() ? 0 : 1} paddingLeft={3}>
-          <text fg={t().error}>⚠ {entry.body}</text>
+        <box flexDirection="row" marginTop={compact() ? 0 : 1} paddingLeft={3} alignItems="center">
+          <text fg={t().error} attributes={TextAttributes.BOLD}>✗ </text>
+          <box flexGrow={1} flexShrink={1} minWidth={0}>
+            <text fg={t().error}>{entry.body}</text>
+          </box>
         </box>
       );
 

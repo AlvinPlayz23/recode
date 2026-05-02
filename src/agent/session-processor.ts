@@ -3,7 +3,8 @@
  */
 
 import { streamAssistantResponse } from "../ai/stream-assistant-response.ts";
-import type { AiModel } from "../ai/types.ts";
+import { formatProviderError } from "../ai/provider-error.ts";
+import type { AiModel, ProviderStatusEvent } from "../ai/types.ts";
 import { DoomLoopDetectedError, ModelResponseError, OperationAbortedError } from "../errors/recode-error.ts";
 import type { ConversationMessage, ToolCall, ToolResultMessage } from "../transcript/message.ts";
 import { formatQuestionAnswerSummary, parseQuestionToolResult } from "../tools/ask-user-question-tool.ts";
@@ -44,6 +45,13 @@ export interface StepObserver {
 }
 
 /**
+ * Provider request status observer.
+ */
+export interface ProviderStatusObserver {
+  (event: ProviderStatusEvent): void;
+}
+
+/**
  * Dependencies for processing one model step.
  */
 export interface AgentSessionStepOptions {
@@ -54,6 +62,7 @@ export interface AgentSessionStepOptions {
   readonly requestAffinityKey?: string;
   readonly onToolCall?: ToolCallObserver;
   readonly onTextDelta?: TextDeltaObserver;
+  readonly onProviderStatus?: ProviderStatusObserver;
 }
 
 /**
@@ -117,7 +126,8 @@ export async function processAgentSessionStep(
     messages,
     tools: options.toolRegistry.list(),
     ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
-    ...(options.requestAffinityKey === undefined ? {} : { requestAffinityKey: options.requestAffinityKey })
+    ...(options.requestAffinityKey === undefined ? {} : { requestAffinityKey: options.requestAffinityKey }),
+    ...(options.onProviderStatus === undefined ? {} : { onProviderStatus: options.onProviderStatus })
   });
 
   let accumulatedText = "";
@@ -133,7 +143,9 @@ export async function processAgentSessionStep(
         options.onTextDelta?.(part.text);
         break;
       case "error":
-        throw new ModelResponseError(String(part.error));
+        throw new ModelResponseError(
+          typeof part.error === "string" ? part.error : formatProviderError(part.error, options.languageModel)
+        );
       case "abort":
         throw new OperationAbortedError("Request aborted");
       case "tool-call": {

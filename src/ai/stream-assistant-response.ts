@@ -20,7 +20,8 @@ export function streamAssistantResponse(options: StreamAssistantResponseOptions)
           options.messages,
           options.tools,
           options.abortSignal,
-          options.requestAffinityKey
+          options.requestAffinityKey,
+          options.onProviderStatus
         )
       };
     case "openai-chat-completions":
@@ -31,7 +32,8 @@ export function streamAssistantResponse(options: StreamAssistantResponseOptions)
           options.messages,
           options.tools,
           options.abortSignal,
-          options.requestAffinityKey
+          options.requestAffinityKey,
+          options.onProviderStatus
         )
       };
     case "anthropic-messages":
@@ -42,7 +44,8 @@ export function streamAssistantResponse(options: StreamAssistantResponseOptions)
           options.messages,
           options.tools,
           options.abortSignal,
-          options.requestAffinityKey
+          options.requestAffinityKey,
+          options.onProviderStatus
         )
       };
   }

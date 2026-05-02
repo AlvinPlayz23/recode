@@ -2,7 +2,8 @@
  * Theme-picker overlay for the TUI.
  */
 
-import { InputRenderable, type ScrollBoxRenderable, TextAttributes } from "@opentui/core";
+import { InputRenderable, RGBA, type ScrollBoxRenderable, TextAttributes } from "@opentui/core";
+import { useTerminalDimensions } from "@opentui/solid";
 import { For, Show } from "solid-js";
 import { normalizeBuiltinCommandSelectionIndex } from "./message-format.ts";
 import { getIndexedPickerChildId } from "./selector-navigation.ts";
@@ -29,23 +30,30 @@ export interface ThemePickerOverlayProps {
  * Render the theme-picker overlay.
  */
 export function ThemePickerOverlay(props: ThemePickerOverlayProps) {
+  const terminal = useTerminalDimensions();
   return (
     <Show when={props.open}>
       <box
         position="absolute"
-        left={3}
-        right={3}
-        bottom={1}
+        left={0}
+        top={0}
+        width={terminal().width}
+        height={terminal().height}
         zIndex={2000}
+        backgroundColor={RGBA.fromInts(0, 0, 0, 150)}
+        alignItems="center"
+        paddingTop={Math.floor(terminal().height / 4)}
+      >
+      <box
+        width={Math.min(terminal().width - 6, 72)}
         flexDirection="column"
         border
         borderColor={props.theme.brandShimmer}
-        backgroundColor={props.theme.bashMessageBackgroundColor}
+        backgroundColor={props.theme.inverseText}
         paddingLeft={1}
         paddingRight={1}
         paddingTop={1}
         paddingBottom={1}
-        flexShrink={0}
       >
         <text fg={props.theme.brandShimmer} attributes={TextAttributes.BOLD}>Theme Selector</text>
         <text fg={props.theme.hintText}>Type to filter. Use arrows to navigate. Press Enter to select. Press ESC to close.</text>
@@ -107,6 +115,7 @@ export function ThemePickerOverlay(props: ThemePickerOverlayProps) {
             </For>
           </scrollbox>
         </Show>
+      </box>
       </box>
     </Show>
   );

@@ -2,7 +2,7 @@
  * Prompt submission helpers for the TUI.
  */
 
-import type { AgentRunResult, TextDeltaObserver } from "../agent/run-agent-loop.ts";
+import type { AgentRunResult, ProviderStatusObserver, TextDeltaObserver } from "../agent/run-agent-loop.ts";
 import { runAgentLoop } from "../agent/run-agent-loop.ts";
 import type { AiModel } from "../ai/types.ts";
 import type { ConversationMessage, ToolCall } from "../transcript/message.ts";
@@ -32,6 +32,7 @@ export interface SingleTurnOptions {
   readonly onToolCall: (toolCall: ToolCall) => void;
   readonly onTextDelta: TextDeltaObserver;
   readonly onToolResult?: (toolResult: Extract<ConversationMessage, { role: "tool" }>) => void;
+  readonly onProviderStatus?: ProviderStatusObserver;
   readonly onTranscriptUpdate?: (transcript: readonly ConversationMessage[]) => void;
 }
 
@@ -56,6 +57,9 @@ export async function runSingleTurn(options: SingleTurnOptions): Promise<AgentRu
     },
     onToolResult(toolResult) {
       options.onToolResult?.(toolResult);
+    },
+    onProviderStatus(event) {
+      options.onProviderStatus?.(event);
     },
     onTranscriptUpdate(transcript) {
       options.onTranscriptUpdate?.(transcript);

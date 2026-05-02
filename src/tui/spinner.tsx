@@ -16,11 +16,10 @@ export interface SpinnerSegment {
   readonly color: string;
 }
 
-export type SpinnerPhase = "thinking" | "tool" | "saving-history";
+export type SpinnerPhase = "thinking" | "retrying" | "tool" | "saving-history";
 
 export type SpinnerStyleName =
   | "sakura-lantern"
-  | "paper-beads"
   | "matcha-ripple"
   | "midnight-blade"
   | "amber-scan"
@@ -47,15 +46,6 @@ const SPINNER_THEME_DEFINITIONS: Readonly<Record<ThemeName, SpinnerThemeDefiniti
     holdEnd: 2,
     headGlyph: "●",
     trailGlyphs: ["◎", "◌", "·"],
-    inactiveGlyph: "·"
-  }),
-  "paper-lantern": createScannerDefinition({
-    style: "paper-beads",
-    width: 7,
-    holdStart: 3,
-    holdEnd: 3,
-    headGlyph: "◉",
-    trailGlyphs: ["○", "◌", "·"],
     inactiveGlyph: "·"
   }),
   "matcha-night": createScannerDefinition({
@@ -303,6 +293,8 @@ export function Spinner(props: SpinnerProps): JSX.Element {
  */
 export function getSpinnerPhaseGlyph(phase: SpinnerPhase, theme: ThemeColors): SpinnerSegment {
   switch (phase) {
+    case "retrying":
+      return { text: "↻", color: theme.warning };
     case "tool":
       return { text: "▣", color: theme.warning };
     case "saving-history":

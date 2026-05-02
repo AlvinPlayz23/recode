@@ -14,6 +14,7 @@ import {
   DoomLoopGuard,
   executeAgentSessionToolCalls,
   processAgentSessionStep,
+  type ProviderStatusObserver,
   type StepObserver,
   type TextDeltaObserver,
   type ToolCallObserver,
@@ -24,7 +25,8 @@ export type {
   StepObserver,
   TextDeltaObserver,
   ToolCallObserver,
-  ToolResultObserver
+  ToolResultObserver,
+  ProviderStatusObserver
 } from "./session-processor.ts";
 
 /**
@@ -49,6 +51,7 @@ export interface AgentRunOptions {
   readonly onToolCall?: ToolCallObserver;
   readonly onTextDelta?: TextDeltaObserver;
   readonly onToolResult?: ToolResultObserver;
+  readonly onProviderStatus?: ProviderStatusObserver;
   readonly onStepComplete?: StepObserver;
   readonly onTranscriptUpdate?: TranscriptObserver;
 }
@@ -92,7 +95,8 @@ export async function runAgentLoop(options: AgentRunOptions): Promise<AgentRunRe
       ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
       ...(options.requestAffinityKey === undefined ? {} : { requestAffinityKey: options.requestAffinityKey }),
       ...(options.onToolCall === undefined ? {} : { onToolCall: options.onToolCall }),
-      ...(options.onTextDelta === undefined ? {} : { onTextDelta: options.onTextDelta })
+      ...(options.onTextDelta === undefined ? {} : { onTextDelta: options.onTextDelta }),
+      ...(options.onProviderStatus === undefined ? {} : { onProviderStatus: options.onProviderStatus })
     }, messages);
 
     messages.push(step.assistantMessage);

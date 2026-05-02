@@ -42,6 +42,16 @@ export interface StreamCompletionInfo {
 }
 
 /**
+ * Provider request status emitted while a model request is in flight.
+ */
+export interface ProviderStatusEvent {
+  readonly type: "request-start" | "retry";
+  readonly operation: AiApiKind;
+  readonly attempt: number;
+  readonly maxAttempts: number;
+}
+
+/**
  * Normalized stream events emitted by provider adapters.
  */
 export type AiStreamPart =
@@ -75,4 +85,5 @@ export interface StreamAssistantResponseOptions {
   readonly tools: readonly ToolDefinition[];
   readonly abortSignal?: AbortSignal;
   readonly requestAffinityKey?: string;
+  readonly onProviderStatus?: (event: ProviderStatusEvent) => void;
 }

@@ -3,7 +3,8 @@
  */
 
 import { For, Show } from "solid-js";
-import { type ScrollBoxRenderable, TextAttributes } from "@opentui/core";
+import { RGBA, type ScrollBoxRenderable, TextAttributes } from "@opentui/core";
+import { useTerminalDimensions } from "@opentui/solid";
 import { normalizeBuiltinCommandSelectionIndex } from "./message-format.ts";
 import { getIndexedPickerChildId } from "./selector-navigation.ts";
 import type { ThemeColors } from "./theme.ts";
@@ -26,23 +27,30 @@ export interface ApprovalModeOverlayProps {
  * Render the approval-mode overlay.
  */
 export function ApprovalModeOverlay(props: ApprovalModeOverlayProps) {
+  const terminal = useTerminalDimensions();
   return (
     <Show when={props.open}>
       <box
         position="absolute"
-        left={3}
-        right={3}
-        bottom={1}
+        left={0}
+        top={0}
+        width={terminal().width}
+        height={terminal().height}
         zIndex={2000}
+        backgroundColor={RGBA.fromInts(0, 0, 0, 150)}
+        alignItems="center"
+        paddingTop={Math.floor(terminal().height / 4)}
+      >
+      <box
+        width={Math.min(terminal().width - 6, 72)}
         flexDirection="column"
         border
         borderColor={props.theme.brandShimmer}
-        backgroundColor={props.theme.bashMessageBackgroundColor}
+        backgroundColor={props.theme.inverseText}
         paddingLeft={1}
         paddingRight={1}
         paddingTop={1}
         paddingBottom={1}
-        flexShrink={0}
       >
         <text fg={props.theme.brandShimmer} attributes={TextAttributes.BOLD}>Approval Mode</text>
         <text fg={props.theme.hintText}>Use arrows to navigate. Press Enter to select. Press ESC to close.</text>
@@ -80,6 +88,7 @@ export function ApprovalModeOverlay(props: ApprovalModeOverlayProps) {
             }}
           </For>
         </scrollbox>
+      </box>
       </box>
     </Show>
   );

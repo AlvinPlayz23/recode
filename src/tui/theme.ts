@@ -67,7 +67,7 @@ export interface ThemeColors {
 }
 
 /** Named theme identifiers. */
-export type ThemeName = "senren-dusk" | "paper-lantern" | "matcha-night" | "midnight-ink" | "amber-terminal" | "frost-glass" | "sakura-bloom" | "solarized-light" | "monochrome";
+export type ThemeName = "senren-dusk" | "matcha-night" | "midnight-ink" | "amber-terminal" | "frost-glass" | "sakura-bloom" | "solarized-light" | "monochrome";
 
 /** Named tool marker identifiers. */
 export type ToolMarkerName = "arrow" | "hook" | "fancy" | "triangle" | "minimal" | "stylized";
@@ -129,37 +129,6 @@ export const SENREN_DUSK_THEME: ThemeColors = {
   tool: "#e8c4a4",
   diffAdded: "#356b3d",
   diffRemoved: "#8f3d4d",
-};
-
-/** Warm light-paper theme. */
-export const PAPER_LANTERN_THEME: ThemeColors = {
-  text: "#6b4d46",
-  inverseText: "#fffaf2",
-  brand: "#6b4d46",
-  brandShimmer: "#6b4d46",
-  inactive: "#6b4d46",
-  subtle: "#6b4d46",
-  success: "#4f7a4d",
-  error: "#a94756",
-  warning: "#bb7b1f",
-  suggestion: "#6b4d46",
-  userMessageBackground: "#f5e7dc",
-  userMessageBackgroundHover: "#edd9cd",
-  messageActionsBackground: "#ead1c4",
-  promptBorder: "#b17d7055",
-  bashBorder: "#c96f6f",
-  bashMessageBackgroundColor: "#f7ede4",
-  selectionBg: "#e3b8aa",
-  statusText: "#6b4d46",
-  hintText: "#6b4d46",
-  divider: "#ba8e82",
-  active: "#6b4d46",
-  user: "#8c695f",
-  assistantLabel: "#6b4d46",
-  assistantBody: "#fffaf2",
-  tool: "#6b4d46",
-  diffAdded: "#d7ead2",
-  diffRemoved: "#f2d2d7",
 };
 
 /** Cool green night theme. */
@@ -386,13 +355,6 @@ const THEMES: readonly ThemeDefinition[] = [
     description: "Warm sakura pinks and soft lantern contrast.",
     colors: SENREN_DUSK_THEME,
     promptMarker: "◈"
-  },
-  {
-    name: "paper-lantern",
-    label: "Paper Lantern",
-    description: "Bright parchment background with warm ink contrast.",
-    colors: PAPER_LANTERN_THEME,
-    promptMarker: "❯"
   },
   {
     name: "matcha-night",

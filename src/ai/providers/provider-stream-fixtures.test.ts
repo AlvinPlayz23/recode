@@ -3,7 +3,7 @@
  */
 
 import { afterEach, describe, expect, it } from "bun:test";
-import type { AiModel, AiStreamPart } from "../types.ts";
+import type { AiModel, AiStreamPart, ProviderStatusEvent } from "../types.ts";
 import { streamAnthropicMessages } from "./anthropic.ts";
 import { streamOpenAiChat } from "./openai-chat.ts";
 import { streamOpenAiResponses } from "./openai-responses.ts";
@@ -143,6 +143,102 @@ describe("provider stream fixtures", () => {
         info: { finishReason: "tool_calls" }
       },
       { type: "finish" }
+    ]);
+  });
+
+  it("emits provider retry status when the OpenAI SDK retries a request", async () => {
+    let requestCount = 0;
+    const events: ProviderStatusEvent[] = [];
+    globalThis.fetch = (async () => {
+      requestCount += 1;
+      if (requestCount === 1) {
+        return new Response(JSON.stringify({ error: { message: "rate limited" } }), {
+          status: 429,
+          headers: {
+            "content-type": "application/json",
+            "retry-after-ms": "1"
+          }
+        });
+      }
+
+      return new Response(sse({
+        choices: [
+          {
+            delta: { content: "ok" },
+            finish_reason: "stop"
+          }
+        ]
+      }), {
+        status: 200,
+        headers: { "content-type": "text/event-stream" }
+      });
+    }) as unknown as typeof fetch;
+
+    const parts = await collectParts(streamOpenAiChat(
+      {
+        ...openAiChatModel(),
+        providerOptions: {
+          maxRetries: 1
+        }
+      },
+      "",
+      [],
+      [],
+      undefined,
+      undefined,
+      (event) => {
+        events.push(event);
+      }
+    ));
+
+    expect(requestCount).toBe(2);
+    expect(events).toEqual([
+      {
+        type: "request-start",
+        operation: "openai-chat-completions",
+        attempt: 1,
+        maxAttempts: 2
+      },
+      {
+        type: "retry",
+        operation: "openai-chat-completions",
+        attempt: 2,
+        maxAttempts: 2
+      }
+    ]);
+    expect(parts).toContainEqual({ type: "text-delta", text: "ok" });
+  });
+
+  it("formats OpenAI SDK authentication errors for users", async () => {
+    globalThis.fetch = (async () => new Response(JSON.stringify({
+      error: {
+        message: "Incorrect API key provided.",
+        type: "invalid_request_error"
+      }
+    }), {
+      status: 401,
+      headers: {
+        "content-type": "application/json"
+      }
+    })) as unknown as typeof fetch;
+
+    const parts = await collectParts(streamOpenAiChat(
+      {
+        ...openAiChatModel(),
+        providerOptions: {
+          maxRetries: 0
+        }
+      },
+      "",
+      [],
+      []
+    ));
+
+    expect(parts).toEqual([
+      {
+        type: "error",
+        error: "OpenAI Chat request failed for gpt-4.1: authentication failed (HTTP 401). Check the API key configured for this provider. Details: Incorrect API key provided. · invalid_request_error"
+      }
     ]);
   });
 

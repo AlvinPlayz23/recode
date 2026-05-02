@@ -10,11 +10,12 @@ import {
   buildProviderBodyOptions,
   mergeRequestBodyOptions
 } from "../provider-request-options.ts";
+import { formatProviderError } from "../provider-error.ts";
 import { createProviderTimingSpan } from "../provider-timing.ts";
 import { getAnthropicCompat } from "../provider-compat.ts";
 import { buildSdkRequestOptions, createAnthropicSdkClient } from "../sdk-request.ts";
 import { iterateSseMessages } from "../sse.ts";
-import type { AiModel, AiStreamPart } from "../types.ts";
+import type { AiModel, AiStreamPart, ProviderStatusEvent } from "../types.ts";
 import { createEmptyStepTokenUsage, type StepTokenUsage } from "../../agent/step-stats.ts";
 import {
   readNumber,
@@ -45,7 +46,8 @@ export async function* streamAnthropicMessages(
   messages: readonly ConversationMessage[],
   tools: readonly ToolDefinition[],
   abortSignal?: AbortSignal,
-  requestAffinityKey?: string
+  requestAffinityKey?: string,
+  onProviderStatus?: (event: ProviderStatusEvent) => void
 ): AsyncGenerator<AiStreamPart> {
   try {
     const compat = getAnthropicCompat(model);
@@ -58,7 +60,13 @@ export async function* streamAnthropicMessages(
       ...(requestAffinityKey === undefined ? {} : { requestAffinityKey })
     });
     timing.mark("request-start", { attempt: 1 });
-    const client = createAnthropicSdkClient(model, requestAffinityKey, betaFeatures);
+    const client = createAnthropicSdkClient(
+      model,
+      requestAffinityKey,
+      "anthropic-messages",
+      onProviderStatus,
+      betaFeatures
+    );
     const requestBody = buildAnthropicRequestBody(model, systemPrompt, messages, tools, requestAffinityKey);
     const response = await client.messages
       .create(requestBody as unknown as Anthropic.Messages.MessageCreateParamsStreaming, buildSdkRequestOptions(model, abortSignal))
@@ -214,7 +222,7 @@ export async function* streamAnthropicMessages(
       return;
     }
 
-    yield { type: "error", error };
+    yield { type: "error", error: formatProviderError(error, model) };
   }
 }
 

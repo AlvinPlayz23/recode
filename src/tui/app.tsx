@@ -325,6 +325,7 @@ export function TuiApp(props: TuiAppProps) {
   const [layoutPickerScrollBox, setLayoutPickerScrollBox] = createSignal<ScrollBoxRenderable | undefined>(undefined);
   const [footerTipIndex, setFooterTipIndex] = createSignal(0);
   const [busyPhase, setBusyPhase] = createSignal<SpinnerPhase>("thinking");
+  const [providerStatusText, setProviderStatusText] = createSignal<string | undefined>(undefined);
   const [fileSuggestionVersion, setFileSuggestionVersion] = createSignal(0);
   const [splashDetailsVisible, setSplashDetailsVisible] = createSignal(true);
   const [headerVisible, setHeaderVisible] = createSignal(true);
@@ -444,19 +445,6 @@ export function TuiApp(props: TuiAppProps) {
     draft()
   ) >= availableConversationHeight());
   const footerTipText = createMemo(() => getFooterTip(footerTipIndex()).text);
-  const composerTitle = createMemo(() =>
-    isCommandDraft(draft())
-      ? "Run a built-in command"
-      : `${sessionRuntimeConfig().model} (${sessionRuntimeConfig().providerName})`
-  );
-  const composerHelpText = createMemo(() =>
-    isCommandDraft(draft())
-      ? "↵ run      Ctrl+↵ newline         @ autocomplete"
-      : "↵ send      Ctrl+↵ newline         @ autocomplete"
-  );
-  const composerRailWidth = createMemo(() => Math.max(24, terminal().width - 8));
-  const composerTopRail = createMemo(() => buildComposerRail(composerRailWidth(), composerTitle(), "end"));
-  const composerBottomRail = createMemo(() => buildComposerRail(composerRailWidth(), composerHelpText(), "start"));
   const promptPlaceholder = createMemo(() => {
     if (busy()) {
       return "Waiting...";
@@ -1621,6 +1609,7 @@ export function TuiApp(props: TuiAppProps) {
     clearDraft(inputRef, setDraft);
     setPendingPastes([]);
     setBusyPhase("thinking");
+    setProviderStatusText(undefined);
     setBusy(true);
 
     const abortController = new AbortController();
@@ -1648,8 +1637,33 @@ export function TuiApp(props: TuiAppProps) {
         toolContext: sessionToolContext(),
         abortSignal: abortController.signal,
         ...(requestAffinityKey === undefined ? {} : { requestAffinityKey }),
+        onProviderStatus(event) {
+          if (event.type === "request-start") {
+            setProviderStatusText(undefined);
+            return;
+          }
+
+          const retryText = `retry ${event.attempt}/${event.maxAttempts}`;
+          setBusyPhase("retrying");
+          setProviderStatusText(retryText);
+          const retryEntry = createEntry("status", "status", `Retrying provider request (${event.attempt}/${event.maxAttempts})`);
+          setEntries((previous) => {
+            const streamingIndex = currentStreamingId === undefined
+              ? -1
+              : previous.findIndex((entry) => entry.id === currentStreamingId);
+            if (streamingIndex === -1) {
+              return [...previous, retryEntry];
+            }
+            return [
+              ...previous.slice(0, streamingIndex),
+              retryEntry,
+              ...previous.slice(streamingIndex)
+            ];
+          });
+        },
         onToolCall(toolCall) {
           setBusyPhase("tool");
+          setProviderStatusText(undefined);
           flushAndResetPendingStreamText();
           const nextEntry = appendToolCallEntryAndCreateAssistantPlaceholder({
             currentStreamingId: currentStreamingId,
@@ -1662,12 +1676,17 @@ export function TuiApp(props: TuiAppProps) {
           setStreamingEntryId(currentStreamingId);
         },
         onTextDelta(delta) {
+          if (busyPhase() === "retrying") {
+            setBusyPhase("thinking");
+          }
+          setProviderStatusText(undefined);
           if (currentStreamingId !== undefined) {
             schedulePendingStreamTextFlush(currentStreamingId, delta);
           }
         },
         onToolResult(toolResult) {
           setBusyPhase("thinking");
+          setProviderStatusText(undefined);
           invalidateWorkspaceFileSuggestionCache(sessionRuntimeConfig().workspaceRoot);
           setFileSuggestionVersion((value) => value + 1);
           const toolResultEntry = createToolResultUiEntry(
@@ -1740,6 +1759,7 @@ export function TuiApp(props: TuiAppProps) {
       }
       setStreamingEntryId(undefined);
       setBusyPhase("thinking");
+      setProviderStatusText(undefined);
       setBusy(false);
       inputRef?.focus();
     }
@@ -1753,11 +1773,20 @@ export function TuiApp(props: TuiAppProps) {
             flexDirection="column"
             border
             borderColor={t().promptBorder}
+            backgroundColor={t().inverseText}
             marginBottom={1}
             paddingLeft={1}
             paddingRight={1}
+            paddingTop={0}
+            paddingBottom={0}
             flexShrink={0}
           >
+            <box flexDirection="row" justifyContent="space-between" alignItems="center">
+              <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>commands</text>
+              <text fg={t().hintText} attributes={TextAttributes.DIM}>
+                {`${commandPanel()!.commands.length} match${commandPanel()!.commands.length === 1 ? "" : "es"}`}
+              </text>
+            </box>
             <Show
               when={commandPanel()!.commands.length > 0}
               fallback={<text fg={t().hintText}>No command found. Use /help to see available commands.</text>}
@@ -1783,6 +1812,10 @@ export function TuiApp(props: TuiAppProps) {
                 <text fg={t().hintText} attributes={TextAttributes.DIM}>… more commands available</text>
               </Show>
             </Show>
+            <box flexDirection="row" justifyContent="space-between" marginTop={1}>
+              <text fg={t().hintText} attributes={TextAttributes.DIM}>↑↓ navigate · ↵ run · tab complete</text>
+              <text fg={t().hintText} attributes={TextAttributes.DIM}>esc cancel</text>
+            </box>
           </box>
         </>
       </Show>
@@ -1825,99 +1858,123 @@ export function TuiApp(props: TuiAppProps) {
           </Show>
         </box>
       </Show>
-      <box flexDirection="column" flexShrink={0}>
-        <box flexDirection="row" justifyContent="flex-end" alignItems="center" flexShrink={0}>
-          <text
-            fg={sessionMode() === "plan" ? t().brandShimmer : t().success}
-            attributes={TextAttributes.BOLD}
-          >
-            {getSessionModeLabel(sessionMode())}
-          </text>
-        </box>
-        <box flexDirection="row" flexShrink={0}>
-          <text fg={t().promptBorder}>{composerTopRail().left}</text>
-          <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>{composerTopRail().label}</text>
-          <text fg={t().promptBorder}>{composerTopRail().right}</text>
-        </box>
+      <Show when={busy() || modelPickerBusy() || historyPickerBusy()}>
         <box
           flexDirection="row"
-          alignItems="flex-start"
+          justifyContent="space-between"
+          alignItems="center"
+          paddingTop={0}
+          paddingBottom={0}
           paddingLeft={1}
           paddingRight={1}
           flexShrink={0}
         >
-          <Show
-            when={busy()}
-            fallback={
-              <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>
-                {isCommandDraft(draft()) ? "/ " : `${themeDefinition().promptMarker} `}
-              </text>
-            }
-          >
-            <text fg={t().statusText}>◇ </text>
-          </Show>
-          <textarea
-            ref={(value: TextareaRenderable) => {
-              inputRef = value;
-              const visibleDraft = toVisibleDraft(draft());
-              if (value.plainText !== visibleDraft) {
-                setRenderableText(value, visibleDraft);
-              } else {
-                value.cursorOffset = visibleDraft.length;
-              }
-              applyInputCursorStyle(value, t().brandShimmer);
-              if (!modalOpen()) {
-                value.focus();
-              }
-            }}
-            initialValue={toVisibleDraft(draft())}
-            focused={!modalOpen()}
-            flexGrow={1}
-            minHeight={1}
-            maxHeight={4}
-            wrapMode="word"
-            placeholder={promptPlaceholder()}
-            keyBindings={PROMPT_TEXTAREA_KEY_BINDINGS}
-            onPaste={(event) => {
-              void handlePromptPaste(event, decodePasteBytes(event.bytes));
-            }}
-            onContentChange={() => {
-              if (syncingVisibleDraft) {
-                return;
-              }
-              const nextDraft = normalizeDraftInput(draft(), inputRef?.plainText ?? "");
-              syncDraftValue(nextDraft);
-              setCommandSelectionIndex(0);
-              setFileSuggestionSelectionIndex(0);
-            }}
-            onKeyDown={(key) => {
-              if (key.name === "escape" && busy()) {
-                key.preventDefault();
-                key.stopPropagation();
-                abortActiveRun();
-              }
-            }}
-            onSubmit={() => {
-              void submitPrompt(draft());
-            }}
-          />
-        </box>
-        <box flexDirection="row" flexShrink={0}>
-          <text fg={t().promptBorder}>{composerBottomRail().left}</text>
-          <text fg={t().hintText} attributes={TextAttributes.DIM}>{composerBottomRail().label}</text>
-          <text fg={t().promptBorder}>{composerBottomRail().right}</text>
-        </box>
-      </box>
-      <Show when={busy() || modelPickerBusy() || historyPickerBusy()}>
-        <box flexDirection="row" justifyContent="flex-end" alignItems="center" gap={1} paddingTop={0} flexShrink={0}>
-          <box flexDirection="row">
-            <For each={buildBusyIndicator(themeName(), statusTick(), t(), busyPhase())}>
-              {(segment) => <text fg={segment.color}>{segment.text}</text>}
-            </For>
+          <box flexDirection="row" alignItems="center" gap={1}>
+            <box flexDirection="row">
+              <For each={buildBusyIndicator(themeName(), statusTick(), t(), busyPhase())}>
+                {(segment) => <text fg={segment.color}>{segment.text}</text>}
+              </For>
+            </box>
+            <text fg={t().hintText}>{providerStatusText() ?? getSpinnerPhaseLabel(busyPhase())}</text>
           </box>
-          <text fg={t().hintText}>{modalOpen() ? "Press ESC to close" : "Press ESC to abort"}</text>
+          <text fg={t().hintText} attributes={TextAttributes.DIM}>
+            {modalOpen() ? "esc close" : "⌃C cancel · esc abort"}
+          </text>
         </box>
       </Show>
+      <box
+        flexDirection="row"
+        alignItems="flex-start"
+        border
+        borderColor={isCommandDraft(draft()) ? t().brandShimmer : t().promptBorder}
+        paddingLeft={1}
+        paddingRight={1}
+        paddingTop={0}
+        paddingBottom={0}
+        flexShrink={0}
+      >
+        <Show
+          when={busy()}
+          fallback={
+            <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>
+              {isCommandDraft(draft()) ? "/ " : `${themeDefinition().promptMarker} `}
+            </text>
+          }
+        >
+          <text fg={t().statusText}>◇ </text>
+        </Show>
+        <textarea
+          ref={(value: TextareaRenderable) => {
+            inputRef = value;
+            const visibleDraft = toVisibleDraft(draft());
+            if (value.plainText !== visibleDraft) {
+              setRenderableText(value, visibleDraft);
+            } else {
+              value.cursorOffset = visibleDraft.length;
+            }
+            applyInputCursorStyle(value, t().brandShimmer);
+            if (!modalOpen()) {
+              value.focus();
+            }
+          }}
+          initialValue={toVisibleDraft(draft())}
+          focused={!modalOpen()}
+          flexGrow={1}
+          minHeight={1}
+          maxHeight={4}
+          wrapMode="word"
+          placeholder={promptPlaceholder()}
+          keyBindings={PROMPT_TEXTAREA_KEY_BINDINGS}
+          onPaste={(event) => {
+            void handlePromptPaste(event, decodePasteBytes(event.bytes));
+          }}
+          onContentChange={() => {
+            if (syncingVisibleDraft) {
+              return;
+            }
+            const nextDraft = normalizeDraftInput(draft(), inputRef?.plainText ?? "");
+            syncDraftValue(nextDraft);
+            setCommandSelectionIndex(0);
+            setFileSuggestionSelectionIndex(0);
+          }}
+          onKeyDown={(key) => {
+            if (key.name === "escape" && busy()) {
+              key.preventDefault();
+              key.stopPropagation();
+              abortActiveRun();
+            }
+          }}
+          onSubmit={() => {
+            void submitPrompt(draft());
+          }}
+        />
+      </box>
+      <box
+        flexDirection="row"
+        justifyContent="space-between"
+        alignItems="center"
+        paddingLeft={1}
+        paddingRight={1}
+        paddingTop={0}
+        paddingBottom={0}
+        flexShrink={0}
+      >
+        <box flexDirection="row" alignItems="center" gap={1}>
+          <text
+            fg={sessionMode() === "plan" ? t().brandShimmer : t().success}
+            attributes={TextAttributes.BOLD}
+          >
+            {getSessionModeLabel(sessionMode()).toLowerCase()}
+          </text>
+          <text fg={t().divider} attributes={TextAttributes.DIM}>·</text>
+          <text fg={t().tool}>{sessionRuntimeConfig().model}</text>
+          <text fg={t().divider} attributes={TextAttributes.DIM}>·</text>
+          <text fg={t().hintText} attributes={TextAttributes.DIM}>{approvalMode()}</text>
+        </box>
+        <text fg={t().hintText} attributes={TextAttributes.DIM}>
+          {isCommandDraft(draft()) ? "↵ run  ⇧↵ newline  @ file" : "↵ send  ⇧↵ newline  @ file"}
+        </text>
+      </box>
       <Show when={exitHintVisible()}>
         <box justifyContent="center" paddingTop={0}>
           <text fg={t().error} attributes={TextAttributes.BOLD}>Try Ctrl+C again to exit</text>
@@ -2835,6 +2892,8 @@ function buildBusyIndicator(
 
 function getSpinnerPhaseLabel(phase: SpinnerPhase): string {
   switch (phase) {
+    case "retrying":
+      return "retrying provider";
     case "tool":
       return "running tool";
     case "saving-history":
@@ -2843,51 +2902,6 @@ function getSpinnerPhaseLabel(phase: SpinnerPhase): string {
     default:
       return "thinking";
   }
-}
-
-interface ComposerRail {
-  readonly left: string;
-  readonly label: string;
-  readonly right: string;
-}
-
-function buildComposerRail(
-  width: number,
-  label: string,
-  align: "start" | "end"
-): ComposerRail {
-  const shortFill = "───";
-  const availableLabelWidth = Math.max(0, width - shortFill.length - 2);
-  const normalizedLabel = truncateInlineText(label, availableLabelWidth);
-  const longFillCount = Math.max(1, width - shortFill.length - normalizedLabel.length);
-  const longFill = "─".repeat(longFillCount);
-
-  if (align === "end") {
-    return {
-      left: longFill,
-      label: normalizedLabel,
-      right: shortFill
-    };
-  }
-
-  return {
-    left: shortFill,
-    label: normalizedLabel,
-    right: longFill
-  };
-}
-
-function truncateInlineText(value: string, maxLength: number): string {
-  const normalized = value.trim().replace(/\s+/g, " ");
-  if (normalized.length <= maxLength) {
-    return normalized;
-  }
-
-  if (maxLength <= 1) {
-    return "…";
-  }
-
-  return `${normalized.slice(0, maxLength - 1)}…`;
 }
 
 // ── Layout Picker ──

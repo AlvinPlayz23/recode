@@ -2,7 +2,8 @@
  * Model-picker overlay for the TUI.
  */
 
-import { InputRenderable, type ScrollBoxRenderable, TextAttributes } from "@opentui/core";
+import { InputRenderable, RGBA, type ScrollBoxRenderable, TextAttributes } from "@opentui/core";
+import { useTerminalDimensions } from "@opentui/solid";
 import { For, Show } from "solid-js";
 import {
   getIndexedPickerChildId,
@@ -32,30 +33,41 @@ export interface ModelPickerOverlayProps {
  * Render the model-picker overlay.
  */
 export function ModelPickerOverlay(props: ModelPickerOverlayProps) {
+  const terminal = useTerminalDimensions();
   return (
     <Show when={props.open}>
       <box
         position="absolute"
-        left={3}
-        right={3}
-        bottom={1}
+        left={0}
+        top={0}
+        width={terminal().width}
+        height={terminal().height}
         zIndex={2000}
+        backgroundColor={RGBA.fromInts(0, 0, 0, 150)}
+        alignItems="center"
+        paddingTop={Math.floor(terminal().height / 4)}
+      >
+      <box
+        width={Math.min(terminal().width - 6, 88)}
         flexDirection="column"
         border
         borderColor={props.theme.brandShimmer}
-        backgroundColor={props.theme.bashMessageBackgroundColor}
+        backgroundColor={props.theme.inverseText}
         paddingLeft={1}
         paddingRight={1}
         paddingTop={1}
         paddingBottom={1}
-        flexShrink={0}
       >
-        <text fg={props.theme.brandShimmer} attributes={TextAttributes.BOLD}>Model Selector</text>
-        <text fg={props.theme.hintText}>Type to filter. Use arrows to navigate. Press Enter to select. Press ESC to close.</text>
+        {/* Header row */}
+        <box flexDirection="row" justifyContent="space-between" alignItems="center" marginBottom={1}>
+          <text fg={props.theme.brandShimmer} attributes={TextAttributes.BOLD}>Model Selector</text>
+          <text fg={props.theme.hintText} attributes={TextAttributes.DIM}>↑↓ navigate  ·  Enter select  ·  ESC close</text>
+        </box>
+
+        {/* Search input */}
         <box
           flexDirection="row"
           alignItems="center"
-          marginTop={1}
           marginBottom={1}
           border
           borderColor={props.theme.promptBorder}
@@ -68,17 +80,22 @@ export function ModelPickerOverlay(props: ModelPickerOverlayProps) {
             focused={props.open}
             value={props.query}
             flexGrow={1}
-            placeholder={props.busy ? "Loading models..." : "Filter models or type a custom ID for the active provider..."}
+            placeholder={props.busy ? "Loading models..." : "Filter by name or paste a custom model ID..."}
             onInput={props.onQueryInput}
           />
         </box>
+
         <Show
           when={!props.busy}
           fallback={<box marginTop={1}><Spinner verb="loading models" theme={props.theme} themeName={props.themeName} /></box>}
         >
           <Show
             when={props.optionsCount > 0}
-            fallback={<text fg={props.theme.hintText}>No models match the current filter. Type a custom ID for the active provider to add one.</text>}
+            fallback={
+              <text fg={props.theme.hintText}>
+                No models match the filter. Type a custom ID to use it directly with the active provider.
+              </text>
+            }
           >
             <scrollbox
               ref={props.bindScrollBoxRef}
@@ -86,24 +103,40 @@ export function ModelPickerOverlay(props: ModelPickerOverlayProps) {
               scrollY
             >
               <For each={props.renderedLines}>
-                {(line, index) => (
-                  <box id={getIndexedPickerChildId("model-picker-line", index(), props.renderedLines.length)}>
-                    <text
-                      fg={line.selected ? props.theme.brandShimmer : line.kind === "group" ? props.theme.text : props.theme.assistantBody}
-                      attributes={line.kind === "group"
-                        ? TextAttributes.BOLD
-                        : line.selected
-                          ? TextAttributes.BOLD
-                          : TextAttributes.NONE}
+                {(line, index) => {
+                  const isGroup = line.kind === "group";
+
+                  return (
+                    <box
+                      id={getIndexedPickerChildId("model-picker-line", index(), props.renderedLines.length)}
+                      flexDirection="row"
+                      alignItems="center"
+                      marginTop={isGroup ? 1 : 0}
                     >
-                      {line.text}
-                    </text>
-                  </box>
-                )}
+                      {isGroup
+                        ? (
+                          <>
+                            <text fg={props.theme.divider}>── </text>
+                            <text fg={props.theme.brand} attributes={TextAttributes.BOLD}>{line.text}</text>
+                            <text fg={props.theme.divider}> ──</text>
+                          </>
+                        )
+                        : (
+                          <text
+                            fg={line.selected ? props.theme.brandShimmer : props.theme.assistantBody}
+                            attributes={line.selected ? TextAttributes.BOLD : TextAttributes.NONE}
+                          >
+                            {line.text}
+                          </text>
+                        )}
+                    </box>
+                  );
+                }}
               </For>
             </scrollbox>
           </Show>
         </Show>
+      </box>
       </box>
     </Show>
   );

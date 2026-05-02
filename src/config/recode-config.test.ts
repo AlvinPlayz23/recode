@@ -173,8 +173,8 @@ describe("recode config", () => {
   });
 
   it("updates the configured theme", () => {
-    const config = selectConfiguredTheme(createEmptyConfig(), "paper-lantern");
-    expect(config.themeName).toBe("paper-lantern");
+    const config = selectConfiguredTheme(createEmptyConfig(), "frost-glass");
+    expect(config.themeName).toBe("frost-glass");
   });
 
   it("updates the configured tool marker", () => {
@@ -195,7 +195,7 @@ describe("recode config", () => {
       selectConfiguredMinimalMode(
         selectConfiguredLayoutMode(
           selectConfiguredApprovalMode(
-            selectConfiguredTheme(createEmptyConfig(), "paper-lantern"),
+            selectConfiguredTheme(createEmptyConfig(), "frost-glass"),
             "auto-edits"
           ),
           "comfortable"
@@ -221,7 +221,7 @@ describe("recode config", () => {
       "gpt-4.1-mini"
     );
 
-    expect(nextConfig.themeName).toBe("paper-lantern");
+    expect(nextConfig.themeName).toBe("frost-glass");
     expect(nextConfig.approvalMode).toBe("auto-edits");
     expect(nextConfig.layoutMode).toBe("comfortable");
     expect(nextConfig.minimalMode).toBe(true);
