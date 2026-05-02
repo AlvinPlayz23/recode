@@ -6,6 +6,7 @@
 
 import type { ConfiguredModel, ConfiguredProvider } from "../config/recode-config.ts";
 import { readErrorMessage } from "../ai/http.ts";
+import { providerSupportsModelListing } from "../providers/provider-kind.ts";
 import { isRecord } from "../shared/is-record.ts";
 
 /**
@@ -41,7 +42,7 @@ export async function listModelsForProvider(
 ): Promise<ListedModelGroup> {
   const active = provider.id === activeProviderId;
 
-  if (!refresh || provider.kind === "anthropic") {
+  if (!refresh || !providerSupportsModelListing(provider.kind)) {
     return {
       providerId: provider.id,
       providerName: provider.name,

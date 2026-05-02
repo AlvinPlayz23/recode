@@ -8,7 +8,7 @@
  * Built-in TUI command names.
  */
 export type BuiltinCommandName =
-  "help" | "clear" | "status" | "config" | "models" | "theme" | "customize" | "approval-mode" | "export" | "history" | "new" | "compact" | "plan" | "build" | "layout" | "minimal" | "exit" | "quit";
+  "help" | "clear" | "status" | "config" | "models" | "provider" | "theme" | "customize" | "approval-mode" | "export" | "history" | "new" | "compact" | "plan" | "build" | "layout" | "minimal" | "exit" | "quit";
 
 /**
  * Built-in TUI command definition.
@@ -33,6 +33,7 @@ const BUILTIN_COMMANDS: readonly BuiltinCommandDefinition[] = [
   { name: "status", command: "/status", description: "Show the current session status" },
   { name: "config", command: "/config", description: "Show the current Recode configuration" },
   { name: "models", command: "/models", description: "Open the model selector" },
+  { name: "provider", command: "/provider", description: "Select, enable, or disable providers" },
   { name: "theme", command: "/theme", description: "Open the theme selector" },
   { name: "customize", command: "/customize", description: "Customize theme and tool marker" },
   { name: "approval-mode", command: "/approval-mode", description: "Open the approval mode selector" },
@@ -54,6 +55,7 @@ const BUILTIN_COMMAND_ALIASES: Readonly<Record<string, BuiltinCommandName>> = {
   "/status": "status",
   "/config": "config",
   "/models": "models",
+  "/provider": "provider",
   "/theme": "theme",
   "/customize": "customize",
   "/approval-mode": "approval-mode",

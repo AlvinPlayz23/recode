@@ -243,6 +243,25 @@ export function toggleQuestionOption(
 }
 
 /**
+ * Select the highlighted option when submitting an unanswered question.
+ */
+export function selectHighlightedOptionIfUnanswered(
+  request: ActiveQuestionRequest
+): ActiveQuestionRequest {
+  const activeQuestion = request.questions[request.currentQuestionIndex];
+  if (activeQuestion === undefined) {
+    return request;
+  }
+
+  const currentAnswer = request.answers[activeQuestion.id] ?? createEmptyQuestionAnswer(activeQuestion.id);
+  if (currentAnswer.selectedOptionLabels.length > 0 || currentAnswer.customText.trim() !== "") {
+    return request;
+  }
+
+  return toggleQuestionOption(request) ?? request;
+}
+
+/**
  * Update the custom text answer for the active question.
  */
 export function updateQuestionCustomText(

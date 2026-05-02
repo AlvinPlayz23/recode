@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import type { ProviderKind } from "../providers/provider-kind.ts";
 import { createLanguageModel } from "./create-model-client.ts";
 
 describe("createLanguageModel", () => {
@@ -39,23 +40,36 @@ describe("createLanguageModel", () => {
     expect(model.providerOptions).toEqual({ timeoutMs: 1000 });
   });
 
-  it("maps openai-chat to the chat completions adapter", () => {
-    const model = createLanguageModel({
-      workspaceRoot: "/workspace",
-      configPath: "/workspace/.recode/config.json",
-      provider: "openai-chat",
-      providerId: "local-ollama",
-      providerName: "Local Ollama",
-      model: "qwen",
-      providers: [],
-      approvalMode: "approval",
-      approvalAllowlist: [],
-      baseUrl: "http://127.0.0.1:11434/v1",
-      apiKey: "sk-test"
-    });
+  const chatProviders: readonly ProviderKind[] = [
+    "openai-chat",
+    "gemini",
+    "groq",
+    "aihubmix",
+    "deepseek",
+    "z-ai",
+    "z-ai-coding",
+    "huggingface"
+  ];
 
-    expect(model.api).toBe("openai-chat-completions");
-  });
+  for (const provider of chatProviders) {
+    it(`maps ${provider} to the chat completions adapter`, () => {
+      const model = createLanguageModel({
+        workspaceRoot: "/workspace",
+        configPath: "/workspace/.recode/config.json",
+        provider,
+        providerId: provider,
+        providerName: provider,
+        model: "model-id",
+        providers: [],
+        approvalMode: "approval",
+        approvalAllowlist: [],
+        baseUrl: "https://example.com/v1",
+        apiKey: "sk-test"
+      });
+
+      expect(model.api).toBe("openai-chat-completions");
+    });
+  }
 
   it("maps anthropic to the messages adapter", () => {
     const model = createLanguageModel({

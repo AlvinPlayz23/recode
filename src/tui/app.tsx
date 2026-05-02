@@ -22,6 +22,7 @@
 
 import {
   decodePasteBytes,
+  type KeyEvent,
   type PasteEvent,
   stripAnsiSequences,
   TextAttributes,
@@ -48,13 +49,12 @@ import {
   selectConfiguredApprovalAllowlist,
   selectConfiguredApprovalMode,
   selectConfiguredLayoutMode,
-  selectConfiguredMinimalMode,
+  setConfiguredProviderDisabled,
   setConfiguredModelContextWindow,
   selectConfiguredTheme,
   selectConfiguredToolMarker
 } from "../config/recode-config.ts";
 import { OperationAbortedError } from "../errors/recode-error.ts";
-import { exportConversationToHtml } from "../history/export-html.ts";
 import {
   resolveHistoryRoot,
   type SavedConversationRecord
@@ -83,13 +83,9 @@ import { ToolRegistry } from "../tools/tool-registry.ts";
 import {
   findBuiltinCommands,
   moveBuiltinCommandSelectionIndex,
-  normalizeBuiltinCommandSelectionIndex,
-  parseBuiltinCommand
+  normalizeBuiltinCommandSelectionIndex
 } from "./message-format.ts";
 import {
-  buildBuiltinConfigBody,
-  buildBuiltinHelpBody,
-  buildBuiltinStatusBody,
   buildContextWindowFallbackKey,
   buildContextWindowStatusSnapshot,
   type ContextWindowStatusSnapshot
@@ -121,6 +117,7 @@ import { HistoryPickerOverlay } from "./history-picker-overlay.tsx";
 import { LayoutPickerOverlay } from "./layout-picker-overlay.tsx";
 import { createMarkdownSyntaxStyle } from "./markdown-style.ts";
 import { ModelPickerOverlay } from "./model-picker-overlay.tsx";
+import { ProviderPickerOverlay } from "./provider-picker-overlay.tsx";
 import { QuestionOverlay } from "./question-overlay.tsx";
 import {
   buildHistoryPickerRenderKey,
@@ -133,6 +130,8 @@ import {
   getLayoutPickerPopupRowBudget,
   getLayoutPickerVisibleCount,
   getModelPickerVisibleCount,
+  getProviderPickerPopupRowBudget,
+  getProviderPickerVisibleCount,
   getThemePickerPopupRowBudget,
   getThemePickerVisibleCount,
   renderModelPickerLines,
@@ -166,6 +165,7 @@ import {
   handleCustomizePickerKey,
   handleFileSuggestionPanelKey,
   handleLinearPickerKey,
+  handleProviderPickerKey,
   handleQuestionRequestKey,
   handleToolApprovalKey,
   type CommandPanelState
@@ -186,11 +186,13 @@ import {
   isContextWindowQuestionRequest,
   moveQuestionIndex,
   moveQuestionOptionIndex,
+  selectHighlightedOptionIfUnanswered,
   toggleQuestionOption,
   updateQuestionCustomText
 } from "./interactive-prompts.ts";
 import {
   appendToolCallEntryAndCreateAssistantPlaceholder,
+  buildPromptTranscriptSnapshot,
   finalizeAssistantStreamEntry,
   persistPromptTranscript
 } from "./submission-session.ts";
@@ -198,9 +200,15 @@ import {
   renderEntry
 } from "./transcript-entry.tsx";
 import {
+  buildProviderPickerItems,
+  findActiveProviderPickerItemIndex,
+  getProviderDefaultModelId,
+  type ProviderPickerItem
+} from "./provider-picker.ts";
+import {
   appendEntry,
   createEntry,
-  createToolResultEntry,
+  createToolResultUiEntry,
   rehydrateEntriesFromTranscript,
   renderVisibleEntries,
   updateEntryBody,
@@ -216,6 +224,16 @@ import type {
   ModelPickerOption,
   ThemePickerItem
 } from "./tui-app-types.ts";
+import { dispatchBuiltinCommand } from "./builtin-command-controller.ts";
+import {
+  estimateConversationFlowHeight,
+  estimateHeaderHeight
+} from "./layout-metrics.ts";
+import {
+  isCommandDraft,
+  normalizeDraftInput,
+  toVisibleDraft
+} from "./prompt-draft.ts";
 
 type PromptRenderable = InputRenderable | TextareaRenderable;
 
@@ -270,6 +288,10 @@ export function TuiApp(props: TuiAppProps) {
   const [modelPickerSelectedIndex, setModelPickerSelectedIndex] = createSignal(0);
   const [modelPickerWindowStart, setModelPickerWindowStart] = createSignal(0);
   const [modelPickerScrollBox, setModelPickerScrollBox] = createSignal<ScrollBoxRenderable | undefined>(undefined);
+  const [providerPickerOpen, setProviderPickerOpen] = createSignal(false);
+  const [providerPickerSelectedIndex, setProviderPickerSelectedIndex] = createSignal(0);
+  const [providerPickerWindowStart, setProviderPickerWindowStart] = createSignal(0);
+  const [providerPickerScrollBox, setProviderPickerScrollBox] = createSignal<ScrollBoxRenderable | undefined>(undefined);
   const [historyPickerOpen, setHistoryPickerOpen] = createSignal(false);
   const [historyPickerBusy, setHistoryPickerBusy] = createSignal(false);
   const [historyPickerQuery, setHistoryPickerQuery] = createSignal("");
@@ -334,6 +356,7 @@ export function TuiApp(props: TuiAppProps) {
   ));
   const modalOpen = createMemo(() =>
     modelPickerOpen()
+    || providerPickerOpen()
     || historyPickerOpen()
     || themePickerOpen()
     || customizePickerOpen()
@@ -364,6 +387,8 @@ export function TuiApp(props: TuiAppProps) {
     sessionRuntimeConfig()
   ));
   const modelPickerTotalOptionCount = createMemo(() => modelPickerOptions().length);
+  const providerPickerItems = createMemo(() => buildProviderPickerItems(sessionRuntimeConfig()));
+  const providerPickerTotalOptionCount = createMemo(() => providerPickerItems().length);
   const filteredHistoryPickerItems = createMemo(() => buildHistoryPickerItems(historyPickerItems(), historyPickerQuery()));
   const historyPickerRenderKey = createMemo(() => buildHistoryPickerRenderKey(
     filteredHistoryPickerItems(),
@@ -633,6 +658,15 @@ export function TuiApp(props: TuiAppProps) {
     }));
   };
 
+  const abortActiveRun = () => {
+    if (!busy()) {
+      return;
+    }
+
+    flushAndResetPendingStreamText();
+    activeAbortController?.abort();
+  };
+
   function requestToolApproval(request: ToolApprovalRequest): Promise<ToolApprovalDecision> {
     return new Promise((resolve) => {
       setActiveApprovalRequest(createActiveApprovalRequest(request, resolve));
@@ -642,9 +676,11 @@ export function TuiApp(props: TuiAppProps) {
   function requestQuestionAnswers(request: QuestionToolRequest): Promise<QuestionToolDecision> {
     return new Promise((resolve) => {
       setActiveQuestionRequest(createActiveQuestionRequest(request, resolve));
-      queueMicrotask(() => {
-        questionCustomInputRef?.focus();
-      });
+      if (isContextWindowQuestionRequest(request)) {
+        queueMicrotask(() => {
+          questionCustomInputRef?.focus();
+        });
+      }
     });
   }
 
@@ -839,6 +875,19 @@ export function TuiApp(props: TuiAppProps) {
   });
 
   createEffect(() => {
+    const items = providerPickerItems();
+    if (items.length <= 0) {
+      return;
+    }
+
+    syncScrollBoxSelection(
+      providerPickerOpen(),
+      providerPickerScrollBox(),
+      getIndexedPickerChildId("provider-picker-item", providerPickerSelectedIndex(), items.length)
+    );
+  });
+
+  createEffect(() => {
     const items = themePickerItems();
     if (items.length <= 0) {
       return;
@@ -928,8 +977,7 @@ export function TuiApp(props: TuiAppProps) {
       ctrlCArmed = true;
       setExitHintVisible(true);
       if (busy()) {
-        flushAndResetPendingStreamText();
-        activeAbortController?.abort();
+        abortActiveRun();
       }
 
       if (exitHintTimer !== undefined) {
@@ -1165,6 +1213,58 @@ export function TuiApp(props: TuiAppProps) {
       return;
     }
 
+    if (handleProviderPickerKey({
+      key,
+      open: providerPickerOpen(),
+      totalCount: providerPickerTotalOptionCount(),
+      close() {
+        closeProviderPicker(inputRef, setProviderPickerOpen, setProviderPickerSelectedIndex, setProviderPickerWindowStart);
+      },
+      move(direction) {
+        updateLinearSelectorWindow({
+          selectedIndex: providerPickerSelectedIndex(),
+          totalCount: providerPickerTotalOptionCount(),
+          direction,
+          visibleCount: getProviderPickerVisibleCount(terminal().height),
+          windowStart: providerPickerWindowStart(),
+          setSelectedIndex: setProviderPickerSelectedIndex,
+          setWindowStart: setProviderPickerWindowStart
+        });
+      },
+      submit() {
+        submitSelectedProviderPickerItem({
+          historyRoot: historyRoot(),
+          runtimeConfig: sessionRuntimeConfig(),
+          selectedIndex: providerPickerSelectedIndex(),
+          items: providerPickerItems(),
+          currentConversation: currentConversation(),
+          currentMode: sessionMode(),
+          transcript: previousMessages(),
+          setRuntimeConfig: setSessionRuntimeConfig,
+          setConversation: setCurrentConversation,
+          appendEntry(entry) {
+            appendEntry(setEntries, entry);
+          },
+          close() {
+            closeProviderPicker(inputRef, setProviderPickerOpen, setProviderPickerSelectedIndex, setProviderPickerWindowStart);
+          }
+        });
+      },
+      toggle() {
+        toggleSelectedProviderPickerItem({
+          runtimeConfig: sessionRuntimeConfig(),
+          selectedIndex: providerPickerSelectedIndex(),
+          items: providerPickerItems(),
+          setRuntimeConfig: setSessionRuntimeConfig,
+          appendEntry(entry) {
+            appendEntry(setEntries, entry);
+          }
+        });
+      }
+    })) {
+      return;
+    }
+
     if (handleLinearPickerKey({
       key,
       open: modelPickerOpen(),
@@ -1211,8 +1311,8 @@ export function TuiApp(props: TuiAppProps) {
 
     if (key.name === "escape" && busy()) {
       key.preventDefault();
-      flushAndResetPendingStreamText();
-      activeAbortController?.abort();
+      key.stopPropagation();
+      abortActiveRun();
       return;
     }
 
@@ -1361,9 +1461,6 @@ export function TuiApp(props: TuiAppProps) {
 
   const moveActiveQuestionIndex = (direction: -1 | 1) => {
     setActiveQuestionRequest((current) => moveQuestionIndex(current, direction));
-    queueMicrotask(() => {
-      questionCustomInputRef?.focus();
-    });
   };
 
   const moveActiveQuestionOptionIndex = (direction: -1 | 1) => {
@@ -1384,7 +1481,14 @@ export function TuiApp(props: TuiAppProps) {
       return;
     }
 
-    const submission = buildQuestionSubmission(request);
+    const requestForSubmission = isContextWindowQuestionRequest(request)
+      ? request
+      : selectHighlightedOptionIfUnanswered(request);
+    if (requestForSubmission !== request) {
+      setActiveQuestionRequest(requestForSubmission);
+    }
+
+    const submission = buildQuestionSubmission(requestForSubmission);
     if (submission.kind === "missing-answer") {
       appendEntry(
         setEntries,
@@ -1396,30 +1500,45 @@ export function TuiApp(props: TuiAppProps) {
     resolveQuestionRequest(submission.decision);
   };
 
+  const handleQuestionOverlayKey = (key: KeyEvent) => {
+    handleQuestionRequestKey({
+      key,
+      request: activeQuestionRequest(),
+      contextWindowRequest: isContextWindowQuestionRequest(activeQuestionRequest()),
+      dismiss: resolveQuestionRequest,
+      submit: submitActiveQuestionRequest,
+      moveQuestion: moveActiveQuestionIndex,
+      moveOption: moveActiveQuestionOptionIndex,
+      toggleOption: toggleActiveQuestionOption
+    });
+  };
+
   const submitPrompt = async (value: string) => {
-    const prompt = value.trim();
-    const builtinCommand = parseBuiltinCommand(prompt);
-
-    if (prompt === "" || prompt === "/") {
-      return;
-    }
-
-    if (builtinCommand?.name === "exit" || builtinCommand?.name === "quit") {
-      clearDraft(inputRef, setDraft);
-      setPendingPastes([]);
-      renderer.destroy();
-      return;
-    }
-
-    if (busy()) {
-      return;
-    }
-
-    if (builtinCommand !== undefined) {
-      clearDraft(inputRef, setDraft);
-      setPendingPastes([]);
-
-      if (builtinCommand.name === "models") {
+    const commandResult = await dispatchBuiltinCommand({
+      value,
+      busy: busy(),
+      runtimeConfig: sessionRuntimeConfig(),
+      languageModel: sessionLanguageModel(),
+      themeName: themeName(),
+      toolMarkerName: toolMarkerName(),
+      sessionMode: sessionMode(),
+      minimalMode: minimalMode(),
+      entriesCount: entries().length,
+      transcript: previousMessages(),
+      contextWindowStatus: currentContextWindowStatus(),
+      historyRoot: historyRoot(),
+      currentConversation: currentConversation(),
+      clearPromptDraft() {
+        clearDraft(inputRef, setDraft);
+        setPendingPastes([]);
+      },
+      exitApp() {
+        renderer.destroy();
+      },
+      focusPrompt() {
+        inputRef?.focus();
+      },
+      async openModelPicker() {
         await openModelPicker({
           runtimeConfig: sessionRuntimeConfig(),
           setBusy: setModelPickerBusy,
@@ -1435,10 +1554,16 @@ export function TuiApp(props: TuiAppProps) {
         queueMicrotask(() => {
           modelPickerInputRef?.focus();
         });
-        return;
-      }
-
-      if (builtinCommand.name === "history") {
+      },
+      openProviderPicker() {
+        openProviderPicker(
+          setProviderPickerOpen,
+          setProviderPickerSelectedIndex,
+          setProviderPickerWindowStart,
+          providerPickerItems()
+        );
+      },
+      async openHistoryPicker() {
         await openHistoryPicker({
           historyRoot: historyRoot(),
           workspaceRoot: sessionRuntimeConfig().workspaceRoot,
@@ -1456,169 +1581,42 @@ export function TuiApp(props: TuiAppProps) {
         queueMicrotask(() => {
           historyPickerInputRef?.focus();
         });
-        return;
-      }
-
-      if (builtinCommand.name === "theme") {
+      },
+      openThemePicker() {
         openThemePicker(setThemePickerOpen, setThemePickerQuery, setThemePickerSelectedIndex, setThemePickerWindowStart, themeName());
         queueMicrotask(() => {
           themePickerInputRef?.focus();
         });
-        return;
-      }
-
-      if (builtinCommand.name === "customize") {
+      },
+      openCustomizePicker() {
         openCustomizePicker(setCustomizePickerOpen, setCustomizePickerSelectedRow);
-        return;
-      }
-
-      if (builtinCommand.name === "approval-mode") {
+      },
+      openApprovalModePicker() {
         openApprovalModePicker(setApprovalModePickerOpen, setApprovalModePickerSelectedIndex, setApprovalModePickerWindowStart, approvalMode());
-        return;
-      }
-
-      if (builtinCommand.name === "layout") {
+      },
+      openLayoutPicker() {
         openLayoutPicker(setLayoutPickerOpen, setLayoutPickerSelectedIndex, setLayoutPickerWindowStart, layoutMode());
-        return;
+      },
+      setMinimalMode,
+      setSessionMode,
+      setConversation: setCurrentConversation,
+      setEntries,
+      setPreviousMessages,
+      setLastContextEstimate,
+      setStreamingBody,
+      setStreamingEntryId,
+      setBusy,
+      setBusyPhase,
+      appendEntry(entry) {
+        appendEntry(setEntries, entry);
       }
+    });
 
-      if (builtinCommand.name === "minimal") {
-        const next = !minimalMode();
-        setMinimalMode(next);
-        try {
-          persistMinimalMode(sessionRuntimeConfig().configPath, next);
-        } catch {
-          // Non-critical — the toggle still takes effect this session.
-        }
-        appendEntry(
-          setEntries,
-          createEntry("status", "status", next ? "Minimal mode enabled — header hidden" : "Minimal mode disabled — header visible")
-        );
-        return;
-      }
-
-      if (builtinCommand.name === "export") {
-        const conversation = currentConversation();
-        if (conversation === undefined) {
-          appendEntry(setEntries, createEntry("error", "error", "There is no active conversation to export."));
-          return;
-        }
-
-        try {
-          const outputPath = exportConversationToHtml({
-            workspaceRoot: sessionRuntimeConfig().workspaceRoot,
-            conversation,
-            themeName: themeName()
-          });
-          appendEntry(setEntries, createEntry("status", "status", `Exported conversation to ${outputPath}`));
-        } catch (error) {
-          appendEntry(setEntries, createEntry("error", "error", toErrorMessage(error)));
-        }
-        return;
-      }
-
-      if (builtinCommand.name === "new" || builtinCommand.name === "clear") {
-        const conversation = createDraftConversation(sessionRuntimeConfig(), sessionMode());
-        setCurrentConversation(conversation);
-        setEntries([createEntry("status", "status", "Started a new conversation")]);
-        setPreviousMessages([]);
-        setLastContextEstimate(undefined);
-        setStreamingBody("");
-        setStreamingEntryId(undefined);
-        setPendingPastes([]);
-        return;
-      }
-
-      if (builtinCommand.name === "compact") {
-        setBusyPhase("thinking");
-        setBusy(true);
-
-        try {
-          const compacted = await compactConversation({
-            transcript: previousMessages(),
-            languageModel: sessionLanguageModel()
-          });
-
-          if (compacted.kind === "noop") {
-            appendEntry(setEntries, createEntry("status", "status", "Nothing to compact yet."));
-            return;
-          }
-
-          setPreviousMessages(compacted.transcript);
-          setLastContextEstimate(estimateConversationContextTokens(compacted.transcript));
-          const persistedConversation = persistConversationSession(
-            historyRoot(),
-            sessionRuntimeConfig(),
-            compacted.transcript,
-            currentConversation(),
-            sessionMode()
-          );
-          setCurrentConversation(persistedConversation);
-          appendEntry(
-            setEntries,
-            createEntry(
-              "status",
-              "status",
-              `Compacted ${compacted.compactedMessageCount} older message${compacted.compactedMessageCount === 1 ? "" : "s"} into a continuation summary`
-            )
-          );
-        } catch (error) {
-          appendEntry(setEntries, createEntry("error", "error", toErrorMessage(error)));
-        } finally {
-          setBusyPhase("thinking");
-          setBusy(false);
-          inputRef?.focus();
-        }
-        return;
-      }
-
-      if (builtinCommand.name === "plan" || builtinCommand.name === "build") {
-        const nextMode: SessionMode = builtinCommand.name;
-
-        if (sessionMode() === nextMode) {
-          appendEntry(setEntries, createEntry("status", "status", `Already in ${getSessionModeLabel(nextMode)} mode`));
-          return;
-        }
-
-        setSessionMode(nextMode);
-        const persistedConversation = persistConversationSession(
-          historyRoot(),
-          sessionRuntimeConfig(),
-          previousMessages(),
-          currentConversation(),
-          nextMode
-        );
-        setCurrentConversation(persistedConversation);
-        appendEntry(
-          setEntries,
-          createEntry(
-            "status",
-            "status",
-            nextMode === "plan"
-              ? "Switched to PLAN mode — Recode will clarify and plan without editing files"
-              : "Switched to BUILD mode — Recode can implement changes again"
-          )
-        );
-        return;
-      }
-
-      await handleBuiltinCommand({
-        commandName: builtinCommand.name,
-        runtimeConfig: sessionRuntimeConfig(),
-        themeName: themeName(),
-        toolMarkerName: toolMarkerName(),
-        sessionMode: sessionMode(),
-        entriesCount: entries().length,
-        transcriptCount: previousMessages().length,
-        transcript: previousMessages(),
-        contextWindowStatus: currentContextWindowStatus(),
-        appendEntry(entry) {
-          appendEntry(setEntries, entry);
-        }
-      });
+    if (commandResult.kind === "handled") {
       return;
     }
 
+    const prompt = commandResult.prompt;
     const expandedPrompt = expandDraftPastes(prompt, pendingPastes());
     clearDraft(inputRef, setDraft);
     setPendingPastes([]);
@@ -1672,7 +1670,12 @@ export function TuiApp(props: TuiAppProps) {
           setBusyPhase("thinking");
           invalidateWorkspaceFileSuggestionCache(sessionRuntimeConfig().workspaceRoot);
           setFileSuggestionVersion((value) => value + 1);
-          const toolResultEntry = createToolResultEntry(toolResult.toolName, toolResult.content, toolResult.metadata);
+          const toolResultEntry = createToolResultUiEntry(
+            toolResult.toolName,
+            toolResult.content,
+            toolResult.isError,
+            toolResult.metadata
+          );
           if (toolResultEntry !== undefined) {
             appendEntry(setEntries, toolResultEntry);
           }
@@ -1712,20 +1715,21 @@ export function TuiApp(props: TuiAppProps) {
       if (currentId !== undefined && partialBody !== "") {
         updateEntryBody(setEntries, currentId, () => partialBody);
       }
+      const transcriptSnapshot = buildPromptTranscriptSnapshot(latestTranscript, partialBody);
+      if (transcriptSnapshot.length > 0) {
+        setBusyPhase("saving-history");
+        persistPromptTranscript({
+          historyRoot: historyRoot(),
+          runtimeConfig: sessionRuntimeConfig(),
+          transcript: transcriptSnapshot,
+          currentConversation: currentConversation(),
+          sessionMode: sessionMode(),
+          setPreviousMessages,
+          setLastContextEstimate,
+          setConversation: setCurrentConversation
+        });
+      }
       if (!(error instanceof OperationAbortedError)) {
-        if (latestTranscript !== undefined && latestTranscript.length > 0) {
-          setBusyPhase("saving-history");
-          persistPromptTranscript({
-            historyRoot: historyRoot(),
-            runtimeConfig: sessionRuntimeConfig(),
-            transcript: latestTranscript,
-            currentConversation: currentConversation(),
-            sessionMode: sessionMode(),
-            setPreviousMessages,
-            setLastContextEstimate,
-            setConversation: setCurrentConversation
-          });
-        }
         appendEntry(setEntries, createEntry("error", "error", toErrorMessage(error)));
       }
     } finally {
@@ -1886,6 +1890,13 @@ export function TuiApp(props: TuiAppProps) {
               setCommandSelectionIndex(0);
               setFileSuggestionSelectionIndex(0);
             }}
+            onKeyDown={(key) => {
+              if (key.name === "escape" && busy()) {
+                key.preventDefault();
+                key.stopPropagation();
+                abortActiveRun();
+              }
+            }}
             onSubmit={() => {
               void submitPrompt(draft());
             }}
@@ -1987,6 +1998,18 @@ export function TuiApp(props: TuiAppProps) {
         }}
       />
 
+      <ProviderPickerOverlay
+        open={providerPickerOpen()}
+        items={providerPickerItems()}
+        selectedIndex={providerPickerSelectedIndex()}
+        totalOptionCount={providerPickerTotalOptionCount()}
+        popupHeight={getProviderPickerPopupRowBudget(terminal().height)}
+        theme={t()}
+        bindScrollBoxRef={(value) => {
+          setProviderPickerScrollBox(value);
+        }}
+      />
+
       <HistoryPickerOverlay
         open={historyPickerOpen()}
         busy={historyPickerBusy()}
@@ -2075,6 +2098,8 @@ export function TuiApp(props: TuiAppProps) {
           applyInputCursorStyle(value, t().brandShimmer);
         }}
         onCustomTextInput={updateActiveQuestionCustomText}
+        onKeyDown={handleQuestionOverlayKey}
+        onSubmit={submitActiveQuestionRequest}
       />
 
       <ToolApprovalOverlay
@@ -2131,19 +2156,6 @@ function applyInputCursorStyle(input: PromptRenderable | undefined, color: strin
   input.cursorColor = color;
 }
 
-interface BuiltinCommandHandlerOptions {
-  readonly commandName: "help" | "status" | "config";
-  readonly runtimeConfig: RuntimeConfig;
-  readonly themeName: ThemeName;
-  readonly toolMarkerName: ToolMarkerName;
-  readonly sessionMode: SessionMode;
-  readonly entriesCount: number;
-  readonly transcriptCount: number;
-  readonly transcript: readonly ConversationMessage[];
-  readonly contextWindowStatus: ContextWindowStatusSnapshot;
-  readonly appendEntry: (entry: UiEntry) => void;
-}
-
 function clearDraft(
   input: PromptRenderable | undefined,
   setDraft: (value: string) => void
@@ -2170,36 +2182,6 @@ function applyCommandDraft(
 function writeClipboardText(text: string): void {
   const encoded = Buffer.from(text, "utf8").toString("base64");
   process.stdout.write(`\u001B]52;c;${encoded}\u0007`);
-}
-
-async function handleBuiltinCommand(options: BuiltinCommandHandlerOptions): Promise<void> {
-  switch (options.commandName) {
-    case "help":
-      options.appendEntry(createEntry("assistant", "Recode", buildBuiltinHelpBody()));
-      return;
-    case "status":
-      options.appendEntry(createEntry(
-        "assistant",
-        "Recode",
-        buildBuiltinStatusBody(
-          options.runtimeConfig,
-          options.toolMarkerName,
-          options.sessionMode,
-          options.entriesCount,
-          options.transcriptCount,
-          options.transcript,
-          options.contextWindowStatus
-        )
-      ));
-      return;
-    case "config":
-      options.appendEntry(createEntry(
-        "assistant",
-        "Recode",
-        buildBuiltinConfigBody(options.runtimeConfig, options.themeName, options.toolMarkerName)
-      ));
-      return;
-  }
 }
 
 function buildCommandPanelState(
@@ -2229,30 +2211,6 @@ function createToolRegistryForMode(baseRegistry: ToolRegistry, mode: SessionMode
   return mode === "build"
     ? baseRegistry
     : new ToolRegistry(filterToolsForSessionMode(baseRegistry.list(), mode));
-}
-
-function isCommandDraft(value: string): boolean {
-  return value.trimStart().startsWith("/");
-}
-
-function toVisibleDraft(value: string): string {
-  return isCommandDraft(value) ? value.replace(/^\s*\/?/, "") : value;
-}
-
-function normalizeDraftInput(previousDraft: string, nextValue: string): string {
-  if (nextValue.startsWith("/")) {
-    return nextValue;
-  }
-
-  if (previousDraft === "/" && nextValue === "") {
-    return "/";
-  }
-
-  if (isCommandDraft(previousDraft)) {
-    return nextValue === "" ? "" : `/${nextValue}`;
-  }
-
-  return nextValue;
 }
 
 function buildThemePickerItems(activeThemeName: ThemeName, query: string): readonly ThemePickerItem[] {
@@ -2430,86 +2388,138 @@ function normalizePastedText(value: string): string {
   return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
-function estimateConversationFlowHeight(
-  entries: readonly UiEntry[],
-  width: number,
-  commandPanel: CommandPanelState | undefined,
-  fileSuggestionPanel: FileSuggestionPanelState | undefined,
-  draft: string
-): number {
-  const transcriptHeight = entries.reduce((total, entry) => total + estimateEntryHeight(entry, width), 0);
-  return transcriptHeight + estimateComposerHeight(width, commandPanel, fileSuggestionPanel, draft);
+function openProviderPicker(
+  setOpen: (value: boolean) => void,
+  setSelectedIndex: (value: number) => void,
+  setWindowStart: (value: number) => void,
+  items: readonly ProviderPickerItem[]
+): void {
+  setOpen(true);
+  setSelectedIndex(findActiveProviderPickerItemIndex(items));
+  setWindowStart(0);
 }
 
-function estimateHeaderHeight(
-  minimalMode: boolean,
-  showSplashLogo: boolean,
-  splashDetailsVisible: boolean
-): number {
-  if (minimalMode) {
-    return 0;
+function closeProviderPicker(
+  input: PromptRenderable | undefined,
+  setOpen: (value: boolean) => void,
+  setSelectedIndex: (value: number) => void,
+  setWindowStart: (value: number) => void
+): void {
+  setOpen(false);
+  setSelectedIndex(0);
+  setWindowStart(0);
+  input?.focus();
+}
+
+interface SubmitProviderPickerSelectionOptions {
+  readonly historyRoot: string;
+  readonly runtimeConfig: RuntimeConfig;
+  readonly selectedIndex: number;
+  readonly items: readonly ProviderPickerItem[];
+  readonly currentConversation: SavedConversationRecord | undefined;
+  readonly currentMode: SessionMode;
+  readonly transcript: readonly ConversationMessage[];
+  readonly setRuntimeConfig: (value: RuntimeConfig) => void;
+  readonly setConversation: (value: SavedConversationRecord) => void;
+  readonly appendEntry: (entry: UiEntry) => void;
+  readonly close: () => void;
+}
+
+function submitSelectedProviderPickerItem(options: SubmitProviderPickerSelectionOptions): void {
+  const selectedItem = options.items[options.selectedIndex];
+  if (selectedItem === undefined) {
+    return;
   }
 
-  if (showSplashLogo) {
-    return splashDetailsVisible ? 18 : 10;
+  if (selectedItem.disabled) {
+    options.appendEntry(createEntry("error", "error", `Enable ${selectedItem.providerName} before selecting it.`));
+    return;
   }
 
-  return 5;
-}
+  const selectedProvider = options.runtimeConfig.providers.find((provider) => provider.id === selectedItem.providerId);
+  const modelId = selectedProvider === undefined ? undefined : getProviderDefaultModelId(selectedProvider);
+  if (modelId === undefined) {
+    options.appendEntry(createEntry(
+      "error",
+      "error",
+      `${selectedItem.providerName} has no saved model. Run /models after selecting an enabled provider with a model, or use recode setup to add one.`
+    ));
+    return;
+  }
 
-function estimateEntryHeight(entry: UiEntry, width: number): number {
-  const contentWidth = Math.max(12, width - 6);
-
-  switch (entry.kind) {
-    case "user":
-      return estimateWrappedTextHeight(entry.body, contentWidth) + 2;
-    case "assistant":
-      return estimateWrappedTextHeight(entry.body, contentWidth) + 1;
-    case "tool":
-    case "tool-preview":
-    case "tool-group":
-    case "status":
-      return estimateWrappedTextHeight(entry.body, contentWidth) + 1;
-    case "error":
-      return estimateWrappedTextHeight(entry.body, contentWidth) + 2;
+  try {
+    persistSelectedModelSelection(options.runtimeConfig, selectedItem.providerId, modelId);
+    const nextRuntimeConfig = selectRuntimeProviderModel(options.runtimeConfig, selectedItem.providerId, modelId);
+    options.setRuntimeConfig(nextRuntimeConfig);
+    const nextConversation = persistConversationSession(
+      options.historyRoot,
+      nextRuntimeConfig,
+      options.transcript,
+      options.currentConversation,
+      options.currentMode
+    );
+    options.setConversation(nextConversation);
+    options.appendEntry(createEntry("status", "status", `Selected provider ${selectedItem.providerName} · ${modelId}`));
+    options.close();
+  } catch (error) {
+    options.appendEntry(createEntry("error", "error", toErrorMessage(error)));
   }
 }
 
-function estimateComposerHeight(
-  width: number,
-  commandPanel: CommandPanelState | undefined,
-  fileSuggestionPanel: FileSuggestionPanelState | undefined,
-  draft: string
-): number {
-  const commandCount = commandPanel?.commands.length ?? 0;
-  const commandPanelHeight = commandPanel === undefined
-    ? 0
-    : commandCount + (commandPanel.hasMore ? 2 : 1);
-  const fileSuggestionCount = fileSuggestionPanel?.items.length ?? 0;
-  const fileSuggestionPanelHeight = fileSuggestionPanel === undefined
-    ? 0
-    : fileSuggestionCount + (fileSuggestionPanel.hasMore ? 2 : 1);
-  const visibleDraft = toVisibleDraft(draft);
-  const draftHeight = Math.min(4, estimateWrappedTextHeight(visibleDraft === "" ? " " : visibleDraft, Math.max(8, width - 8)));
-
-  return commandPanelHeight + fileSuggestionPanelHeight + draftHeight + 3 + estimateBadgeLineHeight(width);
+interface ToggleProviderPickerItemOptions {
+  readonly runtimeConfig: RuntimeConfig;
+  readonly selectedIndex: number;
+  readonly items: readonly ProviderPickerItem[];
+  readonly setRuntimeConfig: (value: RuntimeConfig) => void;
+  readonly appendEntry: (entry: UiEntry) => void;
 }
 
-function estimateBadgeLineHeight(width: number): number {
-  return width < 52 ? 2 : 1;
-}
-
-function estimateWrappedTextHeight(value: string, width: number): number {
-  const normalizedWidth = Math.max(1, width);
-  const lines = value.split("\n");
-  let total = 0;
-
-  for (const line of lines) {
-    const lineLength = Math.max(1, line.length);
-    total += Math.max(1, Math.ceil(lineLength / normalizedWidth));
+function toggleSelectedProviderPickerItem(options: ToggleProviderPickerItemOptions): void {
+  const selectedItem = options.items[options.selectedIndex];
+  if (selectedItem === undefined) {
+    return;
   }
 
-  return Math.max(1, total);
+  if (selectedItem.active) {
+    options.appendEntry(createEntry("error", "error", "Select another provider before disabling the active one."));
+    return;
+  }
+
+  const nextDisabled = !selectedItem.disabled;
+  try {
+    persistProviderDisabled(options.runtimeConfig.configPath, selectedItem.providerId, nextDisabled);
+    options.setRuntimeConfig({
+      ...options.runtimeConfig,
+      providers: options.runtimeConfig.providers.map((provider) => {
+        if (provider.id !== selectedItem.providerId) {
+          return provider;
+        }
+
+        if (nextDisabled) {
+          return {
+            ...provider,
+            disabled: true
+          };
+        }
+
+        const { disabled: _disabled, ...enabledProvider } = provider;
+        return enabledProvider;
+      })
+    });
+    options.appendEntry(createEntry(
+      "status",
+      "status",
+      `${nextDisabled ? "Disabled" : "Enabled"} provider ${selectedItem.providerName}`
+    ));
+  } catch (error) {
+    options.appendEntry(createEntry("error", "error", toErrorMessage(error)));
+  }
+}
+
+function persistProviderDisabled(configPath: string, providerId: string, disabled: boolean): void {
+  const config = loadRecodeConfigFile(configPath);
+  const nextConfig = setConfiguredProviderDisabled(config, providerId, disabled);
+  saveRecodeConfigFile(configPath, nextConfig);
 }
 
 interface OpenModelPickerOptions {
@@ -2524,11 +2534,15 @@ interface OpenModelPickerOptions {
 }
 
 async function openModelPicker(options: OpenModelPickerOptions): Promise<void> {
-  if (options.runtimeConfig.providers.length === 0) {
+  const enabledProviders = options.runtimeConfig.providers.filter((provider) => provider.disabled !== true);
+
+  if (enabledProviders.length === 0) {
     options.appendEntry(createEntry(
       "error",
       "error",
-      "No providers are configured yet. Run `recode setup` first."
+      options.runtimeConfig.providers.length === 0
+        ? "No providers are configured yet. Run `recode setup` first."
+        : "All providers are disabled. Use /provider to enable one first."
     ));
     return;
   }
@@ -2541,7 +2555,7 @@ async function openModelPicker(options: OpenModelPickerOptions): Promise<void> {
 
   try {
     const groups = await Promise.all(
-      options.runtimeConfig.providers.map((provider) => listModelsForProvider(provider, options.runtimeConfig.providerId, true))
+      enabledProviders.map((provider) => listModelsForProvider(provider, options.runtimeConfig.providerId, true))
     );
     options.setGroups(groups);
     options.setSelectedIndex(findActiveModelPickerOptionIndex(groups, options.runtimeConfig));
@@ -2969,11 +2983,5 @@ function submitSelectedLayoutPickerItem(options: SubmitLayoutPickerSelectionOpti
 function persistLayoutMode(configPath: string, mode: LayoutMode): void {
   const config = loadRecodeConfigFile(configPath);
   const nextConfig = selectConfiguredLayoutMode(config, mode);
-  saveRecodeConfigFile(configPath, nextConfig);
-}
-
-function persistMinimalMode(configPath: string, enabled: boolean): void {
-  const config = loadRecodeConfigFile(configPath);
-  const nextConfig = selectConfiguredMinimalMode(config, enabled);
   saveRecodeConfigFile(configPath, nextConfig);
 }

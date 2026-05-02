@@ -1,7 +1,7 @@
 {
   "name": "recode",
   "version": "0.1.0",
-  "description": "Recode is a coding agent built with TypeScript + Bun, featuring a Senren-inspired TUI.",
+  "description": "Recode is a local coding agent built with TypeScript, Bun, and a terminal-first TUI.",
   "private": true,
   "type": "module",
   "bin": {
@@ -12,7 +12,7 @@
     "check": "tsc --noEmit",
     "build": "bun run scripts/build.ts --single",
     "build:all": "bun run scripts/build.ts",
-    "test": "bun test ./src/agent ./src/ai ./src/cli ./src/config ./src/history ./src/models ./src/runtime ./src/tools ./src/tui"
+    "test": "bun test ./src/agent ./src/ai ./src/cli ./src/config ./src/history ./src/models ./src/providers ./src/runtime ./src/tools ./src/tui"
   },
   "dependencies": {
     "@opentui/core": "^0.1.99",

@@ -7,7 +7,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
-import type { ProviderKind } from "../providers/provider-kind.ts";
+import { parseProviderKind, type ProviderKind } from "../providers/provider-kind.ts";
 import { isRecord } from "../shared/is-record.ts";
 import { isJsonObject, type JsonObject } from "../shared/json-value.ts";
 import { patchRecodeConfig } from "./recode-config-update.ts";
@@ -38,6 +38,7 @@ export interface ConfiguredProvider {
   readonly name: string;
   readonly kind: ProviderKind;
   readonly baseUrl: string;
+  readonly disabled?: boolean;
   readonly apiKey?: string;
   readonly headers?: Readonly<Record<string, string>>;
   readonly options?: JsonObject;
@@ -155,6 +156,33 @@ export function selectConfiguredProviderModel(
     activeProviderId: providerId,
     providers
   });
+}
+
+/**
+ * Enable or disable a configured provider.
+ */
+export function setConfiguredProviderDisabled(
+  config: RecodeConfigFile,
+  providerId: string,
+  disabled: boolean
+): RecodeConfigFile {
+  const providers = config.providers.map((provider) => {
+    if (provider.id !== providerId) {
+      return provider;
+    }
+
+    if (disabled) {
+      return {
+        ...provider,
+        disabled: true
+      };
+    }
+
+    const { disabled: _disabled, ...enabledProvider } = provider;
+    return enabledProvider;
+  });
+
+  return patchRecodeConfig(config, { providers });
 }
 
 /**
@@ -293,6 +321,7 @@ function parseConfiguredProvider(value: unknown): ConfiguredProvider | undefined
   }
 
   const apiKey = readOptionalNonEmptyString(value, "apiKey");
+  const disabled = readOptionalBoolean(value, "disabled");
   const defaultModelId = readOptionalNonEmptyString(value, "defaultModelId");
   const maxOutputTokens = readOptionalPositiveInteger(value, "maxOutputTokens");
   const temperature = readOptionalFiniteNumber(value, "temperature");
@@ -310,6 +339,7 @@ function parseConfiguredProvider(value: unknown): ConfiguredProvider | undefined
     kind,
     baseUrl,
     models,
+    ...(disabled === true ? { disabled } : {}),
     ...(apiKey === undefined ? {} : { apiKey }),
     ...(headers === undefined ? {} : { headers }),
     ...(options === undefined ? {} : { options }),
@@ -374,15 +404,7 @@ function readOptionalJsonObject(record: Record<string, unknown>, key: string): J
 
 function readOptionalProviderKind(record: Record<string, unknown>, key: string): ProviderKind | undefined {
   const value = readOptionalNonEmptyString(record, key);
-
-  switch (value) {
-    case "openai":
-    case "openai-chat":
-    case "anthropic":
-      return value;
-    default:
-      return undefined;
-  }
+  return parseProviderKind(value);
 }
 
 function readOptionalThemeName(record: Record<string, unknown>, key: string): ThemeName | undefined {

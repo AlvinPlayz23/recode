@@ -11,6 +11,7 @@ import {
 import type { ModelPickerOption } from "./tui-app-types.ts";
 
 const HISTORY_PICKER_ITEM_ROW_HEIGHT = 2;
+const PROVIDER_PICKER_ITEM_ROW_HEIGHT = 3;
 
 /**
  * One rendered line in the model picker.
@@ -204,6 +205,20 @@ export function getApprovalModePickerPopupRowBudget(terminalHeight: number): num
  */
 export function getApprovalModePickerVisibleCount(terminalHeight: number): number {
   return Math.max(1, Math.floor(getApprovalModePickerPopupRowBudget(terminalHeight) / 3));
+}
+
+/**
+ * Return the provider-picker popup height budget.
+ */
+export function getProviderPickerPopupRowBudget(terminalHeight: number): number {
+  return Math.max(6, Math.min(terminalHeight - 18, 14));
+}
+
+/**
+ * Return the number of visible provider rows that fit vertically.
+ */
+export function getProviderPickerVisibleCount(terminalHeight: number): number {
+  return Math.max(1, Math.floor(getProviderPickerPopupRowBudget(terminalHeight) / PROVIDER_PICKER_ITEM_ROW_HEIGHT));
 }
 
 /**

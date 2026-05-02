@@ -51,6 +51,83 @@ describe("continuation summary serialization", () => {
     ]);
   });
 
+  it("preserves OpenAI-compatible tool call extra content for Gemini", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    globalThis.fetch = (async (_input, init) => {
+      requestBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        status: 200,
+        headers: { "content-type": "text/event-stream" }
+      });
+    }) as typeof fetch;
+
+    await consumeStream(streamOpenAiChat(
+      {
+        provider: "gemini",
+        providerId: "gemini",
+        providerName: "Google AI Studio",
+        modelId: "gemini-3-flash-preview",
+        apiKey: "test",
+        baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+        api: "openai-chat-completions"
+      },
+      "",
+      [
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            {
+              id: "call_1",
+              name: "Bash",
+              argumentsJson: "{\"command\":\"echo hi\"}",
+              extraContent: {
+                google: {
+                  thought_signature: "sig_123"
+                }
+              }
+            }
+          ]
+        },
+        {
+          role: "tool",
+          toolCallId: "call_1",
+          toolName: "Bash",
+          content: "exit_code: 0",
+          isError: false
+        }
+      ],
+      []
+    ));
+
+    expect(requestBody?.messages).toEqual([
+      {
+        role: "assistant",
+        content: "",
+        tool_calls: [
+          {
+            id: "call_1",
+            type: "function",
+            function: {
+              name: "Bash",
+              arguments: "{\"command\":\"echo hi\"}"
+            },
+            extra_content: {
+              google: {
+                thought_signature: "sig_123"
+              }
+            }
+          }
+        ]
+      },
+      {
+        role: "tool",
+        tool_call_id: "call_1",
+        content: "exit_code: 0"
+      }
+    ]);
+  });
+
   it("serializes summary messages for OpenAI Responses", async () => {
     let requestBody: Record<string, unknown> | undefined;
     globalThis.fetch = (async (_input, init) => {

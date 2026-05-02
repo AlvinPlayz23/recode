@@ -16,7 +16,13 @@ import {
   type ConfiguredProvider
 } from "../config/recode-config.ts";
 import { fetchOpenAiCompatibleModels } from "../models/list-models.ts";
-import type { ProviderKind } from "../providers/provider-kind.ts";
+import {
+  getDefaultProviderBaseUrl,
+  getDefaultProviderName,
+  providerSupportsModelListing,
+  PROVIDER_PRESETS,
+  type ProviderKind
+} from "../providers/provider-kind.ts";
 import { isJsonObject, type JsonObject } from "../shared/json-value.ts";
 
 interface ProviderSetupResult {
@@ -80,14 +86,14 @@ async function promptForProvider(
 ): Promise<ProviderSetupResult> {
   const selectedProvider = await selectProviderChoice(rl, config);
   const existingProvider = selectedProvider?.existingProvider;
+  const providerKind = await askProviderKind(rl, existingProvider?.kind);
   const providerId = normalizeProviderId(await askRequired(
     rl,
     "Provider ID",
-    existingProvider?.id ?? (config.providers.length === 0 ? "openai" : suggestNewProviderId(config))
+    existingProvider?.id ?? (config.providers.length === 0 ? providerKind : suggestNewProviderId(config, providerKind))
   ));
-  const providerKind = await askProviderKind(rl, existingProvider?.kind);
-  const providerName = await askRequired(rl, "Provider name", existingProvider?.name ?? defaultProviderName(providerId));
-  const baseUrl = await askRequired(rl, "Base URL", existingProvider?.baseUrl ?? defaultBaseUrl(providerKind));
+  const providerName = await askRequired(rl, "Provider name", existingProvider?.name ?? getDefaultProviderName(providerKind));
+  const baseUrl = await askRequired(rl, "Base URL", existingProvider?.baseUrl ?? getDefaultProviderBaseUrl(providerKind));
   const apiKey = await askOptional(rl, "API key (leave blank if not required)", existingProvider?.apiKey);
   const maxOutputTokens = await askOptionalPositiveInteger(
     rl,
@@ -113,7 +119,7 @@ async function promptForProvider(
     "Provider request options as JSON (leave blank for defaults)",
     existingProvider?.options
   );
-  const shouldFetchModels = providerKind === "anthropic"
+  const shouldFetchModels = !providerSupportsModelListing(providerKind)
     ? false
     : await promptBooleanSelect(rl, "How should models be added?", true, "Fetch from /models", "Enter model IDs manually");
 
@@ -236,11 +242,11 @@ async function askProviderKind(
   return await promptSelect(
     rl,
     "Select provider kind",
-    [
-      { label: "OpenAI Responses", value: "openai", hint: "Best for OpenAI's native Responses API" },
-      { label: "OpenAI Chat", value: "openai-chat", hint: "Best for OpenAI-compatible providers like Ollama or OpenRouter" },
-      { label: "Anthropic", value: "anthropic", hint: "Anthropic Messages API" }
-    ],
+    PROVIDER_PRESETS.map((preset) => ({
+      label: preset.label,
+      value: preset.kind,
+      hint: preset.setupHint
+    })),
     defaultKind ?? "openai"
   );
 }
@@ -466,37 +472,18 @@ function normalizeProviderId(value: string): string {
   return value.trim().toLowerCase().replaceAll(/\s+/g, "-");
 }
 
-function defaultProviderName(providerId: string): string {
-  return providerId
-    .split("-")
-    .filter((part) => part !== "")
-    .map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
-    .join(" ");
-}
-
-function suggestNewProviderId(config: RecodeConfigFile): string {
-  const baseId = `provider-${config.providers.length + 1}`;
+function suggestNewProviderId(config: RecodeConfigFile, providerKind: ProviderKind): string {
+  const baseId = providerKind;
   if (!config.providers.some((provider) => provider.id === baseId)) {
     return baseId;
   }
 
-  let index = config.providers.length + 2;
-  while (config.providers.some((provider) => provider.id === `provider-${index}`)) {
+  let index = 2;
+  while (config.providers.some((provider) => provider.id === `${baseId}-${index}`)) {
     index += 1;
   }
 
-  return `provider-${index}`;
-}
-
-function defaultBaseUrl(kind: ProviderKind): string {
-  switch (kind) {
-    case "openai":
-      return "https://api.openai.com/v1";
-    case "openai-chat":
-      return "https://api.openai.com/v1";
-    case "anthropic":
-      return "https://api.anthropic.com/v1";
-  }
+  return `${baseId}-${index}`;
 }
 
 function askQuestion(rl: Interface, prompt: string): Promise<string> {

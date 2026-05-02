@@ -9,6 +9,7 @@ import type { ConversationMessage, ToolCall, ToolResultMessage } from "../transc
 import { formatQuestionAnswerSummary, parseQuestionToolResult } from "../tools/ask-user-question-tool.ts";
 import { executeToolCall } from "../tools/execute-tool-call.ts";
 import type { ToolExecutionContext } from "../tools/tool.ts";
+import { createToolErrorMessage } from "../tools/tool-result-format.ts";
 import { ToolRegistry } from "../tools/tool-registry.ts";
 import type { StepStats } from "./step-stats.ts";
 
@@ -139,7 +140,8 @@ export async function processAgentSessionStep(
         const toolCall: ToolCall = {
           id: part.toolCallId,
           name: part.toolName,
-          argumentsJson: JSON.stringify(part.input)
+          argumentsJson: JSON.stringify(part.input),
+          ...(part.extraContent === undefined ? {} : { extraContent: part.extraContent })
         };
         toolCalls.push(toolCall);
         options.onToolCall?.(toolCall);
@@ -188,11 +190,24 @@ export async function executeAgentSessionToolCalls(
   const messages: ConversationMessage[] = [];
 
   for (const toolCall of toolCalls) {
-    throwIfAborted(options.abortSignal);
+    if (options.abortSignal?.aborted ?? false) {
+      const abortedResult = createToolErrorMessage(toolCall, "Request aborted");
+      messages.push(abortedResult);
+      options.onToolResult?.(abortedResult);
+      return messages;
+    }
 
-    const toolResult = await executeToolCall(toolCall, options.toolRegistry, options.toolContext);
+    const toolResult = await executeToolCall(
+      toolCall,
+      options.toolRegistry,
+      withAbortSignal(options.toolContext, options.abortSignal)
+    );
     messages.push(toolResult);
     options.onToolResult?.(toolResult);
+
+    if (options.abortSignal?.aborted ?? false) {
+      return messages;
+    }
 
     const followUpUserMessage = buildSyntheticUserMessageFromToolResult(
       toolResult.toolName,
@@ -205,6 +220,20 @@ export async function executeAgentSessionToolCalls(
   }
 
   return messages;
+}
+
+function withAbortSignal(
+  context: ToolExecutionContext,
+  abortSignal: AbortSignal | undefined
+): ToolExecutionContext {
+  if (abortSignal === undefined) {
+    return context;
+  }
+
+  return {
+    ...context,
+    abortSignal
+  };
 }
 
 function throwIfAborted(abortSignal: AbortSignal | undefined): void {

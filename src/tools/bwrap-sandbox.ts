@@ -1,13 +1,14 @@
 /**
  * bubblewrap (`bwrap`) sandbox integration.
  *
- * When `bwrap` is available, Bash subprocesses run inside an isolated sandbox.
- * Otherwise execution falls back to direct process spawning.
+ * These primitives are retained for a future sandbox redesign. The active Bash
+ * execution policy currently bypasses bwrap because it can hang on some hosts.
  *
  * @author dev
  */
 
 import { existsSync } from "node:fs";
+import { delimiter, join } from "node:path";
 
 /**
  * Child process spawn options.
@@ -16,6 +17,9 @@ interface SpawnOptions {
   readonly stdout: "pipe";
   readonly stderr: "pipe";
   readonly stdin: "ignore";
+  readonly signal?: AbortSignal;
+  readonly timeout?: number;
+  readonly killSignal?: NodeJS.Signals;
 }
 
 /** Cached `bwrap` availability: `undefined` = unchecked, `true`/`false` = checked. */
@@ -66,7 +70,11 @@ export function spawnDirect(
     cwd: workspaceRoot,
     stdin: options.stdin,
     stdout: options.stdout,
-    stderr: options.stderr
+    stderr: options.stderr,
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+    ...(options.timeout === undefined ? {} : { timeout: options.timeout }),
+    ...(options.killSignal === undefined ? {} : { killSignal: options.killSignal }),
+    windowsHide: true
   });
 }
 
@@ -92,7 +100,11 @@ export function spawnSandboxed(
     cwd: workspaceRoot,
     stdin: options.stdin,
     stdout: options.stdout,
-    stderr: options.stderr
+    stderr: options.stderr,
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+    ...(options.timeout === undefined ? {} : { timeout: options.timeout }),
+    ...(options.killSignal === undefined ? {} : { killSignal: options.killSignal }),
+    windowsHide: true
   });
 }
 
@@ -154,10 +166,92 @@ function collectMinimalEnv(): Record<string, string> {
 
 function getShellCommand(command: string): string[] {
   if (process.platform === "win32") {
-    return ["powershell", "-Command", command];
+    const bash = resolveWindowsBashExecutable();
+    if (bash !== undefined) {
+      return [bash, "-lc", command];
+    }
+
+    return [
+      resolveWindowsPowerShellExecutable(),
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-Command",
+      command
+    ];
   }
 
   return ["zsh", "-lc", command];
+}
+
+function resolveWindowsBashExecutable(): string | undefined {
+  const programFiles = [
+    process.env["ProgramFiles"],
+    process.env["ProgramFiles(x86)"],
+    process.env["LocalAppData"] === undefined
+      ? undefined
+      : join(process.env["LocalAppData"], "Programs")
+  ].filter((item) => item !== undefined);
+
+  for (const root of programFiles) {
+    const candidates = [
+      join(root, "Git", "bin", "bash.exe"),
+      join(root, "Git", "usr", "bin", "bash.exe")
+    ];
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  return findExecutableOnPath("bash.exe", isGitBashPath);
+}
+
+function resolveWindowsPowerShellExecutable(): string {
+  const pwshFromPath = findExecutableOnPath("pwsh.exe");
+  if (pwshFromPath !== undefined) {
+    return pwshFromPath;
+  }
+
+  const programFiles = process.env["ProgramFiles"];
+  const commonPwshPath = programFiles === undefined
+    ? undefined
+    : join(programFiles, "PowerShell", "7", "pwsh.exe");
+  if (commonPwshPath !== undefined && existsSync(commonPwshPath)) {
+    return commonPwshPath;
+  }
+
+  return "powershell.exe";
+}
+
+function findExecutableOnPath(
+  executableName: string,
+  predicate: (candidate: string) => boolean = () => true
+): string | undefined {
+  const pathValue = process.env["PATH"] ?? process.env["Path"];
+  if (pathValue === undefined) {
+    return undefined;
+  }
+
+  for (const directory of pathValue.split(delimiter)) {
+    if (directory.trim() === "") {
+      continue;
+    }
+
+    const candidate = join(directory, executableName);
+    if (existsSync(candidate) && predicate(candidate)) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+}
+
+function isGitBashPath(candidate: string): boolean {
+  return candidate.toLowerCase().includes(`${delimiter === ";" ? "\\" : "/"}git${delimiter === ";" ? "\\" : "/"}`);
 }
 
 export type { SpawnOptions };

@@ -112,13 +112,18 @@ export async function runAgentLoop(options: AgentRunOptions): Promise<AgentRunRe
     }
 
     doomLoopGuard.check(step.toolCalls);
-    messages.push(...await executeAgentSessionToolCalls(step.toolCalls, {
+    const toolMessages = await executeAgentSessionToolCalls(step.toolCalls, {
       toolRegistry: options.toolRegistry,
       toolContext: options.toolContext,
       ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
       ...(options.onToolResult === undefined ? {} : { onToolResult: options.onToolResult })
-    }));
+    });
+    messages.push(...toolMessages);
     publishTranscriptUpdate(options.onTranscriptUpdate, messages);
+
+    if (options.abortSignal?.aborted ?? false) {
+      throw new OperationAbortedError("Request aborted");
+    }
   }
 }
 

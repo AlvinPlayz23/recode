@@ -4,9 +4,7 @@
 
 import { validateCommand } from "./bash-sandbox.ts";
 import {
-  isBubblewrapAvailable,
   spawnDirect,
-  spawnSandboxed,
   type SpawnOptions
 } from "./bwrap-sandbox.ts";
 
@@ -32,16 +30,9 @@ export interface BashExecutionPolicy {
  * Resolve the safest available Bash execution policy for this host.
  */
 export async function resolveBashExecutionPolicy(): Promise<BashExecutionPolicy> {
-  if (await isBubblewrapAvailable()) {
-    return {
-      isolation: "bubblewrap",
-      validate(command, workspaceRoot) {
-        return validateCommand(command, workspaceRoot);
-      },
-      spawn: spawnSandboxed
-    };
-  }
-
+  // TODO: Re-enable OS-level sandboxing once the bwrap path is redesigned and
+  // tested across Windows/macOS/Linux. It currently causes tool hangs on some
+  // hosts, so Bash temporarily uses guarded direct execution instead.
   return {
     isolation: "guarded-direct",
     validate(command, workspaceRoot) {

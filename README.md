@@ -9,14 +9,14 @@ It provides an interactive terminal UI, a one-shot CLI mode, persistent conversa
 - TypeScript + Bun with strict compiler settings
 - Iterative agent loop with multi-turn tool use
 - Interactive TUI mode and one-shot CLI mode
-- Internal AI transport layer with support for OpenAI Responses, OpenAI Chat Completions, and Anthropic Messages
+- Internal AI transport layer with native provider presets for OpenAI, Anthropic, Gemini, Groq, AIHubMix, DeepSeek, Z.AI/GLM, and Hugging Face
 - Global provider/model config in `~/.recode/config.json`
 - Persistent conversation history in `~/.recode/history/`
 - Built-in model picker, theme picker, customize popup, approval-mode picker, and history picker
 - Paste mode for compact multi-line paste placeholders in the composer
 - Session export to standalone HTML
 - Built-in tools: `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`
-- Shell safety checks plus optional `bubblewrap` isolation
+- Shell safety checks with OS-level sandboxing temporarily disabled pending redesign
 - Native binary builds for Linux, macOS, and Windows
 
 ## Quick Start
@@ -58,6 +58,7 @@ recode -v, --version Show version
 | `/status` | Show current session status |
 | `/config` | Show current config, theme, provider, model, and approval settings |
 | `/models` | Open the model selector |
+| `/provider` | Select the active provider or enable/disable saved providers |
 | `/theme` | Open the theme selector |
 | `/customize` | Open the compact customize popup for theme and tool marker |
 | `/approval-mode` | Open the approval-mode selector |
@@ -85,11 +86,12 @@ Use `recode setup` to create providers, set base URLs, store model IDs, and choo
 Each configured provider can define:
 - provider ID
 - display name
-- provider kind (`openai`, `openai-chat`, `anthropic`)
+- provider kind (`openai`, `openai-chat`, `anthropic`, `gemini`, `groq`, `aihubmix`, `deepseek`, `z-ai`, `z-ai-coding`, `huggingface`)
 - base URL
 - optional API key
 - optional extra HTTP headers
 - optional provider request options
+- optional disabled flag, managed from `/provider`
 - saved model IDs
 - default model ID
 
@@ -153,13 +155,12 @@ Conversations are stored as JSON files plus a global `index.json`.
 
 The main TUI screen still centers on [src/tui/app.tsx](./src/tui/app.tsx), but it has been actively reduced and split into smaller modules.
 
-- Current `app.tsx` size: `2979` lines
+- Current `app.tsx` size: `2987` lines
 - Refactor history and extraction map: [src/tui/REFACTOR-HISTORY.md](./src/tui/REFACTOR-HISTORY.md)
-- Recent extractions include session persistence, file suggestions, built-in command content, history helpers, shared selector math, popup/overlay components, keyboard routing helpers, prompt submission helpers, interactive prompt workflows, and transcript entry rendering/state
+- Recent extractions include session persistence, file suggestions, built-in command content, built-in command dispatch, history helpers, shared selector math, layout metrics, popup/overlay components, keyboard routing helpers, prompt submission helpers, interactive prompt workflows, and transcript entry rendering/state
 
 The biggest remaining refactor seams are:
-- built-in command dispatch
-- layout/composer measurement helpers
+- composer JSX/chrome
 - deeper prompt-run orchestration once surrounding state is thinner
 
 ## Core Refactor Status
@@ -250,10 +251,17 @@ Supported values for `RECODE_PROVIDER`:
 - `openai` -> OpenAI Responses API
 - `openai-chat` -> OpenAI Chat Completions API
 - `anthropic` -> Anthropic Messages API
+- `gemini` -> Google AI Studio / Gemini OpenAI-compatible Chat Completions API
+- `groq` -> Groq OpenAI-compatible Chat Completions API
+- `aihubmix` -> AIHubMix OpenAI-compatible gateway
+- `deepseek` -> DeepSeek OpenAI-compatible Chat Completions API
+- `z-ai` -> Z.AI / GLM general OpenAI-compatible Chat Completions API
+- `z-ai-coding` -> Z.AI / GLM Coding Plan endpoint
+- `huggingface` -> Hugging Face Inference Providers OpenAI-compatible router
 
 ### OpenAI-Compatible Backends
 
-For OpenAI-compatible services, use `openai` or `openai-chat` depending on which API shape the backend supports, then point `RECODE_BASE_URL` at that service.
+For generic OpenAI-compatible services, use `openai-chat` and point `RECODE_BASE_URL` at that service. For the native providers listed above, Recode already knows the default base URL, so env-only config usually needs only `RECODE_PROVIDER`, `RECODE_API_KEY`, and `RECODE_MODEL`.
 
 Examples:
 
@@ -274,13 +282,43 @@ RECODE_PROVIDER=anthropic
 RECODE_API_KEY=sk-ant-...
 RECODE_BASE_URL=https://api.anthropic.com/v1
 RECODE_MODEL=claude-sonnet-4-20250514
+
+# Gemini / Google AI Studio
+RECODE_PROVIDER=gemini
+RECODE_API_KEY=...
+RECODE_MODEL=gemini-2.5-flash
+
+# Groq
+RECODE_PROVIDER=groq
+RECODE_API_KEY=gsk_...
+RECODE_MODEL=your-groq-model-id
+
+# DeepSeek
+RECODE_PROVIDER=deepseek
+RECODE_API_KEY=sk-...
+RECODE_MODEL=deepseek-v4-flash
+
+# AIHubMix
+RECODE_PROVIDER=aihubmix
+RECODE_API_KEY=sk-...
+RECODE_MODEL=gpt-4o-mini
+
+# Z.AI GLM Coding Plan
+RECODE_PROVIDER=z-ai-coding
+RECODE_API_KEY=...
+RECODE_MODEL=glm-5
+
+# Hugging Face Inference Providers
+RECODE_PROVIDER=huggingface
+RECODE_API_KEY=hf_...
+RECODE_MODEL=Qwen/Qwen3-Coder-480B-A35B-Instruct
 ```
 
 ## Tool System
 
 | Tool | Purpose | Notes |
 | --- | --- | --- |
-| `Bash` | Run shell commands | 30s timeout, 12KB output cap, validation + optional `bubblewrap` |
+| `Bash` | Run shell commands | 30s timeout, 12KB output cap, approval + validation checks |
 | `Read` | Read files | Limited to text files up to 1MB |
 | `Write` | Write files | Creates parent directories automatically |
 | `Edit` | Replace one unique text fragment | Fails if the target is missing or not unique |

@@ -309,6 +309,57 @@ describe("runAgentLoop", () => {
     })).rejects.toThrow("Request aborted");
   });
 
+  it("publishes tool results before stopping an aborted tool phase", async () => {
+    fakeStreamAssistantResponse.mockImplementationOnce(() => makeStreamResult([
+      toolCallPart("call_1", "abort_tool", {}),
+      ...finishParts()
+    ]));
+
+    const abortController = new AbortController();
+    const transcriptUpdates: Array<readonly ConversationMessage[]> = [];
+    const registry = new ToolRegistry([createAbortDuringTool(abortController)]);
+
+    await expect(runAgentLoop({
+      systemPrompt: "test",
+      initialUserPrompt: "run tool",
+      languageModel: {} as never,
+      toolRegistry: registry,
+      toolContext: { workspaceRoot: "/tmp/recode", approvalMode: "yolo" },
+      abortSignal: abortController.signal,
+      onTranscriptUpdate(transcript) {
+        transcriptUpdates.push(transcript);
+      }
+    })).rejects.toThrow("Request aborted");
+
+    expect(fakeStreamAssistantResponse).toHaveBeenCalledTimes(1);
+    expect(transcriptUpdates.at(-1)).toEqual([
+      { role: "user", content: "run tool" },
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: "call_1",
+            name: "abort_tool",
+            argumentsJson: "{}"
+          }
+        ],
+        stepStats: {
+          finishReason: "tool_calls",
+          durationMs: expect.any(Number) as unknown as number,
+          toolCallCount: 1
+        }
+      },
+      {
+        role: "tool",
+        toolCallId: "call_1",
+        toolName: "abort_tool",
+        content: "aborted after tool work",
+        isError: true
+      }
+    ]);
+  });
+
   it("stops repeated identical tool-call turns as a doom loop", async () => {
     fakeStreamAssistantResponse
       .mockImplementationOnce(() => makeStreamResult([
@@ -378,6 +429,27 @@ function createFailingTool(): ToolDefinition {
     },
     async execute(_arguments_: ToolArguments, _context: ToolExecutionContext): Promise<ToolResult> {
       throw new Error("tool timed out");
+    }
+  };
+}
+
+function createAbortDuringTool(abortController: AbortController): ToolDefinition {
+  return {
+    name: "abort_tool",
+    description: "Abort during tool execution.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: true
+    },
+    async execute(_arguments_: ToolArguments, context: ToolExecutionContext): Promise<ToolResult> {
+      expect(context.abortSignal).toBe(abortController.signal);
+      abortController.abort();
+      return {
+        content: "aborted after tool work",
+        isError: true
+      };
     }
   };
 }

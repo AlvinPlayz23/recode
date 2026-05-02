@@ -2,7 +2,7 @@
  * Question overlays for the TUI, including the context-window prompt.
  */
 
-import { InputRenderable, TextAttributes } from "@opentui/core";
+import { InputRenderable, type KeyEvent, TextAttributes } from "@opentui/core";
 import { For, Show } from "solid-js";
 import { normalizeBuiltinCommandSelectionIndex } from "./message-format.ts";
 import type { ThemeColors } from "./theme.ts";
@@ -17,6 +17,8 @@ export interface QuestionOverlayProps {
   readonly theme: ThemeColors;
   readonly bindInputRef: (value: InputRenderable) => void;
   readonly onCustomTextInput: (value: string) => void;
+  readonly onKeyDown: (event: KeyEvent) => void;
+  readonly onSubmit: () => void;
 }
 
 /**
@@ -43,6 +45,8 @@ export function QuestionOverlay(props: QuestionOverlayProps) {
             paddingTop={1}
             paddingBottom={1}
             flexShrink={0}
+            focused={props.request !== undefined}
+            onKeyDown={props.onKeyDown}
           >
             <text fg={props.theme.brandShimmer} attributes={TextAttributes.BOLD}>Questions</text>
             <Show when={props.request}>
@@ -111,11 +115,12 @@ export function QuestionOverlay(props: QuestionOverlayProps) {
                               <text fg={props.theme.brandShimmer}>✎ </text>
                               <input
                                 ref={props.bindInputRef}
-                                focused={props.request !== undefined}
                                 value={activeAnswer()?.customText ?? ""}
                                 flexGrow={1}
                                 placeholder="Optional custom answer..."
                                 onInput={props.onCustomTextInput}
+                                onSubmit={props.onSubmit}
+                                onKeyDown={props.onKeyDown}
                               />
                             </box>
                           </Show>
@@ -144,6 +149,8 @@ export function QuestionOverlay(props: QuestionOverlayProps) {
           paddingTop={1}
           paddingBottom={1}
           flexShrink={0}
+          focused={props.request !== undefined}
+          onKeyDown={props.onKeyDown}
         >
           <Show when={props.request}>
             {(request: () => ActiveQuestionRequest) => {
@@ -208,6 +215,8 @@ export function QuestionOverlay(props: QuestionOverlayProps) {
                         flexGrow={1}
                         placeholder="e.g. 128000"
                         onInput={props.onCustomTextInput}
+                        onSubmit={props.onSubmit}
+                        onKeyDown={props.onKeyDown}
                       />
                     </box>
                   </box>

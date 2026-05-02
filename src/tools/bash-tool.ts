@@ -21,13 +21,13 @@ const DEFAULT_BASH_TIMEOUT_MS = 30_000;
 export function createBashTool(): ToolDefinition {
   return {
     name: "Bash",
-    description: "Execute a shell command inside the current workspace.",
+    description: "Execute a shell command inside the current workspace. On Windows, Recode prefers Git Bash when available and falls back to PowerShell.",
     inputSchema: {
       type: "object",
       properties: {
         command: {
           type: "string",
-          description: "Shell command to execute."
+          description: "Shell command to execute. Prefer portable shell commands; if Windows falls back to PowerShell, use PowerShell-compatible syntax."
         }
       },
       required: ["command"],
@@ -42,29 +42,52 @@ export function createBashTool(): ToolDefinition {
         return { content: validationError, isError: true };
       }
 
-      const spawnOptions = { stdout: "pipe" as const, stderr: "pipe" as const, stdin: "ignore" as const };
-      const process = executionPolicy.spawn(input.command, context.workspaceRoot, spawnOptions);
+      if (context.abortSignal?.aborted ?? false) {
+        return { content: "Tool execution aborted by user.", isError: true };
+      }
 
+      const processAbortController = new AbortController();
+      let timedOut = false;
+      let aborted = false;
       const timeoutHandle = setTimeout(() => {
-        process.kill();
+        timedOut = true;
+        processAbortController.abort();
       }, DEFAULT_BASH_TIMEOUT_MS);
+      const abortHandler = () => {
+        aborted = true;
+        processAbortController.abort();
+      };
+      context.abortSignal?.addEventListener("abort", abortHandler, { once: true });
+
+      const spawnOptions = {
+        stdout: "pipe" as const,
+        stderr: "pipe" as const,
+        stdin: "ignore" as const,
+        signal: processAbortController.signal,
+        timeout: DEFAULT_BASH_TIMEOUT_MS,
+        killSignal: "SIGKILL" as const
+      };
+      const proc = executionPolicy.spawn(input.command, context.workspaceRoot, spawnOptions);
 
       try {
         const [stdout, stderr, exitCode] = await Promise.all([
-          streamToText(process.stdout),
-          streamToText(process.stderr),
-          process.exited
+          streamToText(proc.stdout),
+          streamToText(proc.stderr),
+          proc.exited
         ]);
 
-        const timedOut = exitCode === null || exitCode === 15;
-        const content = truncateText(formatProcessResult(stdout, stderr, exitCode, timedOut));
+        const content = truncateText(formatProcessResult(stdout, stderr, exitCode, timedOut, aborted));
 
         return {
           content,
-          isError: exitCode !== 0 || timedOut
+          isError: exitCode !== 0 || timedOut || aborted
         };
       } finally {
         clearTimeout(timeoutHandle);
+        context.abortSignal?.removeEventListener("abort", abortHandler);
+        if (!proc.killed && (timedOut || aborted)) {
+          proc.kill("SIGKILL");
+        }
       }
     }
   };
@@ -92,9 +115,14 @@ function formatProcessResult(
   stdout: string,
   stderr: string,
   exitCode: number | null,
-  timedOut: boolean
+  timedOut: boolean,
+  aborted: boolean
 ): string {
   const parts: string[] = [];
+
+  if (aborted) {
+    parts.push("aborted: true");
+  }
 
   if (timedOut) {
     parts.push(`timeout_ms: ${DEFAULT_BASH_TIMEOUT_MS}`);

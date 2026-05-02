@@ -28,6 +28,7 @@ describe("tui message format", () => {
     expect(parseBuiltinCommand("/status")).toEqual({ name: "status", raw: "/status" });
     expect(parseBuiltinCommand("/config")).toEqual({ name: "config", raw: "/config" });
     expect(parseBuiltinCommand("/models")).toEqual({ name: "models", raw: "/models" });
+    expect(parseBuiltinCommand("/provider")).toEqual({ name: "provider", raw: "/provider" });
     expect(parseBuiltinCommand("/theme")).toEqual({ name: "theme", raw: "/theme" });
     expect(parseBuiltinCommand("/customize")).toEqual({ name: "customize", raw: "/customize" });
     expect(parseBuiltinCommand("/approval-mode")).toEqual({ name: "approval-mode", raw: "/approval-mode" });
@@ -49,6 +50,7 @@ describe("tui message format", () => {
       { name: "status", command: "/status", description: "Show the current session status" },
       { name: "config", command: "/config", description: "Show the current Recode configuration" },
       { name: "models", command: "/models", description: "Open the model selector" },
+      { name: "provider", command: "/provider", description: "Select, enable, or disable providers" },
       { name: "theme", command: "/theme", description: "Open the theme selector" },
       { name: "customize", command: "/customize", description: "Customize theme and tool marker" },
       { name: "approval-mode", command: "/approval-mode", description: "Open the approval mode selector" },
@@ -72,6 +74,7 @@ describe("tui message format", () => {
       "/status",
       "/config",
       "/models",
+      "/provider",
       "/theme",
       "/customize",
       "/approval-mode",

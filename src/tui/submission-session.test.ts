@@ -9,6 +9,7 @@ import {
 } from "./transcript-entry-state.ts";
 import {
   appendToolCallEntryAndCreateAssistantPlaceholder,
+  buildPromptTranscriptSnapshot,
   finalizeAssistantStreamEntry
 } from "./submission-session.ts";
 
@@ -46,5 +47,28 @@ describe("submission session helpers", () => {
     }, entryId, "done");
 
     expect(entries[0]?.body).toBe("done");
+  });
+
+  it("adds a partial assistant message to interrupted transcript snapshots", () => {
+    const snapshot = buildPromptTranscriptSnapshot([
+      { role: "user", content: "explain this project" }
+    ], "partial answer");
+
+    expect(snapshot).toEqual([
+      { role: "user", content: "explain this project" },
+      { role: "assistant", content: "partial answer", toolCalls: [] }
+    ]);
+  });
+
+  it("replaces an empty assistant placeholder in interrupted transcript snapshots", () => {
+    const snapshot = buildPromptTranscriptSnapshot([
+      { role: "user", content: "hello" },
+      { role: "assistant", content: "", toolCalls: [] }
+    ], "hi there");
+
+    expect(snapshot).toEqual([
+      { role: "user", content: "hello" },
+      { role: "assistant", content: "hi there", toolCalls: [] }
+    ]);
   });
 });

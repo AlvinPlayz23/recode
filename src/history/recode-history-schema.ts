@@ -4,6 +4,7 @@
 
 import type { StepStats, StepTokenUsage } from "../agent/step-stats.ts";
 import { isRecord } from "../shared/is-record.ts";
+import { isJsonObject } from "../shared/json-value.ts";
 import type {
   AssistantMessage,
   ContinuationSummaryMessage,
@@ -175,7 +176,7 @@ function parseUserMessage(value: Record<string, unknown>): UserMessage | undefin
 }
 
 function parseAssistantMessage(value: Record<string, unknown>): AssistantMessage | undefined {
-  const content = readOptionalString(value, "content");
+  const content = typeof value["content"] === "string" ? value["content"] : undefined;
   const toolCallsValue = value["toolCalls"];
   const toolCalls = Array.isArray(toolCallsValue)
     ? toolCallsValue.map(parseToolCall).filter((item) => item !== undefined)
@@ -242,6 +243,7 @@ function parseToolCall(value: unknown): ToolCall | undefined {
   const id = readOptionalString(value, "id");
   const name = readOptionalString(value, "name");
   const argumentsJson = readOptionalString(value, "argumentsJson");
+  const extraContent = isJsonObject(value["extraContent"]) ? value["extraContent"] : undefined;
 
   if (id === undefined || name === undefined || argumentsJson === undefined) {
     return undefined;
@@ -250,7 +252,8 @@ function parseToolCall(value: unknown): ToolCall | undefined {
   return {
     id,
     name,
-    argumentsJson
+    argumentsJson,
+    ...(extraContent === undefined ? {} : { extraContent })
   };
 }
 

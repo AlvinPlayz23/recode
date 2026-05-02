@@ -146,6 +146,86 @@ describe("provider stream fixtures", () => {
     ]);
   });
 
+  it("parses OpenAI-compatible tool calls when provider omits streamed tool indexes", async () => {
+    stubSseFetch([
+      sse({
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  id: "call_1",
+                  extra_content: {
+                    google: {
+                      thought_signature: "sig_123"
+                    }
+                  },
+                  function: {
+                    name: "Write",
+                    arguments: "{\"path\":\"index.html\""
+                  }
+                }
+              ]
+            },
+            finish_reason: null
+          }
+        ]
+      }),
+      sse({
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  function: {
+                    arguments: ",\"content\":\"<html></html>\"}"
+                  }
+                }
+              ]
+            },
+            finish_reason: "tool_calls"
+          }
+        ]
+      }),
+      "data: [DONE]\n\n"
+    ]);
+
+    const parts = await collectParts(streamOpenAiChat(
+      {
+        ...openAiChatModel(),
+        provider: "gemini",
+        providerId: "gemini",
+        providerName: "Google AI Studio",
+        baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai"
+      },
+      "",
+      [],
+      []
+    ));
+
+    expect(parts).toEqual([
+      {
+        type: "tool-call",
+        toolCallId: "call_1",
+        toolName: "Write",
+        input: {
+          path: "index.html",
+          content: "<html></html>"
+        },
+        extraContent: {
+          google: {
+            thought_signature: "sig_123"
+          }
+        }
+      },
+      {
+        type: "finish-step",
+        info: { finishReason: "tool_calls" }
+      },
+      { type: "finish" }
+    ]);
+  });
+
   it("adds OpenRouter low-latency routing and prompt cache affinity", async () => {
     let requestBody: Record<string, unknown> | undefined;
     globalThis.fetch = (async (_input, init) => {

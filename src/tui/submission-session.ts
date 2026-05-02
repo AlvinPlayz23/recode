@@ -41,6 +41,45 @@ export interface AppendToolCallEntryOptions {
 }
 
 /**
+ * Build a durable transcript snapshot for interrupted or failed prompt runs.
+ */
+export function buildPromptTranscriptSnapshot(
+  transcript: readonly ConversationMessage[] | undefined,
+  partialAssistantText: string
+): readonly ConversationMessage[] {
+  const baseTranscript = transcript ?? [];
+  if (partialAssistantText === "") {
+    return baseTranscript;
+  }
+
+  const lastMessage = baseTranscript.at(-1);
+  if (lastMessage?.role === "assistant") {
+    if (lastMessage.content === partialAssistantText) {
+      return baseTranscript;
+    }
+
+    if (lastMessage.content === "" && lastMessage.toolCalls.length === 0) {
+      return [
+        ...baseTranscript.slice(0, -1),
+        {
+          ...lastMessage,
+          content: partialAssistantText
+        }
+      ];
+    }
+  }
+
+  return [
+    ...baseTranscript,
+    {
+      role: "assistant",
+      content: partialAssistantText,
+      toolCalls: []
+    }
+  ];
+}
+
+/**
  * Persist the current prompt-run transcript and update session state consistently.
  */
 export function persistPromptTranscript(options: PersistPromptTranscriptOptions): SavedConversationRecord {

@@ -8,6 +8,7 @@ import {
   buildQuestionSubmission,
   createActiveQuestionRequest,
   getNextApprovalAllowlist,
+  selectHighlightedOptionIfUnanswered,
   toggleQuestionOption,
   updateQuestionCustomText
 } from "./interactive-prompts.ts";
@@ -55,6 +56,13 @@ describe("interactive prompt helpers", () => {
     const request = updateQuestionCustomText(createActiveQuestionRequest(questionRequest(), () => {}), "Only src/");
 
     expect(request?.answers["scope"]?.customText).toBe("Only src/");
+  });
+
+  it("selects the highlighted option before submitting an unanswered question", () => {
+    const request = createActiveQuestionRequest(questionRequest(), () => {});
+    const selected = selectHighlightedOptionIfUnanswered(request);
+
+    expect(selected.answers["scope"]?.selectedOptionLabels).toEqual(["Workspace"]);
   });
 });
 

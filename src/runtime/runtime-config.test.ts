@@ -27,7 +27,7 @@ describe("loadRuntimeConfig", () => {
 
         expect(config.provider).toBe("openai");
         expect(config.providerId).toBe("active");
-        expect(config.providerName).toBe("OpenAI-Compatible");
+        expect(config.providerName).toBe("OpenAI");
         expect(config.apiKey).toBe("sk-test");
         expect(config.baseUrl).toBe("https://api.openai.com/v1");
         expect(config.model).toBe("gpt-4");
@@ -111,6 +111,40 @@ describe("loadRuntimeConfig", () => {
     );
   });
 
+  it("falls back to the first enabled provider when the saved active provider is disabled", () => {
+    const workspaceRoot = createWorkspaceWithConfig({
+      activeProviderId: "disabled",
+      providers: [
+        {
+          id: "disabled",
+          name: "Disabled",
+          kind: "openai-chat",
+          baseUrl: "https://disabled.example/v1",
+          disabled: true,
+          models: [{ id: "disabled-model" }],
+          defaultModelId: "disabled-model"
+        },
+        {
+          id: "enabled",
+          name: "Enabled",
+          kind: "deepseek",
+          baseUrl: "https://api.deepseek.com",
+          models: [{ id: "deepseek-chat" }],
+          defaultModelId: "deepseek-chat"
+        }
+      ]
+    });
+
+    withEnv({ RECODE_CONFIG_PATH: ".recode/config.json" }, () => {
+      const config = loadRuntimeConfig(workspaceRoot);
+
+      expect(config.providerId).toBe("enabled");
+      expect(config.provider).toBe("deepseek");
+      expect(config.model).toBe("deepseek-chat");
+      expect(config.providers[0]?.disabled).toBe(true);
+    });
+  });
+
   it("applies environment-only tuning overrides to provider metadata", () => {
     const workspaceRoot = createWorkspaceWithConfig({
       activeProviderId: "openrouter",
@@ -179,6 +213,25 @@ describe("loadRuntimeConfig", () => {
     );
   });
 
+  it("uses native provider default base URLs for env-only providers", () => {
+    withEnv(
+      {
+        RECODE_PROVIDER: "google-ai-studio",
+        RECODE_MODEL: "gemini-2.5-flash"
+      },
+      () => {
+        const config = loadRuntimeConfig("/workspace");
+        const provider = config.providers[0];
+
+        expect(config.provider).toBe("gemini");
+        expect(config.providerName).toBe("Google AI Studio");
+        expect(config.baseUrl).toBe("https://generativelanguage.googleapis.com/v1beta/openai");
+        expect(provider?.kind).toBe("gemini");
+        expect(provider?.baseUrl).toBe("https://generativelanguage.googleapis.com/v1beta/openai");
+      }
+    );
+  });
+
   it("throws when no model can be resolved", () => {
     withEnv(
       { RECODE_PROVIDER: "openai", RECODE_BASE_URL: "https://api.openai.com/v1" },
@@ -188,11 +241,12 @@ describe("loadRuntimeConfig", () => {
     );
   });
 
-  it("throws when no base URL can be resolved", () => {
+  it("uses the native OpenAI base URL when no base URL is configured", () => {
     withEnv(
       { RECODE_PROVIDER: "openai", RECODE_MODEL: "gpt-4.1" },
       () => {
-        expect(() => loadRuntimeConfig("/workspace")).toThrow("Missing provider base URL");
+        const config = loadRuntimeConfig("/workspace");
+        expect(config.baseUrl).toBe("https://api.openai.com/v1");
       }
     );
   });

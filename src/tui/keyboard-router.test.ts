@@ -8,6 +8,7 @@ import {
   handleFileSuggestionPanelKey,
   handleQuestionRequestKey,
   handleLinearPickerKey,
+  handleProviderPickerKey,
   type TuiKeyEvent
 } from "./keyboard-router.ts";
 
@@ -78,6 +79,33 @@ describe("keyboard router helpers", () => {
     expect(rendered).toBe("@src/app.tsx ");
     expect(selectionIndex).toBe(0);
     expect(focused).toBe(true);
+  });
+
+  it("toggles a provider picker row with space", () => {
+    const key = createKey("space");
+    let toggled = false;
+
+    const handled = handleProviderPickerKey({
+      key,
+      open: true,
+      totalCount: 2,
+      close() {
+        throw new Error("should not close");
+      },
+      move() {
+        throw new Error("should not move");
+      },
+      submit() {
+        throw new Error("should not submit");
+      },
+      toggle() {
+        toggled = true;
+      }
+    });
+
+    expect(handled).toBe(true);
+    expect(key.prevented).toBe(true);
+    expect(toggled).toBe(true);
   });
 
   it("submits the active slash command on enter", () => {

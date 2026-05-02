@@ -9,7 +9,12 @@ import {
   resolveConfigPath,
   type ConfiguredProvider
 } from "../config/recode-config.ts";
-import type { ProviderKind } from "../providers/provider-kind.ts";
+import {
+  getDefaultProviderBaseUrl,
+  getDefaultProviderName,
+  parseProviderKind,
+  type ProviderKind
+} from "../providers/provider-kind.ts";
 import { isJsonObject, type JsonObject } from "../shared/json-value.ts";
 import type { ApprovalMode, ToolApprovalScope } from "../tools/tool.ts";
 import {
@@ -53,6 +58,10 @@ export function selectRuntimeProviderModel(
   const selectedProvider = runtimeConfig.providers.find((provider) => provider.id === providerId);
   if (selectedProvider === undefined) {
     throw new Error(`Unknown provider: ${providerId}`);
+  }
+
+  if (selectedProvider.disabled === true) {
+    throw new Error(`Provider is disabled: ${providerId}`);
   }
 
   const providers = runtimeConfig.providers.map((provider) => provider.id === providerId
@@ -145,13 +154,14 @@ export function loadRuntimeConfig(workspaceRoot: string): RuntimeConfig {
   const selectedConfiguredProvider = resolveSelectedConfiguredProvider(config.providers, envActiveProviderId ?? config.activeProviderId);
   const fallbackProviderKind = selectedConfiguredProvider?.kind ?? "openai";
   const providerKind = envProviderKind ?? fallbackProviderKind;
-  const providerId = envActiveProviderId
-    ?? selectedConfiguredProvider?.id
+  const providerId = selectedConfiguredProvider?.id
+    ?? envActiveProviderId
     ?? "active";
   const providerName = selectedConfiguredProvider?.name
-    ?? defaultProviderName(providerKind);
+    ?? getDefaultProviderName(providerKind);
   const baseUrl = envBaseUrl
-    ?? selectedConfiguredProvider?.baseUrl;
+    ?? selectedConfiguredProvider?.baseUrl
+    ?? getDefaultProviderBaseUrl(providerKind);
   const model = envModel
     ?? selectedConfiguredProvider?.defaultModelId
     ?? selectedConfiguredProvider?.models[0]?.id;
@@ -217,21 +227,6 @@ export function loadRuntimeConfig(workspaceRoot: string): RuntimeConfig {
     ...(effectiveProviderOptions === undefined ? {} : { providerOptions: effectiveProviderOptions }),
     ...(apiKey === undefined ? {} : { apiKey })
   };
-}
-
-function parseProviderKind(value: string | undefined): ProviderKind | undefined {
-  if (value === undefined || value === "") {
-    return undefined;
-  }
-
-  switch (value) {
-    case "openai":
-    case "openai-chat":
-    case "anthropic":
-      return value;
-    default:
-      return undefined;
-  }
 }
 
 function readOptionalEnv(key: string): string | undefined {
@@ -306,22 +301,11 @@ function resolveSelectedConfiguredProvider(
   activeProviderId: string | undefined
 ): ConfiguredProvider | undefined {
   if (activeProviderId !== undefined) {
-    const activeProvider = providers.find((provider) => provider.id === activeProviderId);
+    const activeProvider = providers.find((provider) => provider.id === activeProviderId && provider.disabled !== true);
     if (activeProvider !== undefined) {
       return activeProvider;
     }
   }
 
-  return providers[0];
-}
-
-function defaultProviderName(provider: ProviderKind): string {
-  switch (provider) {
-    case "openai":
-      return "OpenAI-Compatible";
-    case "openai-chat":
-      return "OpenAI-Compatible Chat";
-    case "anthropic":
-      return "Anthropic";
-  }
+  return providers.find((provider) => provider.disabled !== true);
 }

@@ -15,8 +15,8 @@ import { fetchProviderJson } from "../provider-transport.ts";
 import { iterateSseMessages } from "../sse.ts";
 import type { AiModel, AiStreamPart } from "../types.ts";
 import { createEmptyStepTokenUsage, type StepTokenUsage } from "../../agent/step-stats.ts";
+import { isJsonObject, type JsonObject } from "../../shared/json-value.ts";
 import {
-  readNumber,
   readOptionalNumber,
   readOptionalRecord,
   readOptionalString,
@@ -28,6 +28,7 @@ interface PendingChatToolCall {
   name: string;
   argumentsJson: string;
   index: number;
+  extraContent?: JsonObject;
 }
 
 /**
@@ -116,22 +117,27 @@ export async function* streamOpenAiChat(
 
         const rawToolCalls = delta["tool_calls"];
         if (Array.isArray(rawToolCalls)) {
-          for (const rawToolCall of rawToolCalls) {
+          for (const [arrayIndex, rawToolCall] of rawToolCalls.entries()) {
             if (rawToolCall === null || typeof rawToolCall !== "object" || Array.isArray(rawToolCall)) {
               continue;
             }
 
             const toolCall = rawToolCall as Record<string, unknown>;
-            const index = readNumber(toolCall, "index");
+            const id = readOptionalString(toolCall, "id");
+            const index = resolveChatToolCallIndex(toolCall, arrayIndex, id, pendingToolCalls);
             const current = pendingToolCalls.get(index) ?? {
-              id: "",
+              id: `call_${index}`,
               name: "",
               argumentsJson: "",
               index
             };
-            const id = readOptionalString(toolCall, "id");
             if (id !== undefined && id !== "") {
               current.id = id;
+            }
+
+            const extraContent = toolCall["extra_content"];
+            if (isJsonObject(extraContent)) {
+              current.extraContent = extraContent;
             }
 
             const functionRecord = readOptionalRecord(toolCall, "function");
@@ -159,7 +165,8 @@ export async function* streamOpenAiChat(
         type: "tool-call",
         toolCallId: toolCall.id,
         toolName: toolCall.name,
-        input: parseProviderToolArguments(toolCall.argumentsJson, "openai-chat-completions", toolCall.name)
+        input: parseProviderToolArguments(toolCall.argumentsJson, "openai-chat-completions", toolCall.name),
+        ...(toolCall.extraContent === undefined ? {} : { extraContent: toolCall.extraContent })
       };
     }
 
@@ -214,6 +221,27 @@ function supportsUsageStreaming(model: AiModel): boolean {
   return baseUrl.includes("api.openai.com");
 }
 
+function resolveChatToolCallIndex(
+  toolCall: Record<string, unknown>,
+  arrayIndex: number,
+  id: string | undefined,
+  pendingToolCalls: ReadonlyMap<number, PendingChatToolCall>
+): number {
+  const explicitIndex = readOptionalNumber(toolCall, "index");
+  if (explicitIndex !== undefined) {
+    return Math.max(0, Math.trunc(explicitIndex));
+  }
+
+  if (id !== undefined && id !== "") {
+    const existingCall = [...pendingToolCalls.values()].find((item) => item.id === id);
+    if (existingCall !== undefined) {
+      return existingCall.index;
+    }
+  }
+
+  return arrayIndex;
+}
+
 function messagesToChatMessages(systemPrompt: string, messages: readonly ConversationMessage[]): readonly Record<string, unknown>[] {
   const result: Record<string, unknown>[] = [];
 
@@ -233,14 +261,18 @@ function messagesToChatMessages(systemPrompt: string, messages: readonly Convers
         });
         break;
       case "assistant": {
-        const toolCalls = message.toolCalls.map((toolCall) => ({
-          id: toolCall.id,
-          type: "function",
-          function: {
-            name: toolCall.name,
-            arguments: toolCall.argumentsJson
-          }
-        }));
+        const toolCalls = message.toolCalls.map((toolCall) => {
+          const extraContent = toolCall.extraContent;
+          return {
+            id: toolCall.id,
+            type: "function",
+            function: {
+              name: toolCall.name,
+              arguments: toolCall.argumentsJson
+            },
+            ...(extraContent === undefined ? {} : { extra_content: extraContent })
+          };
+        });
 
         result.push({
           role: "assistant",

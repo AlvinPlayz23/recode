@@ -97,6 +97,47 @@ describe("recode history schema", () => {
     });
   });
 
+  it("preserves provider-specific tool call extra content", () => {
+    const record = parseConversationRecord({
+      ...baseConversationMeta(),
+      transcript: [
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            {
+              id: "call_1",
+              name: "Bash",
+              argumentsJson: "{\"command\":\"echo hi\"}",
+              extraContent: {
+                google: {
+                  thought_signature: "sig_123"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    });
+
+    expect(record?.transcript[0]).toEqual({
+      role: "assistant",
+      content: "",
+      toolCalls: [
+        {
+          id: "call_1",
+          name: "Bash",
+          argumentsJson: "{\"command\":\"echo hi\"}",
+          extraContent: {
+            google: {
+              thought_signature: "sig_123"
+            }
+          }
+        }
+      ]
+    });
+  });
+
   it("parses edit-preview tool result metadata", () => {
     const record = parseConversationRecord({
       ...baseConversationMeta(),

@@ -6,7 +6,10 @@ import type {
   ConfiguredModel,
   ConfiguredProvider
 } from "../config/recode-config.ts";
-import type { ProviderKind } from "../providers/provider-kind.ts";
+import {
+  getDefaultProviderBaseUrl,
+  type ProviderKind
+} from "../providers/provider-kind.ts";
 import { mergeJsonObjects, type JsonObject } from "../shared/json-value.ts";
 
 /**
@@ -78,11 +81,13 @@ function buildEnvProvider(
   activeProviderName: string,
   existingProvider: RuntimeProviderConfig | undefined
 ): RuntimeProviderConfig {
+  const kind = overrides.kind ?? existingProvider?.kind ?? "openai";
+
   return {
     id: activeProviderId,
     name: activeProviderName,
-    kind: overrides.kind ?? existingProvider?.kind ?? "openai",
-    baseUrl: overrides.baseUrl ?? existingProvider?.baseUrl ?? "https://api.openai.com/v1",
+    kind,
+    baseUrl: overrides.baseUrl ?? existingProvider?.baseUrl ?? getDefaultProviderBaseUrl(kind),
     models: buildRuntimeModels(existingProvider, overrides.model),
     ...(overrides.model === undefined
       ? (existingProvider?.defaultModelId === undefined ? {} : { defaultModelId: existingProvider.defaultModelId })

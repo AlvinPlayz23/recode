@@ -204,6 +204,61 @@ export function handleLinearPickerKey(options: {
 }
 
 /**
+ * Handle the provider manager picker.
+ */
+export function handleProviderPickerKey(options: {
+  readonly key: TuiKeyEvent;
+  readonly open: boolean;
+  readonly totalCount: number;
+  readonly close: () => void;
+  readonly move: (direction: -1 | 1) => void;
+  readonly submit: () => void;
+  readonly toggle: () => void;
+}): boolean {
+  if (!options.open) {
+    return false;
+  }
+
+  switch (options.key.name) {
+    case "escape":
+      options.key.preventDefault();
+      options.close();
+      return true;
+    case "up":
+      if (options.totalCount <= 0) {
+        return true;
+      }
+      options.key.preventDefault();
+      options.move(-1);
+      return true;
+    case "down":
+      if (options.totalCount <= 0) {
+        return true;
+      }
+      options.key.preventDefault();
+      options.move(1);
+      return true;
+    case "space":
+      if (options.totalCount <= 0) {
+        return true;
+      }
+      options.key.preventDefault();
+      options.toggle();
+      return true;
+    case "return":
+    case "enter":
+      if (options.totalCount <= 0) {
+        return true;
+      }
+      options.key.preventDefault();
+      options.submit();
+      return true;
+    default:
+      return true;
+  }
+}
+
+/**
  * Handle the customize picker, which has row cycling as well as selection.
  */
 export function handleCustomizePickerKey(options: {

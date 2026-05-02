@@ -132,10 +132,13 @@ export function rehydrateEntriesFromTranscript(transcript: readonly Conversation
         entries.push(createEntry("assistant", "Recode", formatContinuationSummaryForDisplay(message.content)));
         break;
       case "tool":
-        if (message.isError) {
-          entries.push(createEntry("error", "error", `${message.toolName} failed: ${message.content}`));
-        } else {
-          const toolResultEntry = createToolResultEntry(message.toolName, message.content, message.metadata);
+        {
+          const toolResultEntry = createToolResultUiEntry(
+            message.toolName,
+            message.content,
+            message.isError,
+            message.metadata
+          );
           if (toolResultEntry !== undefined) {
             entries.push(toolResultEntry);
           }
@@ -163,6 +166,22 @@ export function createToolResultEntry(
   }
 
   return undefined;
+}
+
+/**
+ * Create the visible UI entry for a tool result when one should be shown.
+ */
+export function createToolResultUiEntry(
+  toolName: string,
+  content: string,
+  isError: boolean,
+  metadata: ToolResultMetadata | undefined
+): UiEntry | undefined {
+  if (isError) {
+    return createEntry("error", "error", `${toolName} failed: ${content}`);
+  }
+
+  return createToolResultEntry(toolName, content, metadata);
 }
 
 /**

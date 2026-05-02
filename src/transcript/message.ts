@@ -6,6 +6,7 @@
 
 import type { ToolResultMetadata } from "../tools/tool.ts";
 import type { StepStats } from "../agent/step-stats.ts";
+import type { JsonObject } from "../shared/json-value.ts";
 
 /**
  * A tool call emitted by the model.
@@ -14,6 +15,7 @@ export interface ToolCall {
   readonly id: string;
   readonly name: string;
   readonly argumentsJson: string;
+  readonly extraContent?: JsonObject;
 }
 
 /**

@@ -145,7 +145,8 @@ export function buildBuiltinConfigBody(
 
   for (const provider of config.providers) {
     const activeMarker = provider.id === runtimeConfig.providerId ? " (active)" : "";
-    lines.push(`- ${provider.name} (\`${provider.id}\`)${activeMarker}`);
+    const disabledMarker = provider.disabled === true ? " (disabled)" : "";
+    lines.push(`- ${provider.name} (\`${provider.id}\`)${activeMarker}${disabledMarker}`);
     lines.push(`  - Kind: ${provider.kind}`);
     lines.push(`  - Base URL: \`${provider.baseUrl}\``);
     lines.push(`  - Default model: \`${provider.defaultModelId ?? provider.models[0]?.id ?? "unset"}\``);

@@ -51,6 +51,7 @@ export type AiStreamPart =
       readonly toolCallId: string;
       readonly toolName: string;
       readonly input: Record<string, unknown>;
+      readonly extraContent?: JsonObject;
     }
   | { readonly type: "error"; readonly error: unknown }
   | { readonly type: "abort" }

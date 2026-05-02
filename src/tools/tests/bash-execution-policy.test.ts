@@ -3,11 +3,19 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { validateCommandForGuardedDirectExecution } from "../bash-execution-policy.ts";
+import {
+  resolveBashExecutionPolicy,
+  validateCommandForGuardedDirectExecution
+} from "../bash-execution-policy.ts";
 
 const WORKSPACE = "/tmp/recode-sandbox-test";
 
 describe("validateCommandForGuardedDirectExecution", () => {
+  it("uses guarded direct execution while OS sandboxing is disabled", async () => {
+    const policy = await resolveBashExecutionPolicy();
+    expect(policy.isolation).toBe("guarded-direct");
+  });
+
   it("allows simple commands covered by app-layer validation", () => {
     expect(validateCommandForGuardedDirectExecution("echo hello", WORKSPACE)).toBeNull();
   });

@@ -126,6 +126,7 @@ export interface ToolExecutionContext {
   readonly workspaceRoot: string;
   readonly approvalMode?: ApprovalMode;
   readonly approvalAllowlist?: readonly ToolApprovalScope[];
+  readonly abortSignal?: AbortSignal;
   readonly requestToolApproval?: ToolApprovalHandler;
   readonly requestQuestionAnswers?: QuestionRequestHandler;
 }

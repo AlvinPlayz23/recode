@@ -12,7 +12,7 @@ import type { RuntimeConfig } from "../runtime/runtime-config.ts";
  *
  * - anthropic: Anthropic Messages API
  * - openai: OpenAI Responses API
- * - openai-chat: OpenAI Chat Completions API
+ * - openai-chat and native compatible providers: OpenAI Chat Completions API
  */
 export function createLanguageModel(config: RuntimeConfig): AiModel {
   return {
@@ -37,6 +37,13 @@ function resolveApiKind(provider: RuntimeConfig["provider"]): AiModel["api"] {
     case "anthropic":
       return "anthropic-messages";
     case "openai-chat":
+    case "gemini":
+    case "groq":
+    case "aihubmix":
+    case "deepseek":
+    case "z-ai":
+    case "z-ai-coding":
+    case "huggingface":
       return "openai-chat-completions";
     case "openai":
       return "openai-responses";
