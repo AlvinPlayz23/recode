@@ -34,13 +34,22 @@ interface PatchHunk {
 export function createApplyPatchTool(): ToolDefinition {
   return {
     name: "ApplyPatch",
-    description: "Apply a structured patch to files in the current workspace.",
+    description: [
+      "Apply a structured patch to files in the current workspace.",
+      "Use the Begin Patch/End Patch envelope with *** Add File:, *** Delete File:, or *** Update File: sections.",
+      "For Update File hunks, prefix context lines with a space, removed lines with '-', and added lines with '+'.",
+      "Example: *** Begin Patch\n*** Update File: path.txt\n@@\n-old\n+new\n*** End Patch"
+    ].join(" "),
     inputSchema: {
       type: "object",
       properties: {
         patch: {
           type: "string",
           description: "Patch text using Begin Patch/End Patch with Add File, Delete File, and Update File sections."
+        },
+        patchText: {
+          type: "string",
+          description: "Alias for patch, accepted for OpenCode-compatible callers."
         }
       },
       required: ["patch"],
@@ -79,6 +88,12 @@ export function createApplyPatchTool(): ToolDefinition {
 }
 
 function parseApplyPatchInput(arguments_: ToolArguments): ApplyPatchInput {
+  const patch = readPatchText(arguments_);
+
+  if (patch !== undefined) {
+    return { patch };
+  }
+
   return {
     patch: readRequiredNonEmptyString(
       arguments_,
@@ -86,6 +101,20 @@ function parseApplyPatchInput(arguments_: ToolArguments): ApplyPatchInput {
       "ApplyPatch tool requires a non-empty 'patch' string."
     )
   };
+}
+
+function readPatchText(arguments_: ToolArguments): string | undefined {
+  const patch = arguments_["patch"];
+  if (typeof patch === "string" && patch.trim() !== "") {
+    return patch;
+  }
+
+  const patchText = arguments_["patchText"];
+  if (typeof patchText === "string" && patchText.trim() !== "") {
+    return patchText;
+  }
+
+  return undefined;
 }
 
 async function applyAddOperation(operation: Extract<PatchOperation, { type: "add" }>, context: ToolExecutionContext): Promise<void> {
@@ -146,9 +175,20 @@ function applyHunk(content: string, hunk: PatchHunk, path: string): string {
     return content;
   }
 
+  if (hunk.oldText === "") {
+    return appendContent(content, hunk.newText);
+  }
+
   const matchCount = countOccurrences(content, hunk.oldText);
   if (matchCount === 0) {
-    throw new ToolExecutionError(`Patch hunk target was not found in: ${path}`);
+    const fuzzyMatch = findFuzzyLineBlock(content, hunk.oldText);
+    if (fuzzyMatch !== undefined) {
+      return `${content.slice(0, fuzzyMatch.start)}${hunk.newText}${content.slice(fuzzyMatch.end)}`;
+    }
+
+    throw new ToolExecutionError(
+      `Patch hunk target was not found in: ${path}. Make sure every unchanged context line starts with a space and matches the file.`
+    );
   }
 
   if (matchCount > 1) {
@@ -201,7 +241,7 @@ function parsePatch(patch: string): readonly PatchOperation[] {
       continue;
     }
 
-    throw new ToolExecutionError(`Unknown patch section header: ${line}`);
+    throw new ToolExecutionError(`Unknown patch section header: ${line}. ${PATCH_FORMAT_HINT}`);
   }
 
   if (operations.length === 0) {
@@ -254,6 +294,11 @@ function parseUpdateOperation(
 
   while (index < lines.length - 1 && !isOperationHeader(lines[index] ?? "")) {
     const line = lines[index] ?? "";
+    if (line.trim() === "") {
+      index += 1;
+      continue;
+    }
+
     if (line.startsWith("@@")) {
       index += 1;
       continue;
@@ -293,6 +338,11 @@ function parseUpdateHunk(
       break;
     }
 
+    if (line.trim() === "") {
+      index += 1;
+      continue;
+    }
+
     const prefix = line[0];
     const text = line.slice(1);
     switch (prefix) {
@@ -322,8 +372,24 @@ function parseUpdateHunk(
 }
 
 function normalizePatchLines(patch: string): readonly string[] {
-  return patch.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n")
-    .filter((line, index, array) => !(index === array.length - 1 && line === ""));
+  const lines = stripPatchWrappers(patch)
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .filter((line, index, array) => !(index === array.length - 1 && line === ""))
+    .map(normalizePatchHeaderLine);
+  const beginIndex = lines.findIndex((line) => line.trim() === "*** Begin Patch");
+  const endIndex = lines.findLastIndex((line) => line.trim() === "*** End Patch");
+
+  if (beginIndex === -1) {
+    throw new ToolExecutionError(`Patch must include '*** Begin Patch'. ${PATCH_FORMAT_HINT}`);
+  }
+
+  if (endIndex === -1 || endIndex <= beginIndex) {
+    throw new ToolExecutionError(`Patch must include '*** End Patch' after '*** Begin Patch'. ${PATCH_FORMAT_HINT}`);
+  }
+
+  return lines.slice(beginIndex, endIndex + 1);
 }
 
 function readPatchHeaderPath(line: string, prefix: string): string {
@@ -338,6 +404,124 @@ function isOperationHeader(line: string): boolean {
   return line.startsWith("*** Add File: ")
     || line.startsWith("*** Delete File: ")
     || line.startsWith("*** Update File: ");
+}
+
+const PATCH_FORMAT_HINT = "Expected headers like '*** Update File: path', with hunk lines prefixed by ' ', '+', or '-'.";
+
+function stripPatchWrappers(patch: string): string {
+  const trimmed = patch.trim();
+  const fenceMatch = trimmed.match(/^```(?:\w+)?\n([\s\S]*?)\n```$/);
+  if (fenceMatch?.[1] !== undefined) {
+    return stripPatchWrappers(fenceMatch[1]);
+  }
+
+  const heredocMatch = trimmed.match(/^(?:\w+\s+)?<<['"]?(\w+)['"]?\s*\n([\s\S]*?)\n\1\s*$/);
+  if (heredocMatch?.[2] !== undefined) {
+    return stripPatchWrappers(heredocMatch[2]);
+  }
+
+  return patch;
+}
+
+function normalizePatchHeaderLine(line: string): string {
+  const trimmed = line.trim();
+
+  if (trimmed.startsWith("Add File: ")) {
+    return `*** ${trimmed}`;
+  }
+
+  if (trimmed.startsWith("Delete File: ")) {
+    return `*** ${trimmed}`;
+  }
+
+  if (trimmed.startsWith("Update File: ")) {
+    return `*** ${trimmed}`;
+  }
+
+  if (trimmed.startsWith("Move to: ")) {
+    return `*** ${trimmed}`;
+  }
+
+  return line;
+}
+
+function appendContent(content: string, newText: string): string {
+  if (newText === "") {
+    return content;
+  }
+
+  return content === "" || content.endsWith("\n")
+    ? `${content}${newText}`
+    : `${content}\n${newText}`;
+}
+
+function findFuzzyLineBlock(
+  content: string,
+  oldText: string
+): { readonly start: number; readonly end: number } | undefined {
+  const contentLines = splitLinesWithEndings(content);
+  const oldLines = splitLinesWithEndings(oldText);
+  const pattern = oldLines.map((line) => line.text);
+
+  if (pattern.length === 0) {
+    return undefined;
+  }
+
+  const matches: Array<{ readonly start: number; readonly end: number }> = [];
+  for (let index = 0; index <= contentLines.length - pattern.length; index++) {
+    if (pattern.every((line, offset) => normalizeComparableLine(contentLines[index + offset]?.text ?? "") === normalizeComparableLine(line))) {
+      matches.push({
+        start: contentLines[index]?.start ?? 0,
+        end: contentLines[index + pattern.length - 1]?.end ?? content.length
+      });
+    }
+  }
+
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+function splitLinesWithEndings(content: string): readonly {
+  readonly text: string;
+  readonly start: number;
+  readonly end: number;
+}[] {
+  if (content === "") {
+    return [];
+  }
+
+  const lines: Array<{ readonly text: string; readonly start: number; readonly end: number }> = [];
+  let start = 0;
+
+  for (let index = 0; index < content.length; index++) {
+    if (content[index] === "\n") {
+      lines.push({
+        text: content.slice(start, index + 1),
+        start,
+        end: index + 1
+      });
+      start = index + 1;
+    }
+  }
+
+  if (start < content.length) {
+    lines.push({
+      text: content.slice(start),
+      start,
+      end: content.length
+    });
+  }
+
+  return lines;
+}
+
+function normalizeComparableLine(line: string): string {
+  return line
+    .trim()
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F]/g, "\"")
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, "-")
+    .replace(/\u2026/g, "...")
+    .replace(/[\u00A0\u2002-\u200A\u202F\u205F\u3000]/g, " ");
 }
 
 function countOccurrences(content: string, target: string): number {

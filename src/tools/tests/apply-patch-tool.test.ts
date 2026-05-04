@@ -99,4 +99,88 @@ describe("ApplyPatch tool", () => {
       await rm(workspaceRoot, { recursive: true, force: true });
     }
   });
+
+  it("accepts OpenCode-style patchText, wrappers, and relaxed section headers", async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "recode-apply-patch-"));
+
+    try {
+      await Bun.write(join(workspaceRoot, "poem.txt"), "first line\nsecond line\n");
+      const tool = createApplyPatchTool();
+      const result = await tool.execute(
+        {
+          patchText: [
+            "```patch",
+            "*** Begin Patch",
+            "Update File: poem.txt",
+            "",
+            "@@",
+            "-second line",
+            "+second line, revised",
+            "",
+            "*** End Patch",
+            "```"
+          ].join("\n")
+        },
+        { workspaceRoot }
+      );
+
+      expect(result.isError).toBe(false);
+      expect(await Bun.file(join(workspaceRoot, "poem.txt")).text()).toBe("first line\nsecond line, revised\n");
+    } finally {
+      await rm(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("appends pure addition update hunks", async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "recode-apply-patch-"));
+
+    try {
+      await Bun.write(join(workspaceRoot, "notes.txt"), "one\n");
+      const tool = createApplyPatchTool();
+      await tool.execute(
+        {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: notes.txt",
+            "@@",
+            "+two",
+            "+",
+            "+three",
+            "*** End Patch"
+          ].join("\n")
+        },
+        { workspaceRoot }
+      );
+
+      expect(await Bun.file(join(workspaceRoot, "notes.txt")).text()).toBe("one\ntwo\n\nthree\n");
+    } finally {
+      await rm(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("fuzzy matches hunk context with harmless whitespace and punctuation drift", async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "recode-apply-patch-"));
+
+    try {
+      await Bun.write(join(workspaceRoot, "quote.txt"), "He said “hello”  \n");
+      const tool = createApplyPatchTool();
+      await tool.execute(
+        {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: quote.txt",
+            "@@",
+            "-He said \"hello\"",
+            "+He said \"hi\"",
+            "*** End Patch"
+          ].join("\n")
+        },
+        { workspaceRoot }
+      );
+
+      expect(await Bun.file(join(workspaceRoot, "quote.txt")).text()).toBe("He said \"hi\"\n");
+    } finally {
+      await rm(workspaceRoot, { recursive: true, force: true });
+    }
+  });
 });
