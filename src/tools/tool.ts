@@ -64,7 +64,7 @@ export interface ToolArguments {
 export type ApprovalMode = "approval" | "auto-edits" | "yolo";
 
 /** Tool approval scope bucket. */
-export type ToolApprovalScope = "read" | "edit" | "bash";
+export type ToolApprovalScope = "read" | "edit" | "bash" | "web";
 
 /** User decision for a tool approval prompt. */
 export type ToolApprovalDecision = "allow-once" | "allow-always" | "deny";

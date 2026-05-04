@@ -43,8 +43,12 @@ export function getToolApprovalScope(toolName: string): ToolApprovalScope {
     case "Glob":
     case "Grep":
       return "read";
+    case "WebFetch":
+    case "WebSearch":
+      return "web";
     case "Write":
     case "Edit":
+    case "ApplyPatch":
       return "edit";
     case "Bash":
       return "bash";
@@ -69,9 +73,9 @@ export function requiresApproval(
     case "yolo":
       return false;
     case "auto-edits":
-      return scope === "bash";
+      return scope === "bash" || scope === "web";
     case "approval":
     default:
-      return scope === "edit" || scope === "bash";
+      return scope === "edit" || scope === "bash" || scope === "web";
   }
 }

@@ -44,6 +44,23 @@ const READ_TOOL: ToolDefinition = {
   }
 };
 
+const WEB_TOOL: ToolDefinition = {
+  name: "WebSearch",
+  description: "Search the web.",
+  inputSchema: {
+    type: "object",
+    properties: {},
+    required: [],
+    additionalProperties: false
+  },
+  async execute() {
+    return {
+      content: "searched",
+      isError: false
+    };
+  }
+};
+
 describe("executeToolCall approval handling", () => {
   it("blocks tools that require approval when no interactive handler exists", async () => {
     const result = await executeToolCall(
@@ -109,6 +126,31 @@ describe("executeToolCall approval handling", () => {
 
     expect(result.isError).toBe(false);
     expect(result.content).toBe("read");
+  });
+
+  it("treats web tools as a separate approval scope", async () => {
+    const blocked = await executeToolCall(
+      createToolCall("WebSearch"),
+      new ToolRegistry([WEB_TOOL]),
+      {
+        workspaceRoot: "/workspace",
+        approvalMode: "auto-edits"
+      }
+    );
+    const allowed = await executeToolCall(
+      createToolCall("WebSearch"),
+      new ToolRegistry([WEB_TOOL]),
+      {
+        workspaceRoot: "/workspace",
+        approvalMode: "auto-edits",
+        approvalAllowlist: ["web"]
+      }
+    );
+
+    expect(blocked.isError).toBe(true);
+    expect(blocked.content).toContain("Approval required for WebSearch");
+    expect(allowed.isError).toBe(false);
+    expect(allowed.content).toBe("searched");
   });
 });
 

@@ -104,6 +104,10 @@ export function summarizeToolArguments(toolName: string, argumentsJson: string):
       }
       return pattern || include;
     }
+    case "WebFetch":
+      return readTrimmedString(args, "url", 72);
+    case "WebSearch":
+      return readTrimmedString(args, "query", 72);
     default:
       return "";
   }
@@ -249,6 +253,10 @@ function toToolDisplayName(toolName: string): string {
       return "Glob";
     case "Grep":
       return "Grep";
+    case "WebFetch":
+      return "WebFetch";
+    case "WebSearch":
+      return "WebSearch";
     default:
       return toTitleCase(toolName.replaceAll("_", " "));
   }

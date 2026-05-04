@@ -1,0 +1,77 @@
+❀ 
+I'll use the ApplyPatch tool to modify the poem.txt file. First, let me read it to see what's in there, then I'll apply a patch to make a change.
+● 
+Read
+poem.txt
+❀ 
+Great! It's a lovely poem about a supermarket. Now let me use the ApplyPatch tool to modify it. I'll create a patch that adds a new stanza at the end and makes a small edit to an existing line to demonstrate the tool's capabilities.
+● 
+ApplyPatch
+❀ 
+The patch format needs to start with *** Begin Patch. Let me try again with the correct format.
+✗ 
+ApplyPatch failed: Tool execution failed: Patch must start with '*** Begin Patch'.
+● 
+ApplyPatch
+❀ 
+I need to use the correct section header format. Let me check the expected format more carefully - it should be Update File without the colon, or perhaps the format is different. Let me try with the proper syntax:
+✗ 
+ApplyPatch failed: Tool execution failed: Unknown patch section header: Update File: poem.txt
+● 
+ApplyPatch
+❀ 
+Let me try with the exact format that matches the standard unified diff format - using --- and +++ headers:
+✗ 
+ApplyPatch failed: Tool execution failed: Unknown patch section header: Update File poem.txt
+● 
+ApplyPatch
+❀ 
+Let me look at the actual workspace structure to see if there are examples of patch formats anywhere:
+✗ 
+ApplyPatch failed: Tool execution failed: Unknown patch section header: --- a/poem.txt
+● 
+Glob
+**/*.patch
+● 
+Read
+refs/opencode/patches/@npmcli%2Fagent@4.0.0.patch
+❀ 
+Now I see the format! Let me apply a patch in the same unified diff format:
+● 
+ApplyPatch
+❀ 
+Let me check the ApplyPatch.txt tool documentation to see the exact expected format:
+✗ 
+ApplyPatch failed: Tool execution failed: Unknown patch section header: diff --git a/poem.txt b/poem.txt
+● 
+Read
+refs/opencode/packages/opencode/src/tool/apply_patch.txt
+❀ 
+Now I understand! The format uses *** Update File: header. Let me apply the patch correctly:
+● 
+ApplyPatch
+❀ 
+The issue is with the context lines - they need to start with a space. Let me fix the formatting:
+✗ 
+ApplyPatch failed: Tool execution failed: Update hunk lines must start with ' ', '+', or '-': 
+● 
+ApplyPatch
+❀ 
+Let me try without the @@ header line since that might be causing issues, and just use the line-based format:
+✗ 
+ApplyPatch failed: Tool execution failed: Update hunk lines must start with ' ', '+', or '-': 
+● 
+ApplyPatch
+❀ 
+Let me try again, being more careful with the format - using single spaces at the start for context lines:
+✗ 
+ApplyPatch failed: Tool execution failed: Update hunk lines must start with ' ', '+', or '-': 
+● 
+ApplyPatch
+❀ 
+Let me look at another example from the patches folder to understand the exact format:
+✗ 
+ApplyPatch failed: Tool execution failed: Update hunk lines must start with ' ', '+', or '-': 
+● 
+Read
+refs/opencode/patches/solid-js@1.9.10.patch

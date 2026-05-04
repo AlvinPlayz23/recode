@@ -440,7 +440,7 @@ function readOptionalApprovalAllowlist(
   }
 
   return value.filter((item): item is ToolApprovalScope =>
-    item === "read" || item === "edit" || item === "bash"
+    item === "read" || item === "edit" || item === "bash" || item === "web"
   );
 }
 

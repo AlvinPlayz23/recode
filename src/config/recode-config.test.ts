@@ -184,10 +184,25 @@ describe("recode config", () => {
 
   it("updates approval settings", () => {
     const modeConfig = selectConfiguredApprovalMode(createEmptyConfig(), "yolo");
-    const allowlistConfig = selectConfiguredApprovalAllowlist(modeConfig, ["bash"]);
+    const allowlistConfig = selectConfiguredApprovalAllowlist(modeConfig, ["bash", "web"]);
 
     expect(allowlistConfig.approvalMode).toBe("yolo");
-    expect(allowlistConfig.approvalAllowlist).toEqual(["bash"]);
+    expect(allowlistConfig.approvalAllowlist).toEqual(["bash", "web"]);
+  });
+
+  it("preserves valid web approval scope and drops invalid scopes while loading config", () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "recode-config-"));
+    const configPath = resolveConfigPath(workspaceRoot, ".recode/config.json");
+    const rawConfig = {
+      version: 1,
+      providers: [],
+      approvalAllowlist: ["read", "web", "network"]
+    };
+
+    mkdirSync(dirname(configPath), { recursive: true });
+    writeFileSync(configPath, `${JSON.stringify(rawConfig, null, 2)}\n`, "utf8");
+
+    expect(loadRecodeConfigFile(configPath).approvalAllowlist).toEqual(["read", "web"]);
   });
 
   it("preserves unrelated settings across config selectors", () => {

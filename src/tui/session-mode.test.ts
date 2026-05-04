@@ -19,7 +19,9 @@ describe("session mode helpers", () => {
       "Write",
       "Edit",
       "Glob",
-      "Grep"
+      "Grep",
+      "WebFetch",
+      "WebSearch"
     ]);
   });
 
@@ -28,7 +30,9 @@ describe("session mode helpers", () => {
       "AskUserQuestion",
       "Read",
       "Glob",
-      "Grep"
+      "Grep",
+      "WebFetch",
+      "WebSearch"
     ]);
   });
 });
@@ -40,7 +44,9 @@ function createTools(): readonly ToolDefinition[] {
     createTool("Write"),
     createTool("Edit"),
     createTool("Glob"),
-    createTool("Grep")
+    createTool("Grep"),
+    createTool("WebFetch"),
+    createTool("WebSearch")
   ];
 }
 

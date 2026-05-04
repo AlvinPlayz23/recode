@@ -2346,19 +2346,19 @@ function buildApprovalModePickerItems(activeMode: ApprovalMode): readonly Approv
     {
       mode: "approval",
       label: "Approval",
-      description: "Read tools run directly. Edit and Bash tools ask first.",
+      description: "Local read tools run directly. Edit, Bash, and web tools ask first.",
       active: activeMode === "approval"
     },
     {
       mode: "auto-edits",
       label: "Auto-Edits",
-      description: "Read and edit tools run directly. Bash tools still ask first.",
+      description: "Local read and edit tools run directly. Bash and web tools ask first.",
       active: activeMode === "auto-edits"
     },
     {
       mode: "yolo",
       label: "YOLO",
-      description: "Run read, edit, and Bash tools without asking.",
+      description: "Run local, Bash, and web tools without asking.",
       active: activeMode === "yolo"
     }
   ];
