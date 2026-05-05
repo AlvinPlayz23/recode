@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { ToolExecutionError } from "../../errors/recode-error.ts";
 import type { ToolCall } from "../../transcript/message.ts";
 import { executeToolCall } from "../execute-tool-call.ts";
 import { ToolRegistry } from "../tool-registry.ts";
@@ -58,6 +59,20 @@ const WEB_TOOL: ToolDefinition = {
       content: "searched",
       isError: false
     };
+  }
+};
+
+const FAILING_APPLY_PATCH_TOOL: ToolDefinition = {
+  name: "ApplyPatch",
+  description: "Apply a patch.",
+  inputSchema: {
+    type: "object",
+    properties: {},
+    required: [],
+    additionalProperties: false
+  },
+  async execute() {
+    throw new ToolExecutionError("Patch must include '*** Begin Patch'.");
   }
 };
 
@@ -151,6 +166,22 @@ describe("executeToolCall approval handling", () => {
     expect(blocked.content).toContain("Approval required for WebSearch");
     expect(allowed.isError).toBe(false);
     expect(allowed.content).toBe("searched");
+  });
+
+  it("adds recovery hints to failed tool results", async () => {
+    const result = await executeToolCall(
+      createToolCall("ApplyPatch"),
+      new ToolRegistry([FAILING_APPLY_PATCH_TOOL]),
+      {
+        workspaceRoot: "/workspace",
+        approvalMode: "yolo"
+      }
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("Tool execution failed: Patch must include");
+    expect(result.content).toContain("Recovery hint:");
+    expect(result.content).toContain("Begin Patch/End Patch");
   });
 });
 

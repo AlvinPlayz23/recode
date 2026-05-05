@@ -74,6 +74,34 @@ describe("builtin command controller", () => {
     expect(fixture.state.conversation?.transcript).toEqual([]);
   });
 
+  it("forks the current conversation into a new saved session", async () => {
+    const transcript: readonly ConversationMessage[] = [{ role: "user", content: "keep this" }];
+    const currentConversation = createSavedConversation("existing-id", transcript);
+    const fixture = createDispatchFixture("/fork", {
+      transcript,
+      currentConversation
+    });
+
+    await dispatchBuiltinCommand(fixture.options);
+
+    expect(fixture.state.conversation?.id).not.toBe(currentConversation.id);
+    expect(fixture.state.conversation?.transcript).toEqual(transcript);
+    expect(fixture.state.previousMessages).toEqual(transcript);
+    expect(fixture.state.lastContextEstimate?.estimatedTokens).toBeGreaterThan(0);
+    expect(fixture.state.streamingBody).toBe("");
+    expect(fixture.state.streamingEntryId).toBeUndefined();
+    expect(fixture.state.entries.at(-1)?.body).toContain("Forked conversation into a new session");
+  });
+
+  it("does not fork an empty conversation", async () => {
+    const fixture = createDispatchFixture("/fork");
+
+    await dispatchBuiltinCommand(fixture.options);
+
+    expect(fixture.state.conversation).toBeUndefined();
+    expect(fixture.state.entries.at(-1)?.body).toBe("Nothing to fork yet.");
+  });
+
   it("opens the provider manager", async () => {
     const fixture = createDispatchFixture("/provider");
 
@@ -114,6 +142,7 @@ interface FixtureState {
 interface FixtureOverrides {
   readonly busy?: boolean;
   readonly transcript?: readonly ConversationMessage[];
+  readonly currentConversation?: SavedConversationRecord;
 }
 
 function createDispatchFixture(
@@ -129,7 +158,7 @@ function createDispatchFixture(
     entries: [],
     previousMessages: transcript,
     lastContextEstimate: undefined,
-    conversation: undefined,
+    conversation: overrides.currentConversation,
     sessionMode: "build",
     minimalMode: false,
     busy: overrides.busy ?? false,
@@ -207,6 +236,26 @@ function createDispatchFixture(
         state.entries = [...state.entries, entry];
       }
     }
+  };
+}
+
+function createSavedConversation(
+  id: string,
+  transcript: readonly ConversationMessage[]
+): SavedConversationRecord {
+  return {
+    id,
+    title: "Existing",
+    preview: "Existing preview",
+    workspaceRoot: "C:\\workspace",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    providerId: "test-provider",
+    providerName: "Test Provider",
+    model: "test-model",
+    mode: "build",
+    messageCount: transcript.length,
+    transcript
   };
 }
 

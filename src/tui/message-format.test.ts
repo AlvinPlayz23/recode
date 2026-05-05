@@ -35,6 +35,7 @@ describe("tui message format", () => {
     expect(parseBuiltinCommand("/export")).toEqual({ name: "export", raw: "/export" });
     expect(parseBuiltinCommand("/history")).toEqual({ name: "history", raw: "/history" });
     expect(parseBuiltinCommand("/new")).toEqual({ name: "new", raw: "/new" });
+    expect(parseBuiltinCommand("/fork")).toEqual({ name: "fork", raw: "/fork" });
     expect(parseBuiltinCommand("/compact")).toEqual({ name: "compact", raw: "/compact" });
     expect(parseBuiltinCommand("/plan")).toEqual({ name: "plan", raw: "/plan" });
     expect(parseBuiltinCommand("/build")).toEqual({ name: "build", raw: "/build" });
@@ -57,6 +58,7 @@ describe("tui message format", () => {
       { name: "export", command: "/export", description: "Export the current conversation to HTML" },
       { name: "history", command: "/history", description: "Open the conversation history" },
       { name: "new", command: "/new", description: "Start a new conversation" },
+      { name: "fork", command: "/fork", description: "Fork the current conversation into a new session" },
       { name: "compact", command: "/compact", description: "Compact older conversation history into a continuation summary" },
       { name: "plan", command: "/plan", description: "Switch to read-only planning mode" },
       { name: "build", command: "/build", description: "Switch to normal implementation mode" },
@@ -81,6 +83,7 @@ describe("tui message format", () => {
       "/export",
       "/history",
       "/new",
+      "/fork",
       "/compact",
       "/plan",
       "/build",

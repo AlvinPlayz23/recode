@@ -57,6 +57,7 @@ export function buildBuiltinStatusBody(
   contextWindowStatus: ContextWindowStatusSnapshot
 ): string {
   const stepSummary = summarizeTranscriptSteps(transcript);
+  const compactionSummaryCount = transcript.filter((message) => message.role === "summary").length;
   const providerControls = [
     runtimeConfig.maxOutputTokens === undefined ? undefined : `max output ${runtimeConfig.maxOutputTokens}`,
     runtimeConfig.temperature === undefined ? undefined : `temp ${runtimeConfig.temperature}`,
@@ -80,6 +81,7 @@ export function buildBuiltinStatusBody(
     `- Reserved compaction buffer: ${contextWindowStatus.reservedTokens.toLocaleString()} tokens`,
     `- Last estimated context usage: ${contextWindowStatus.lastEstimate === undefined ? "n/a" : `${contextWindowStatus.lastEstimate.estimatedTokens.toLocaleString()} tokens (${contextWindowStatus.lastEstimate.source})`}`,
     `- Auto-compaction: ${contextWindowStatus.autoCompactionActive ? "enabled" : "disabled"}`,
+    `- Compaction summaries: ${compactionSummaryCount === 0 ? "none" : compactionSummaryCount}`,
     `- Visible UI entries: ${entriesCount}`,
     `- Conversation messages: ${transcriptCount}`,
     `- Completed assistant steps: ${stepSummary.stepCount}`,

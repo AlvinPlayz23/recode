@@ -8,7 +8,7 @@
  * Built-in TUI command names.
  */
 export type BuiltinCommandName =
-  "help" | "clear" | "status" | "config" | "models" | "provider" | "theme" | "customize" | "approval-mode" | "export" | "history" | "new" | "compact" | "plan" | "build" | "layout" | "minimal" | "exit" | "quit";
+  "help" | "clear" | "status" | "config" | "models" | "provider" | "theme" | "customize" | "approval-mode" | "export" | "history" | "new" | "fork" | "compact" | "plan" | "build" | "layout" | "minimal" | "exit" | "quit";
 
 /**
  * Built-in TUI command definition.
@@ -40,6 +40,7 @@ const BUILTIN_COMMANDS: readonly BuiltinCommandDefinition[] = [
   { name: "export", command: "/export", description: "Export the current conversation to HTML" },
   { name: "history", command: "/history", description: "Open the conversation history" },
   { name: "new", command: "/new", description: "Start a new conversation" },
+  { name: "fork", command: "/fork", description: "Fork the current conversation into a new session" },
   { name: "compact", command: "/compact", description: "Compact older conversation history into a continuation summary" },
   { name: "plan", command: "/plan", description: "Switch to read-only planning mode" },
   { name: "build", command: "/build", description: "Switch to normal implementation mode" },
@@ -62,6 +63,7 @@ const BUILTIN_COMMAND_ALIASES: Readonly<Record<string, BuiltinCommandName>> = {
   "/export": "export",
   "/history": "history",
   "/new": "new",
+  "/fork": "fork",
   "/compact": "compact",
   "/plan": "plan",
   "/build": "build",

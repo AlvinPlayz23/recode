@@ -53,6 +53,21 @@ describe("transcript entry helpers", () => {
     ]);
   });
 
+  it("shows a status row for compacted continuation summaries", () => {
+    const entries = rehydrateEntriesFromTranscript([
+      {
+        role: "summary",
+        kind: "continuation",
+        content: "Earlier work was summarized."
+      }
+    ]);
+
+    expect(entries.map((entry) => [entry.kind, entry.body])).toEqual([
+      ["status", "Earlier conversation history was compacted into a continuation summary."],
+      ["assistant", "## Continuation Summary\n\nEarlier work was summarized."]
+    ]);
+  });
+
   it("collapses consecutive tool entries without hiding non-tool entries", () => {
     const visibleEntries = renderVisibleEntries([
       createEntry("tool", "tool", "Read · README.md"),

@@ -25,6 +25,7 @@ import {
 } from "./builtin-command-content.ts";
 import {
   createDraftConversation,
+  forkConversationSession,
   persistConversationSession
 } from "./conversation-session.ts";
 import {
@@ -162,6 +163,9 @@ async function executeBuiltinCommand(
     case "clear":
       startNewConversation(options);
       return;
+    case "fork":
+      forkCurrentConversation(options);
+      return;
     case "compact":
       await compactCurrentConversation(options);
       return;
@@ -252,6 +256,33 @@ function startNewConversation(options: BuiltinCommandDispatchOptions): void {
   options.setLastContextEstimate(undefined);
   options.setStreamingBody("");
   options.setStreamingEntryId(undefined);
+}
+
+function forkCurrentConversation(options: BuiltinCommandDispatchOptions): void {
+  if (options.transcript.length === 0) {
+    options.appendEntry(createEntry("status", "status", "Nothing to fork yet."));
+    return;
+  }
+
+  const forkedConversation = forkConversationSession(
+    options.historyRoot,
+    options.runtimeConfig,
+    options.transcript,
+    options.sessionMode
+  );
+
+  options.setConversation(forkedConversation);
+  options.setPreviousMessages(forkedConversation.transcript);
+  options.setLastContextEstimate(estimateConversationContextTokens(forkedConversation.transcript));
+  options.setStreamingBody("");
+  options.setStreamingEntryId(undefined);
+  options.appendEntry(
+    createEntry(
+      "status",
+      "status",
+      `Forked conversation into a new session (${forkedConversation.id.slice(0, 8)})`
+    )
+  );
 }
 
 async function compactCurrentConversation(options: BuiltinCommandDispatchOptions): Promise<void> {

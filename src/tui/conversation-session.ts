@@ -56,6 +56,24 @@ export function persistConversationSession(
 }
 
 /**
+ * Clone the current transcript into a new persisted conversation ID.
+ */
+export function forkConversationSession(
+  historyRoot: string,
+  runtimeConfig: RuntimeConfig,
+  transcript: readonly ConversationMessage[],
+  mode: SessionMode
+): SavedConversationRecord {
+  const conversation = createConversationRecord(runtimeConfig, transcript, mode);
+
+  if (transcript.length > 0) {
+    saveConversation(historyRoot, conversation, true);
+  }
+
+  return conversation;
+}
+
+/**
  * Restore runtime provider/model state from a saved conversation.
  */
 export function restoreSavedConversationRuntime(

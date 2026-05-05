@@ -133,6 +133,7 @@ export function rehydrateEntriesFromTranscript(transcript: readonly Conversation
         }
         break;
       case "summary":
+        entries.push(createEntry("status", "status", "Earlier conversation history was compacted into a continuation summary."));
         entries.push(createEntry("assistant", "Recode", formatContinuationSummaryForDisplay(message.content)));
         break;
       case "tool":

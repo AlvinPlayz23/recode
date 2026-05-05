@@ -59,6 +59,11 @@ describe("builtin command content", () => {
     const runtimeConfig = createRuntimeConfig();
     const transcript: readonly ConversationMessage[] = [
       {
+        role: "summary",
+        kind: "continuation",
+        content: "Earlier context."
+      },
+      {
         role: "assistant",
         content: "Done",
         toolCalls: [],
@@ -90,6 +95,7 @@ describe("builtin command content", () => {
     expect(body).toContain("## Current Status");
     expect(body).toContain("Completed assistant steps: 1");
     expect(body).toContain("Total tool calls: 1");
+    expect(body).toContain("Compaction summaries: 1");
     expect(body).toContain("Last step duration: 42 ms");
   });
 

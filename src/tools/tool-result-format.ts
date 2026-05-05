@@ -30,7 +30,7 @@ export function createToolErrorMessage(toolCall: ToolCall, message: string): Too
     role: "tool",
     toolCallId: toolCall.id,
     toolName: toolCall.name,
-    content: `Tool execution failed: ${message}`,
+    content: formatToolFailureContent(toolCall.name, message),
     isError: true
   };
 }
@@ -44,4 +44,49 @@ export function errorToMessage(error: unknown): string {
   }
 
   return "Unknown error";
+}
+
+function formatToolFailureContent(toolName: string, message: string): string {
+  const hint = getToolFailureRecoveryHint(toolName, message);
+  const base = `Tool execution failed: ${message}`;
+
+  return hint === undefined ? base : `${base}\n\nRecovery hint: ${hint}`;
+}
+
+function getToolFailureRecoveryHint(toolName: string, message: string): string | undefined {
+  if (message.includes("denied by user")) {
+    return undefined;
+  }
+
+  switch (toolName) {
+    case "ApplyPatch":
+      return [
+        "Retry with a Begin Patch/End Patch envelope.",
+        "Use headers like '*** Update File: path'.",
+        "Prefix hunk lines with ' ', '+', or '-'.",
+        "If matching failed, read the target file again and include a smaller unique context block."
+      ].join(" ");
+    case "Edit":
+      return message.includes("exactly once") || message.includes("not found")
+        ? "Read the file again, then retry with an oldText block that matches exactly and is unique. Include a few nearby lines if the target is ambiguous."
+        : "Retry with a valid path plus oldText/newText strings. Use Write for a full file rewrite.";
+    case "Write":
+      return "Retry with a workspace-relative path and the full intended file content.";
+    case "Read":
+      return "Check the path with Glob or Grep, then retry with a workspace-relative path.";
+    case "Glob":
+      return "Retry with a non-empty pattern and, if needed, a narrower workspace-relative path.";
+    case "Grep":
+      return "Retry with a valid regular expression and an existing file or directory path. Use outputMode 'files_with_matches' for broad searches.";
+    case "WebFetch":
+      return "Retry with a public http:// or https:// URL. For binary or very large pages, use WebSearch or request a text/html source instead.";
+    case "WebSearch":
+      return "Retry with a more specific query, fewer results, or livecrawl 'fallback'. If Exa reports auth or quota issues, check RECODE_EXA_API_KEY or EXA_API_KEY.";
+    case "Bash":
+      return "For read-only shell commands, simplify the command and keep paths inside the workspace. For edits, prefer Edit, Write, or ApplyPatch.";
+    case "AskUserQuestion":
+      return "Retry with 1-4 questions, each with non-empty options and short labels.";
+    default:
+      return undefined;
+  }
 }
