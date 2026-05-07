@@ -38,6 +38,7 @@ export async function checkToolApproval(
 export function getToolApprovalScope(toolName: string): ToolApprovalScope {
   switch (toolName) {
     case "AskUserQuestion":
+    case "TodoWrite":
       return "read";
     case "Read":
     case "Glob":

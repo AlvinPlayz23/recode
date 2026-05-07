@@ -139,8 +139,21 @@ export interface EditToolResultMetadata {
   readonly newText: string;
 }
 
+/** One item in an assistant-managed session todo list. */
+export interface TodoItem {
+  readonly content: string;
+  readonly status: "pending" | "in_progress" | "completed" | "cancelled";
+  readonly priority: "high" | "medium" | "low";
+}
+
+/** Structured todo list state produced by the TodoWrite tool. */
+export interface TodoToolResultMetadata {
+  readonly kind: "todo-list";
+  readonly todos: readonly TodoItem[];
+}
+
 /** Structured metadata attached to a tool result. */
-export type ToolResultMetadata = EditToolResultMetadata;
+export type ToolResultMetadata = EditToolResultMetadata | TodoToolResultMetadata;
 
 /**
  * Tool execution result.

@@ -68,6 +68,29 @@ describe("transcript entry helpers", () => {
     ]);
   });
 
+  it("rehydrates todo tool results as preview entries", () => {
+    const entries = rehydrateEntriesFromTranscript([
+      {
+        role: "tool",
+        toolCallId: "call_1",
+        toolName: "TodoWrite",
+        content: "Updated todo list",
+        isError: false,
+        metadata: {
+          kind: "todo-list",
+          todos: [
+            { content: "Inspect code", status: "completed", priority: "medium" },
+            { content: "Add tests", status: "in_progress", priority: "high" }
+          ]
+        }
+      }
+    ]);
+
+    expect(entries.map((entry) => [entry.kind, entry.body])).toEqual([
+      ["tool-preview", "Todo · 1 active, 1 completed"]
+    ]);
+  });
+
   it("collapses consecutive tool entries without hiding non-tool entries", () => {
     const visibleEntries = renderVisibleEntries([
       createEntry("tool", "tool", "Read · README.md"),

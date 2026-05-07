@@ -11,6 +11,7 @@ import { createEditFileTool, createReadFileTool, createWriteFileTool } from "./f
 import { createGlobTool } from "./glob-tool.ts";
 import { createGrepTool } from "./grep-tool.ts";
 import type { ToolDefinition } from "./tool.ts";
+import { createTodoWriteTool } from "./todo-write-tool.ts";
 import { createWebFetchTool } from "./web-fetch-tool.ts";
 import { createWebSearchTool } from "./web-search-tool.ts";
 
@@ -21,6 +22,7 @@ export function createTools(): readonly ToolDefinition[] {
   return [
     createBashTool(),
     createAskUserQuestionTool(),
+    createTodoWriteTool(),
     createReadFileTool(),
     createWriteFileTool(),
     createEditFileTool(),

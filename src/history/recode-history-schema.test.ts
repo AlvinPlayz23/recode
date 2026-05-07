@@ -173,6 +173,45 @@ describe("recode history schema", () => {
     });
   });
 
+  it("parses todo-list tool result metadata", () => {
+    const record = parseConversationRecord({
+      ...baseConversationMeta(),
+      transcript: [
+        {
+          role: "tool",
+          toolCallId: "call_1",
+          toolName: "TodoWrite",
+          content: "Updated todo list",
+          isError: false,
+          metadata: {
+            kind: "todo-list",
+            todos: [
+              { content: "Inspect code", status: "completed", priority: "medium" },
+              { content: "Add tests", status: "in_progress", priority: "high" },
+              { content: "", status: "pending", priority: "low" },
+              { content: "Bad status", status: "started", priority: "low" }
+            ]
+          }
+        }
+      ]
+    });
+
+    expect(record?.transcript[0]).toEqual({
+      role: "tool",
+      toolCallId: "call_1",
+      toolName: "TodoWrite",
+      content: "Updated todo list",
+      isError: false,
+      metadata: {
+        kind: "todo-list",
+        todos: [
+          { content: "Inspect code", status: "completed", priority: "medium" },
+          { content: "Add tests", status: "in_progress", priority: "high" }
+        ]
+      }
+    });
+  });
+
   it("keeps continuation summaries and rejects malformed summary messages", () => {
     const record = parseConversationRecord({
       ...baseConversationMeta(),

@@ -10,6 +10,7 @@ describe("createTools", () => {
     expect(createTools().map((tool) => tool.name)).toEqual([
       "Bash",
       "AskUserQuestion",
+      "TodoWrite",
       "Read",
       "Write",
       "Edit",

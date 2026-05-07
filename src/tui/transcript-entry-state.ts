@@ -90,6 +90,12 @@ export function summarizeToolArguments(toolName: string, argumentsJson: string):
         ? `${questions.length} question${questions.length === 1 ? "" : "s"}`
         : "";
     }
+    case "TodoWrite": {
+      const todos = args?.["todos"];
+      return Array.isArray(todos)
+        ? `${todos.length} todo${todos.length === 1 ? "" : "s"}`
+        : "";
+    }
     case "Read":
     case "Write":
     case "Edit":
@@ -170,6 +176,15 @@ export function createToolResultEntry(
     };
   }
 
+  if (metadata?.kind === "todo-list") {
+    const remaining = metadata.todos.filter((todo) => todo.status !== "completed" && todo.status !== "cancelled").length;
+    const completed = metadata.todos.filter((todo) => todo.status === "completed").length;
+    return {
+      ...createEntry("tool-preview", "tool", `${toToolDisplayName(toolName)} · ${remaining} active, ${completed} completed`),
+      metadata
+    };
+  }
+
   return undefined;
 }
 
@@ -244,6 +259,8 @@ function toToolDisplayName(toolName: string): string {
       return "Bash";
     case "AskUserQuestion":
       return "Ask";
+    case "TodoWrite":
+      return "Todo";
     case "Read":
       return "Read";
     case "Write":

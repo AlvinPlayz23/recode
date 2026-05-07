@@ -10,7 +10,7 @@ import {
   type SyntaxStyle
 } from "@opentui/core";
 import { For, Show } from "solid-js";
-import type { EditToolResultMetadata } from "../tools/tool.ts";
+import type { EditToolResultMetadata, TodoItem } from "../tools/tool.ts";
 import { toDisplayLines } from "./message-format.ts";
 import {
   getTheme,
@@ -210,6 +210,13 @@ export function renderEntry(
               />
             </box>
           </Show>
+          <Show when={metadata?.kind === "todo-list"}>
+            <box flexDirection="column" paddingLeft={2} paddingTop={1} paddingRight={1}>
+              <For each={metadata?.kind === "todo-list" ? metadata.todos : []}>
+                {(todo) => <TodoLine todo={todo} t={t} />}
+              </For>
+            </box>
+          </Show>
         </box>
       );
     }
@@ -239,6 +246,42 @@ export function renderEntry(
         </box>
       );
   }
+}
+
+function TodoLine(props: { todo: TodoItem; t: () => ReturnType<typeof getTheme> }) {
+  const marker = () => {
+    switch (props.todo.status) {
+      case "completed":
+        return "x";
+      case "in_progress":
+        return ">";
+      case "cancelled":
+        return "-";
+      case "pending":
+        return " ";
+    }
+  };
+  const color = () => props.todo.status === "completed"
+    ? props.t().success
+    : props.todo.status === "cancelled"
+      ? props.t().hintText
+      : props.todo.priority === "high"
+        ? props.t().warning
+        : props.t().assistantBody;
+
+  return (
+    <box flexDirection="row" flexGrow={1} flexShrink={1} minWidth={0}>
+      <box width={4} flexShrink={0}>
+        <text fg={color()}>{`[${marker()}] `}</text>
+      </box>
+      <box width={8} flexShrink={0}>
+        <text fg={props.t().hintText} attributes={TextAttributes.DIM}>{props.todo.priority}</text>
+      </box>
+      <box flexGrow={1} flexShrink={1} minWidth={0}>
+        <text fg={color()}>{props.todo.content}</text>
+      </box>
+    </box>
+  );
 }
 
 function resolveDiffLanguage(path: string): string {

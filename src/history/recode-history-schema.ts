@@ -13,7 +13,7 @@ import type {
   ToolResultMessage,
   UserMessage
 } from "../transcript/message.ts";
-import type { EditToolResultMetadata, ToolResultMetadata } from "../tools/tool.ts";
+import type { EditToolResultMetadata, TodoItem, TodoToolResultMetadata, ToolResultMetadata } from "../tools/tool.ts";
 import type {
   RecodeHistoryIndex,
   SavedConversationMeta,
@@ -265,6 +265,8 @@ function parseToolResultMetadata(value: unknown): ToolResultMetadata | undefined
   switch (value["kind"]) {
     case "edit-preview":
       return parseEditToolResultMetadata(value);
+    case "todo-list":
+      return parseTodoToolResultMetadata(value);
     default:
       return undefined;
   }
@@ -284,6 +286,43 @@ function parseEditToolResultMetadata(value: Record<string, unknown>): EditToolRe
     path,
     oldText,
     newText
+  };
+}
+
+function parseTodoToolResultMetadata(value: Record<string, unknown>): TodoToolResultMetadata | undefined {
+  const todosValue = value["todos"];
+  if (!Array.isArray(todosValue)) {
+    return undefined;
+  }
+
+  const todos = todosValue.map(parseTodoItem).filter((item) => item !== undefined);
+  return {
+    kind: "todo-list",
+    todos
+  };
+}
+
+function parseTodoItem(value: unknown): TodoItem | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const content = readOptionalString(value, "content");
+  const status = value["status"];
+  const priority = value["priority"];
+
+  if (
+    content === undefined
+    || (status !== "pending" && status !== "in_progress" && status !== "completed" && status !== "cancelled")
+    || (priority !== "high" && priority !== "medium" && priority !== "low")
+  ) {
+    return undefined;
+  }
+
+  return {
+    content,
+    status,
+    priority
   };
 }
 
