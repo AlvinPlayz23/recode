@@ -747,87 +747,92 @@ export function TuiApp(props: TuiAppProps) {
     lastContextEstimate()
   );
 
-  const persistModelContextWindow = (providerId: string, modelId: string, contextWindowTokens: number) => {
+  const persistModelContextWindow = (
+    providerId: string,
+    modelId: string,
+    contextWindowTokens: number
+  ): RuntimeConfig => {
     const config = loadRecodeConfigFile(sessionRuntimeConfig().configPath);
     const nextConfig = setConfiguredModelContextWindow(config, providerId, modelId, contextWindowTokens);
     saveRecodeConfigFile(sessionRuntimeConfig().configPath, nextConfig);
-    setSessionRuntimeConfig((current) => setRuntimeModelContextWindow(current, providerId, modelId, contextWindowTokens));
+    const nextRuntimeConfig = setRuntimeModelContextWindow(sessionRuntimeConfig(), providerId, modelId, contextWindowTokens);
+    setSessionRuntimeConfig(nextRuntimeConfig);
+    return nextRuntimeConfig;
   };
 
-  const ensureActiveModelContextWindow = async (): Promise<ContextWindowStatusSnapshot> => {
+  const requestActiveModelContextWindow = async (
+    mode: "automatic" | "manual"
+  ): Promise<ContextWindowStatusSnapshot> => {
     const configuredStatus = resolveCurrentContextWindowStatus();
-    if (configuredStatus.source === "configured") {
+    if (mode === "automatic" && configuredStatus.source === "configured") {
       return configuredStatus;
     }
 
     const runtimeConfig = sessionRuntimeConfig();
     const modelKey = buildContextWindowFallbackKey(runtimeConfig.providerId, runtimeConfig.model);
     const existingFallback = contextWindowFallbacks()[modelKey];
-    if (existingFallback !== undefined) {
+    if (mode === "automatic" && existingFallback !== undefined) {
       return resolveCurrentContextWindowStatus();
     }
 
     const decision = await requestQuestionAnswers({
       questions: [
         {
-          id: "context-window",
+          id: mode === "manual" ? "context-window-config" : "context-window",
           header: "Context Window",
-          question: `Recode does not know the context window for '${runtimeConfig.model}'. Enter it if you know it, or use the conservative 200k fallback for this session.`,
+          question: mode === "manual"
+            ? `Set the context window for '${runtimeConfig.model}'. Current value: ${configuredStatus.contextWindowTokens.toLocaleString()} tokens (${configuredStatus.source}).`
+            : `Recode does not know the context window for '${runtimeConfig.model}'. Enter it if you know it, or save the conservative 200k fallback.`,
           multiSelect: false,
           allowCustomText: true,
           options: [
             {
-              label: "Use 200k fallback this session",
-              description: "Auto-compaction stays conservative until this model has a saved context window."
+              label: "Save 200k fallback",
+              description: "Auto-compaction stays conservative until you replace this with the real model limit."
             }
           ]
         }
       ]
     });
 
-    const setFallbackForSession = (message: string) => {
-      setContextWindowFallbacks((current) => ({
-        ...current,
-        [modelKey]: DEFAULT_FALLBACK_CONTEXT_WINDOW_TOKENS
-      }));
+    const saveContextWindow = (contextWindowTokens: number, message: string): ContextWindowStatusSnapshot => {
+      const nextRuntimeConfig = persistModelContextWindow(runtimeConfig.providerId, runtimeConfig.model, contextWindowTokens);
       appendEntry(setEntries, createEntry("status", "status", message));
+      return buildContextWindowStatusSnapshot(nextRuntimeConfig, contextWindowFallbacks(), lastContextEstimate());
     };
 
     if (decision.dismissed) {
-      setFallbackForSession(
-        `Using the conservative 200k context-window fallback for ${runtimeConfig.model} this session. Set the real value later from setup or when prompted again after a restart.`
+      if (mode === "manual") {
+        appendEntry(setEntries, createEntry("status", "status", `Context window unchanged for ${runtimeConfig.model}.`));
+        return configuredStatus;
+      }
+
+      return saveContextWindow(
+        DEFAULT_FALLBACK_CONTEXT_WINDOW_TOKENS,
+        `Saved the conservative 200k context-window fallback for ${runtimeConfig.model}. Change it later with /context-window.`
       );
-      return buildContextWindowStatusSnapshot(runtimeConfig, {
-        ...contextWindowFallbacks(),
-        [modelKey]: DEFAULT_FALLBACK_CONTEXT_WINDOW_TOKENS
-      }, lastContextEstimate());
     }
 
     const answer = decision.answers[0];
     const customValue = answer?.customText.trim() ?? "";
     const parsedValue = Number.parseInt(customValue, 10);
     if (Number.isFinite(parsedValue) && parsedValue > 0) {
-      persistModelContextWindow(runtimeConfig.providerId, runtimeConfig.model, parsedValue);
-      appendEntry(
-        setEntries,
-        createEntry("status", "status", `Saved a ${parsedValue.toLocaleString()} token context window for ${runtimeConfig.model}`)
-      );
-      return buildContextWindowStatusSnapshot(
-        setRuntimeModelContextWindow(runtimeConfig, runtimeConfig.providerId, runtimeConfig.model, parsedValue),
-        contextWindowFallbacks(),
-        lastContextEstimate()
+      return saveContextWindow(
+        parsedValue,
+        `Saved a ${parsedValue.toLocaleString()} token context window for ${runtimeConfig.model}`
       );
     }
 
-    setFallbackForSession(
+    return saveContextWindow(
+      DEFAULT_FALLBACK_CONTEXT_WINDOW_TOKENS,
       customValue === ""
-        ? `Using the conservative 200k context-window fallback for ${runtimeConfig.model} this session.`
-        : `Could not parse '${customValue}' as a positive integer, so Recode will use the conservative 200k context-window fallback for ${runtimeConfig.model} this session.`
+        ? `Saved the conservative 200k context-window fallback for ${runtimeConfig.model}.`
+        : `Could not parse '${customValue}' as a positive integer, so Recode saved the conservative 200k context-window fallback for ${runtimeConfig.model}.`
     );
-    return buildContextWindowStatusSnapshot(runtimeConfig, {
-      ...contextWindowFallbacks(),
-      [modelKey]: DEFAULT_FALLBACK_CONTEXT_WINDOW_TOKENS
-    }, lastContextEstimate());
+  };
+
+  const ensureActiveModelContextWindow = async (): Promise<ContextWindowStatusSnapshot> => {
+    return requestActiveModelContextWindow("automatic");
   };
 
   const prepareTranscriptForPendingPrompt = async (
@@ -1676,6 +1681,12 @@ export function TuiApp(props: TuiAppProps) {
       },
       toggleTodoPanel() {
         toggleComposerTodoPanel();
+      },
+      async openContextWindowPrompt() {
+        await requestActiveModelContextWindow("manual");
+        queueMicrotask(() => {
+          inputRef?.focus();
+        });
       },
       openApprovalModePicker() {
         openApprovalModePicker(setApprovalModePickerOpen, setApprovalModePickerSelectedIndex, setApprovalModePickerWindowStart, approvalMode());

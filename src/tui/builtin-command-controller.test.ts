@@ -121,6 +121,15 @@ describe("builtin command controller", () => {
     expect(fixture.state.draftCleared).toBe(true);
   });
 
+  it("opens the context-window prompt", async () => {
+    const fixture = createDispatchFixture("/context-window");
+
+    await dispatchBuiltinCommand(fixture.options);
+
+    expect(fixture.state.contextWindowPromptOpened).toBe(true);
+    expect(fixture.state.draftCleared).toBe(true);
+  });
+
   it("switches session mode and preserves transcript", async () => {
     const transcript: readonly ConversationMessage[] = [{ role: "user", content: "plan this" }];
     const fixture = createDispatchFixture("/plan", { transcript });
@@ -149,6 +158,7 @@ interface FixtureState {
   streamingEntryId: string | undefined;
   providerPickerOpened: boolean;
   todoPanelToggled: boolean;
+  contextWindowPromptOpened: boolean;
 }
 
 interface FixtureOverrides {
@@ -179,7 +189,8 @@ function createDispatchFixture(
     streamingBody: "",
     streamingEntryId: undefined,
     providerPickerOpened: false,
-    todoPanelToggled: false
+    todoPanelToggled: false,
+    contextWindowPromptOpened: false
   };
 
   const runtimeConfig = createRuntimeConfig(configPath);
@@ -217,6 +228,9 @@ function createDispatchFixture(
       openCustomizePicker() {},
       toggleTodoPanel() {
         state.todoPanelToggled = true;
+      },
+      async openContextWindowPrompt() {
+        state.contextWindowPromptOpened = true;
       },
       openApprovalModePicker() {},
       openLayoutPicker() {},

@@ -32,6 +32,7 @@ describe("tui message format", () => {
     expect(parseBuiltinCommand("/theme")).toEqual({ name: "theme", raw: "/theme" });
     expect(parseBuiltinCommand("/customize")).toEqual({ name: "customize", raw: "/customize" });
     expect(parseBuiltinCommand("/todos")).toEqual({ name: "todos", raw: "/todos" });
+    expect(parseBuiltinCommand("/context-window")).toEqual({ name: "context-window", raw: "/context-window" });
     expect(parseBuiltinCommand("/approval-mode")).toEqual({ name: "approval-mode", raw: "/approval-mode" });
     expect(parseBuiltinCommand("/export")).toEqual({ name: "export", raw: "/export" });
     expect(parseBuiltinCommand("/history")).toEqual({ name: "history", raw: "/history" });
@@ -56,6 +57,7 @@ describe("tui message format", () => {
       { name: "theme", command: "/theme", description: "Open the theme selector" },
       { name: "customize", command: "/customize", description: "Customize theme and tool marker" },
       { name: "todos", command: "/todos", description: "Toggle the composer todo panel" },
+      { name: "context-window", command: "/context-window", description: "Set the active model context window" },
       { name: "approval-mode", command: "/approval-mode", description: "Open the approval mode selector" },
       { name: "export", command: "/export", description: "Export the current conversation to HTML" },
       { name: "history", command: "/history", description: "Open the conversation history" },
@@ -82,6 +84,7 @@ describe("tui message format", () => {
       "/theme",
       "/customize",
       "/todos",
+      "/context-window",
       "/approval-mode",
       "/export",
       "/history",

@@ -127,7 +127,9 @@ export function formatApprovalRequestDescription(request: ToolApprovalRequest): 
 export function isContextWindowQuestionRequest(
   request: ActiveQuestionRequest | QuestionToolRequest | undefined
 ): boolean {
-  return request?.questions.length === 1 && request.questions[0]?.id === "context-window";
+  const questionId = request?.questions[0]?.id;
+  return request?.questions.length === 1
+    && (questionId === "context-window" || questionId === "context-window-config");
 }
 
 /**
@@ -140,7 +142,7 @@ export function buildContextWindowFallbackDecision(request: ActiveQuestionReques
     answers: [
       {
         questionId: question?.id ?? "context-window",
-        selectedOptionLabels: [question?.options[0]?.label ?? "Use fallback"],
+        selectedOptionLabels: [question?.options[0]?.label ?? "Save 200k fallback"],
         customText: ""
       }
     ]

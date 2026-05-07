@@ -181,7 +181,7 @@ export function QuestionOverlay(props: QuestionOverlayProps) {
                 <>
                   <box flexDirection="row" justifyContent="space-between" alignItems="center">
                     <text fg={props.theme.warning} attributes={TextAttributes.BOLD}>Model Context Window</text>
-                    <text fg={props.theme.hintText} attributes={TextAttributes.DIM}>Enter saves · ESC falls back</text>
+                    <text fg={props.theme.hintText} attributes={TextAttributes.DIM}>Enter saves · ESC closes</text>
                   </box>
 
                   <box
@@ -198,7 +198,7 @@ export function QuestionOverlay(props: QuestionOverlayProps) {
                     <text fg={props.theme.brandShimmer} attributes={TextAttributes.BOLD}>Unknown model limit</text>
                     <text fg={props.theme.assistantBody}>{question()?.question ?? ""}</text>
                     <text fg={props.theme.hintText} attributes={TextAttributes.DIM}>
-                      Save the real number if you know it. Otherwise Recode can use a conservative session-only guardrail.
+                      Save the real number if you know it. Otherwise Recode can save a conservative guardrail.
                     </text>
                   </box>
 
@@ -245,12 +245,12 @@ export function QuestionOverlay(props: QuestionOverlayProps) {
                     paddingTop={1}
                     paddingBottom={1}
                   >
-                    <text fg={props.theme.warning} attributes={TextAttributes.BOLD}>200k Session Fallback</text>
+                    <text fg={props.theme.warning} attributes={TextAttributes.BOLD}>200k Fallback</text>
                     <text fg={props.theme.assistantBody}>
-                      Leave the field empty and press Enter to continue with a temporary 200,000-token window for this session.
+                      Leave the field empty and press Enter to save a 200,000-token window for this model.
                     </text>
                     <text fg={props.theme.hintText} attributes={TextAttributes.DIM}>
-                      This does not overwrite your saved model config.
+                      You can change this later with /context-window.
                     </text>
                   </box>
                 </>

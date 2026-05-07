@@ -83,6 +83,7 @@ export interface BuiltinCommandDispatchOptions {
   readonly openThemePicker: () => void;
   readonly openCustomizePicker: () => void;
   readonly toggleTodoPanel: () => void;
+  readonly openContextWindowPrompt: () => Promise<void>;
   readonly openApprovalModePicker: () => void;
   readonly openLayoutPicker: () => void;
   readonly setMinimalMode: (value: boolean) => void;
@@ -153,6 +154,9 @@ async function executeBuiltinCommand(
       return;
     case "todos":
       options.toggleTodoPanel();
+      return;
+    case "context-window":
+      await options.openContextWindowPrompt();
       return;
     case "approval-mode":
       options.openApprovalModePicker();

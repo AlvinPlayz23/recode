@@ -8,7 +8,7 @@
  * Built-in TUI command names.
  */
 export type BuiltinCommandName =
-  "help" | "clear" | "status" | "config" | "models" | "provider" | "theme" | "customize" | "todos" | "approval-mode" | "export" | "history" | "new" | "fork" | "compact" | "plan" | "build" | "layout" | "minimal" | "exit" | "quit";
+  "help" | "clear" | "status" | "config" | "models" | "provider" | "theme" | "customize" | "todos" | "context-window" | "approval-mode" | "export" | "history" | "new" | "fork" | "compact" | "plan" | "build" | "layout" | "minimal" | "exit" | "quit";
 
 /**
  * Built-in TUI command definition.
@@ -37,6 +37,7 @@ const BUILTIN_COMMANDS: readonly BuiltinCommandDefinition[] = [
   { name: "theme", command: "/theme", description: "Open the theme selector" },
   { name: "customize", command: "/customize", description: "Customize theme and tool marker" },
   { name: "todos", command: "/todos", description: "Toggle the composer todo panel" },
+  { name: "context-window", command: "/context-window", description: "Set the active model context window" },
   { name: "approval-mode", command: "/approval-mode", description: "Open the approval mode selector" },
   { name: "export", command: "/export", description: "Export the current conversation to HTML" },
   { name: "history", command: "/history", description: "Open the conversation history" },
@@ -61,6 +62,7 @@ const BUILTIN_COMMAND_ALIASES: Readonly<Record<string, BuiltinCommandName>> = {
   "/theme": "theme",
   "/customize": "customize",
   "/todos": "todos",
+  "/context-window": "context-window",
   "/approval-mode": "approval-mode",
   "/export": "export",
   "/history": "history",
