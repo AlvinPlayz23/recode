@@ -49,6 +49,7 @@ import {
   selectConfiguredApprovalAllowlist,
   selectConfiguredApprovalMode,
   selectConfiguredLayoutMode,
+  selectConfiguredTodoPanelEnabled,
   setConfiguredProviderDisabled,
   setConfiguredModelContextWindow,
   selectConfiguredTheme,
@@ -77,7 +78,8 @@ import type {
   ToolApprovalDecision,
   ToolApprovalRequest,
   ToolApprovalScope,
-  ToolExecutionContext
+  ToolExecutionContext,
+  TodoItem
 } from "../tools/tool.ts";
 import { ToolRegistry } from "../tools/tool-registry.ts";
 import {
@@ -159,6 +161,8 @@ import {
 } from "./theme.ts";
 import { ThemePickerOverlay } from "./theme-picker-overlay.tsx";
 import { ToastOverlay } from "./toast-overlay.tsx";
+import { TodoDropup } from "./todo-dropup.tsx";
+import { formatTodoChip } from "./todo-summary.ts";
 import { ToolApprovalOverlay } from "./tool-approval-overlay.tsx";
 import {
   handleCommandPanelKey,
@@ -209,6 +213,7 @@ import {
   appendEntry,
   createEntry,
   createToolResultUiEntry,
+  extractLatestTodosFromTranscript,
   rehydrateEntriesFromTranscript,
   renderVisibleEntries,
   updateEntryBody,
@@ -318,6 +323,9 @@ export function TuiApp(props: TuiAppProps) {
   const [exitHintVisible, setExitHintVisible] = createSignal(false);
   const [layoutMode, setLayoutMode] = createSignal<LayoutMode>(initialConfig.layoutMode ?? DEFAULT_LAYOUT_MODE);
   const [minimalMode, setMinimalMode] = createSignal(initialConfig.minimalMode ?? false);
+  const [todoPanelEnabled, setTodoPanelEnabled] = createSignal(initialConfig.todoPanelEnabled ?? true);
+  const [todoDropupOpen, setTodoDropupOpen] = createSignal(false);
+  const [todos, setTodos] = createSignal<readonly TodoItem[]>([]);
   const [toolsCollapsed, setToolsCollapsed] = createSignal(false);
   const [layoutPickerOpen, setLayoutPickerOpen] = createSignal(false);
   const [layoutPickerSelectedIndex, setLayoutPickerSelectedIndex] = createSignal(0);
@@ -408,7 +416,7 @@ export function TuiApp(props: TuiAppProps) {
   ));
   const activeSystemPrompt = createMemo(() => sessionMode() === "plan" ? PLAN_SYSTEM_PROMPT : props.systemPrompt);
   const activeToolRegistry = createMemo(() => createToolRegistryForMode(props.toolRegistry, sessionMode()));
-  const customizeRows = createMemo(() => buildCustomizeRows(themeName(), toolMarkerName()));
+  const customizeRows = createMemo(() => buildCustomizeRows(themeName(), toolMarkerName(), todoPanelEnabled()));
   const layoutPickerItems = createMemo(() => buildLayoutPickerItems(layoutMode(), toolsCollapsed()));
   const layoutPickerTotalOptionCount = createMemo(() => layoutPickerItems().length);
   const commandPanel = createMemo(() => buildCommandPanelState(
@@ -442,7 +450,8 @@ export function TuiApp(props: TuiAppProps) {
     conversationFlowWidth(),
     commandPanel(),
     fileSuggestionPanel(),
-    draft()
+    draft(),
+    todoPanelEnabled() && todoDropupOpen() ? getTodoDropupHeight(todos()) : 0
   ) >= availableConversationHeight());
   const footerTipText = createMemo(() => getFooterTip(footerTipIndex()).text);
   const promptPlaceholder = createMemo(() => {
@@ -590,6 +599,30 @@ export function TuiApp(props: TuiAppProps) {
       activeToastTimer = undefined;
       setActiveToast(undefined);
     }, 1500);
+  };
+
+  const setTranscriptMessages = (value: readonly ConversationMessage[]) => {
+    setPreviousMessages(value);
+    const nextTodos = extractLatestTodosFromTranscript(value);
+    setTodos(nextTodos);
+    if (nextTodos.length === 0) {
+      setTodoDropupOpen(false);
+    }
+  };
+
+  const toggleComposerTodoPanel = () => {
+    if (!todoPanelEnabled()) {
+      showToast("Todo panel is disabled in /customize");
+      return;
+    }
+
+    if (todos().length === 0) {
+      showToast("No todos yet");
+      return;
+    }
+
+    setTodoDropupOpen((open) => !open);
+    inputRef?.focus();
   };
 
   const schedulePendingStreamTextFlush = (entryId: string, delta: string) => {
@@ -791,7 +824,7 @@ export function TuiApp(props: TuiAppProps) {
       );
     }
 
-    setPreviousMessages(compacted.transcript);
+    setTranscriptMessages(compacted.transcript);
     const persistedConversation = persistConversationSession(
       historyRoot(),
       sessionRuntimeConfig(),
@@ -824,7 +857,7 @@ export function TuiApp(props: TuiAppProps) {
     applyInputCursorStyle(inputRef, t().brandShimmer);
     setCurrentConversation(createDraftConversation(sessionRuntimeConfig(), "build"));
     setEntries([]);
-    setPreviousMessages([]);
+    setTranscriptMessages([]);
     setLastContextEstimate(undefined);
     setSessionMode("build");
   });
@@ -980,6 +1013,15 @@ export function TuiApp(props: TuiAppProps) {
       return;
     }
 
+    if (key.ctrl && key.name === "t") {
+      key.preventDefault();
+      key.stopPropagation();
+      if (!modalOpen()) {
+        toggleComposerTodoPanel();
+      }
+      return;
+    }
+
     if (handleQuestionRequestKey({
       key,
       request: activeQuestionRequest(),
@@ -1105,7 +1147,10 @@ export function TuiApp(props: TuiAppProps) {
           themeName,
           setThemeName,
           toolMarkerName,
-          setToolMarkerName
+          setToolMarkerName,
+          todoPanelEnabled,
+          setTodoPanelEnabled,
+          setTodoDropupOpen
         });
       }
     })) {
@@ -1183,7 +1228,7 @@ export function TuiApp(props: TuiAppProps) {
           setRuntimeConfig: setSessionRuntimeConfig,
           setConversation: setCurrentConversation,
           setEntries,
-          setPreviousMessages,
+          setPreviousMessages: setTranscriptMessages,
           setLastContextEstimate,
           rehydrateEntries: rehydrateEntriesFromTranscript,
           close() {
@@ -1294,6 +1339,14 @@ export function TuiApp(props: TuiAppProps) {
         });
       }
     })) {
+      return;
+    }
+
+    if (key.name === "escape" && todoDropupOpen()) {
+      key.preventDefault();
+      key.stopPropagation();
+      setTodoDropupOpen(false);
+      inputRef?.focus();
       return;
     }
 
@@ -1579,6 +1632,9 @@ export function TuiApp(props: TuiAppProps) {
       openCustomizePicker() {
         openCustomizePicker(setCustomizePickerOpen, setCustomizePickerSelectedRow);
       },
+      toggleTodoPanel() {
+        toggleComposerTodoPanel();
+      },
       openApprovalModePicker() {
         openApprovalModePicker(setApprovalModePickerOpen, setApprovalModePickerSelectedIndex, setApprovalModePickerWindowStart, approvalMode());
       },
@@ -1589,7 +1645,7 @@ export function TuiApp(props: TuiAppProps) {
       setSessionMode,
       setConversation: setCurrentConversation,
       setEntries,
-      setPreviousMessages,
+      setPreviousMessages: setTranscriptMessages,
       setLastContextEstimate,
       setStreamingBody,
       setStreamingEntryId,
@@ -1695,13 +1751,19 @@ export function TuiApp(props: TuiAppProps) {
             toolResult.isError,
             toolResult.metadata
           );
+          if (!toolResult.isError && toolResult.metadata?.kind === "todo-list") {
+            setTodos(toolResult.metadata.todos);
+            if (toolResult.metadata.todos.length === 0) {
+              setTodoDropupOpen(false);
+            }
+          }
           if (toolResultEntry !== undefined) {
             appendEntry(setEntries, toolResultEntry);
           }
         },
         onTranscriptUpdate(transcript) {
           latestTranscript = transcript;
-          setPreviousMessages(transcript);
+          setTranscriptMessages(transcript);
           setLastContextEstimate(estimateConversationContextTokens(transcript));
         }
       });
@@ -1719,7 +1781,7 @@ export function TuiApp(props: TuiAppProps) {
         transcript: result.transcript,
         currentConversation: currentConversation(),
         sessionMode: sessionMode(),
-        setPreviousMessages,
+        setPreviousMessages: setTranscriptMessages,
         setLastContextEstimate,
         setConversation: setCurrentConversation
       });
@@ -1743,7 +1805,7 @@ export function TuiApp(props: TuiAppProps) {
           transcript: transcriptSnapshot,
           currentConversation: currentConversation(),
           sessionMode: sessionMode(),
-          setPreviousMessages,
+          setPreviousMessages: setTranscriptMessages,
           setLastContextEstimate,
           setConversation: setCurrentConversation
         });
@@ -1767,6 +1829,11 @@ export function TuiApp(props: TuiAppProps) {
 
   const renderComposer = () => (
     <box flexDirection="column" paddingX={2} paddingBottom={1} flexShrink={0}>
+      <TodoDropup
+        open={todoPanelEnabled() && todoDropupOpen()}
+        todos={todos()}
+        theme={t()}
+      />
       <Show when={commandPanel() !== undefined}>
         <>
           <box
@@ -1971,9 +2038,20 @@ export function TuiApp(props: TuiAppProps) {
           <text fg={t().divider} attributes={TextAttributes.DIM}>·</text>
           <text fg={t().hintText} attributes={TextAttributes.DIM}>{approvalMode()}</text>
         </box>
-        <text fg={t().hintText} attributes={TextAttributes.DIM}>
-          {isCommandDraft(draft()) ? "↵ run  ⇧↵ newline  @ file" : "↵ send  ⇧↵ newline  @ file"}
-        </text>
+        <box flexDirection="row" alignItems="center" gap={1}>
+          <Show when={todoPanelEnabled() && todos().length > 0}>
+            <text
+              fg={todoDropupOpen() ? t().brandShimmer : t().hintText}
+              attributes={todoDropupOpen() ? TextAttributes.BOLD : TextAttributes.DIM}
+            >
+              {`${formatTodoChip(todos())} ⌃T`}
+            </text>
+            <text fg={t().divider} attributes={TextAttributes.DIM}>·</text>
+          </Show>
+          <text fg={t().hintText} attributes={TextAttributes.DIM}>
+            {isCommandDraft(draft()) ? "↵ run  ⇧↵ newline  @ file" : "↵ send  ⇧↵ newline  @ file"}
+          </text>
+        </box>
       </box>
       <Show when={exitHintVisible()}>
         <box justifyContent="center" paddingTop={0}>
@@ -2765,9 +2843,24 @@ function persistSelectedToolMarker(configPath: string, toolMarkerName: ToolMarke
   saveRecodeConfigFile(configPath, nextConfig);
 }
 
+function persistTodoPanelEnabled(configPath: string, enabled: boolean): void {
+  const config = loadRecodeConfigFile(configPath);
+  const nextConfig = selectConfiguredTodoPanelEnabled(config, enabled);
+  saveRecodeConfigFile(configPath, nextConfig);
+}
+
+function getTodoDropupHeight(todos: readonly TodoItem[]): number {
+  if (todos.length === 0) {
+    return 0;
+  }
+
+  return Math.min(6, todos.length) + 3;
+}
+
 function buildCustomizeRows(
   activeThemeName: ThemeName,
-  activeToolMarkerName: ToolMarkerName
+  activeToolMarkerName: ToolMarkerName,
+  todoPanelEnabled: boolean
 ): readonly CustomizeRow[] {
   const toolMarker = getToolMarkerDefinition(activeToolMarkerName);
   const theme = getThemeDefinition(activeThemeName);
@@ -2781,6 +2874,15 @@ function buildCustomizeRows(
         value: toolMarker.symbol
       },
       description: "Controls the marker shown before tool activity lines."
+    },
+    {
+      id: "todo-panel",
+      label: "Todos",
+      option: {
+        label: todoPanelEnabled ? "Enabled" : "Disabled",
+        value: ""
+      },
+      description: "Shows the live TodoWrite panel above the composer."
     },
     {
       id: "theme",
@@ -2820,10 +2922,14 @@ interface CycleCustomizeSettingOptions {
   readonly setThemeName: (value: ThemeName) => void;
   readonly toolMarkerName: () => ToolMarkerName;
   readonly setToolMarkerName: (value: ToolMarkerName) => void;
+  readonly todoPanelEnabled: () => boolean;
+  readonly setTodoPanelEnabled: (value: boolean) => void;
+  readonly setTodoDropupOpen: (value: boolean) => void;
 }
 
 function cycleCustomizeSetting(options: CycleCustomizeSettingOptions): void {
-  const rowId = (options.rowIndex % 2 + 2) % 2 === 0 ? "tool-marker" : "theme";
+  const rowIds = ["tool-marker", "todo-panel", "theme"] as const;
+  const rowId = rowIds[(options.rowIndex % rowIds.length + rowIds.length) % rowIds.length] ?? "tool-marker";
 
   if (rowId === "tool-marker") {
     const markers = getAvailableToolMarkers();
@@ -2835,6 +2941,16 @@ function cycleCustomizeSetting(options: CycleCustomizeSettingOptions): void {
     }
     options.setToolMarkerName(nextMarker.name);
     persistSelectedToolMarker(options.configPath, nextMarker.name);
+    return;
+  }
+
+  if (rowId === "todo-panel") {
+    const nextEnabled = !options.todoPanelEnabled();
+    options.setTodoPanelEnabled(nextEnabled);
+    if (!nextEnabled) {
+      options.setTodoDropupOpen(false);
+    }
+    persistTodoPanelEnabled(options.configPath, nextEnabled);
     return;
   }
 

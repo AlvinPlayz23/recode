@@ -137,11 +137,13 @@ export interface EditToolResultMetadata {
   readonly path: string;
   readonly oldText: string;
   readonly newText: string;
+  readonly replacementCount?: number;
 }
 
 /** One item in an assistant-managed session todo list. */
 export interface TodoItem {
   readonly content: string;
+  readonly activeForm: string;
   readonly status: "pending" | "in_progress" | "completed" | "cancelled";
   readonly priority: "high" | "medium" | "low";
 }

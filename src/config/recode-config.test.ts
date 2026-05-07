@@ -17,6 +17,7 @@ import {
   selectConfiguredApprovalMode,
   selectConfiguredLayoutMode,
   selectConfiguredMinimalMode,
+  selectConfiguredTodoPanelEnabled,
   setConfiguredModelContextWindow,
   selectConfiguredProviderModel,
   setConfiguredProviderDisabled,
@@ -182,6 +183,11 @@ describe("recode config", () => {
     expect(config.toolMarkerName).toBe("hook");
   });
 
+  it("updates the configured composer todo panel", () => {
+    const config = selectConfiguredTodoPanelEnabled(createEmptyConfig(), false);
+    expect(config.todoPanelEnabled).toBe(false);
+  });
+
   it("updates approval settings", () => {
     const modeConfig = selectConfiguredApprovalMode(createEmptyConfig(), "yolo");
     const allowlistConfig = selectConfiguredApprovalAllowlist(modeConfig, ["bash", "web"]);
@@ -210,7 +216,10 @@ describe("recode config", () => {
       selectConfiguredMinimalMode(
         selectConfiguredLayoutMode(
           selectConfiguredApprovalMode(
-            selectConfiguredTheme(createEmptyConfig(), "frost-glass"),
+            selectConfiguredTodoPanelEnabled(
+              selectConfiguredTheme(createEmptyConfig(), "frost-glass"),
+              false
+            ),
             "auto-edits"
           ),
           "comfortable"
@@ -240,6 +249,7 @@ describe("recode config", () => {
     expect(nextConfig.approvalMode).toBe("auto-edits");
     expect(nextConfig.layoutMode).toBe("comfortable");
     expect(nextConfig.minimalMode).toBe(true);
+    expect(nextConfig.todoPanelEnabled).toBe(false);
     expect(nextConfig.toolMarkerName).toBe("triangle");
   });
 });

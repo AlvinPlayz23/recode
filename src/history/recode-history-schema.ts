@@ -276,6 +276,9 @@ function parseEditToolResultMetadata(value: Record<string, unknown>): EditToolRe
   const path = readOptionalString(value, "path");
   const oldText = typeof value["oldText"] === "string" ? value["oldText"] : undefined;
   const newText = typeof value["newText"] === "string" ? value["newText"] : undefined;
+  const replacementCount = typeof value["replacementCount"] === "number" && Number.isFinite(value["replacementCount"])
+    ? Math.max(0, Math.trunc(value["replacementCount"]))
+    : undefined;
 
   if (path === undefined || oldText === undefined || newText === undefined) {
     return undefined;
@@ -285,7 +288,8 @@ function parseEditToolResultMetadata(value: Record<string, unknown>): EditToolRe
     kind: "edit-preview",
     path,
     oldText,
-    newText
+    newText,
+    ...(replacementCount === undefined ? {} : { replacementCount })
   };
 }
 
@@ -308,11 +312,13 @@ function parseTodoItem(value: unknown): TodoItem | undefined {
   }
 
   const content = readOptionalString(value, "content");
+  const activeForm = readOptionalString(value, "activeForm");
   const status = value["status"];
   const priority = value["priority"];
 
   if (
     content === undefined
+    || activeForm === undefined
     || (status !== "pending" && status !== "in_progress" && status !== "completed" && status !== "cancelled")
     || (priority !== "high" && priority !== "medium" && priority !== "low")
   ) {
@@ -321,6 +327,7 @@ function parseTodoItem(value: unknown): TodoItem | undefined {
 
   return {
     content,
+    activeForm,
     status,
     priority
   };

@@ -80,6 +80,7 @@ export interface BuiltinCommandDispatchOptions {
   readonly openHistoryPicker: () => Promise<void>;
   readonly openThemePicker: () => void;
   readonly openCustomizePicker: () => void;
+  readonly toggleTodoPanel: () => void;
   readonly openApprovalModePicker: () => void;
   readonly openLayoutPicker: () => void;
   readonly setMinimalMode: (value: boolean) => void;
@@ -146,6 +147,9 @@ async function executeBuiltinCommand(
       return;
     case "customize":
       options.openCustomizePicker();
+      return;
+    case "todos":
+      options.toggleTodoPanel();
       return;
     case "approval-mode":
       options.openApprovalModePicker();

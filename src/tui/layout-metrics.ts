@@ -22,10 +22,11 @@ export function estimateConversationFlowHeight(
   width: number,
   commandPanel: LayoutMetricsPanel | undefined,
   fileSuggestionPanel: LayoutMetricsPanel | undefined,
-  draft: string
+  draft: string,
+  todoPanelLineCount: number = 0
 ): number {
   const transcriptHeight = entries.reduce((total, entry) => total + estimateEntryHeight(entry, width), 0);
-  return transcriptHeight + estimateComposerHeight(width, commandPanel, fileSuggestionPanel, draft);
+  return transcriptHeight + estimateComposerHeight(width, commandPanel, fileSuggestionPanel, draft, todoPanelLineCount);
 }
 
 /**
@@ -75,7 +76,8 @@ export function estimateComposerHeight(
   width: number,
   commandPanel: LayoutMetricsPanel | undefined,
   fileSuggestionPanel: LayoutMetricsPanel | undefined,
-  draft: string
+  draft: string,
+  todoPanelLineCount: number = 0
 ): number {
   const commandCount = commandPanel?.commands?.length ?? 0;
   const commandPanelHeight = commandPanel === undefined
@@ -88,7 +90,7 @@ export function estimateComposerHeight(
   const visibleDraft = toVisibleDraft(draft);
   const draftHeight = Math.min(4, estimateWrappedTextHeight(visibleDraft === "" ? " " : visibleDraft, Math.max(8, width - 8)));
 
-  return commandPanelHeight + fileSuggestionPanelHeight + draftHeight + 3 + estimateBadgeLineHeight(width);
+  return Math.max(0, todoPanelLineCount) + commandPanelHeight + fileSuggestionPanelHeight + draftHeight + 3 + estimateBadgeLineHeight(width);
 }
 
 /**

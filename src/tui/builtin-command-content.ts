@@ -130,6 +130,7 @@ export function buildBuiltinConfigBody(
     `- Config path: \`${runtimeConfig.configPath}\``,
     `- Theme: ${getThemeDefinition(activeThemeName).label} (\`${activeThemeName}\`)`,
     `- Tool marker: ${getToolMarkerDefinition(toolMarkerName).label} (\`${getToolMarkerDefinition(toolMarkerName).symbol}\`)`,
+    `- Todo panel: ${config.todoPanelEnabled === false ? "disabled" : "enabled"}`,
     `- Active provider: ${runtimeConfig.providerName} (\`${runtimeConfig.providerId}\`)`,
     `- Active model: \`${runtimeConfig.model}\``,
     `- Base URL: \`${runtimeConfig.baseUrl}\``,

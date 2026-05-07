@@ -111,6 +111,15 @@ describe("builtin command controller", () => {
     expect(fixture.state.draftCleared).toBe(true);
   });
 
+  it("toggles the composer todo panel", async () => {
+    const fixture = createDispatchFixture("/todos");
+
+    await dispatchBuiltinCommand(fixture.options);
+
+    expect(fixture.state.todoPanelToggled).toBe(true);
+    expect(fixture.state.draftCleared).toBe(true);
+  });
+
   it("switches session mode and preserves transcript", async () => {
     const transcript: readonly ConversationMessage[] = [{ role: "user", content: "plan this" }];
     const fixture = createDispatchFixture("/plan", { transcript });
@@ -137,6 +146,7 @@ interface FixtureState {
   streamingBody: string;
   streamingEntryId: string | undefined;
   providerPickerOpened: boolean;
+  todoPanelToggled: boolean;
 }
 
 interface FixtureOverrides {
@@ -165,7 +175,8 @@ function createDispatchFixture(
     busyPhase: "thinking",
     streamingBody: "",
     streamingEntryId: undefined,
-    providerPickerOpened: false
+    providerPickerOpened: false,
+    todoPanelToggled: false
   };
 
   const runtimeConfig = createRuntimeConfig(configPath);
@@ -200,6 +211,9 @@ function createDispatchFixture(
       async openHistoryPicker() {},
       openThemePicker() {},
       openCustomizePicker() {},
+      toggleTodoPanel() {
+        state.todoPanelToggled = true;
+      },
       openApprovalModePicker() {},
       openLayoutPicker() {},
       setMinimalMode(value_) {

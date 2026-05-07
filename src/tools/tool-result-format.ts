@@ -86,6 +86,8 @@ function getToolFailureRecoveryHint(toolName: string, message: string): string |
       return "For read-only shell commands, simplify the command and keep paths inside the workspace. For edits, prefer Edit, Write, or ApplyPatch.";
     case "AskUserQuestion":
       return "Retry with 1-4 questions, each with non-empty options and short labels.";
+    case "TodoWrite":
+      return "Retry with a todos array. Each item needs content, activeForm, status, and priority. Use at most one in_progress item.";
     default:
       return undefined;
   }

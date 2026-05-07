@@ -2,7 +2,7 @@
  * Transcript entry state and formatting helpers for the TUI.
  */
 
-import type { ToolResultMetadata } from "../tools/tool.ts";
+import type { TodoItem, ToolResultMetadata } from "../tools/tool.ts";
 import {
   formatContinuationSummaryForDisplay,
   type ConversationMessage,
@@ -162,6 +162,22 @@ export function rehydrateEntriesFromTranscript(transcript: readonly Conversation
 }
 
 /**
+ * Return the latest todo list state recorded in a transcript.
+ */
+export function extractLatestTodosFromTranscript(
+  transcript: readonly ConversationMessage[]
+): readonly TodoItem[] {
+  for (let index = transcript.length - 1; index >= 0; index -= 1) {
+    const message = transcript[index];
+    if (message?.role === "tool" && message.metadata?.kind === "todo-list") {
+      return message.metadata.todos;
+    }
+  }
+
+  return [];
+}
+
+/**
  * Create a visible tool-result entry when the tool result has renderable metadata.
  */
 export function createToolResultEntry(
@@ -170,14 +186,21 @@ export function createToolResultEntry(
   metadata: ToolResultMetadata | undefined
 ): UiEntry | undefined {
   if (metadata?.kind === "edit-preview") {
+    const detail = metadata.replacementCount === undefined || metadata.replacementCount === 1
+      ? metadata.path
+      : `${metadata.path} (${metadata.replacementCount} replacements)`;
     return {
-      ...createEntry("tool-preview", "tool", `${toToolDisplayName(toolName)} · ${metadata.path}`),
+      ...createEntry("tool-preview", "tool", `${toToolDisplayName(toolName)} · ${detail}`),
       metadata
     };
   }
 
   if (metadata?.kind === "todo-list") {
     const remaining = metadata.todos.filter((todo) => todo.status !== "completed" && todo.status !== "cancelled").length;
+    if (remaining === 0) {
+      return undefined;
+    }
+
     const completed = metadata.todos.filter((todo) => todo.status === "completed").length;
     return {
       ...createEntry("tool-preview", "tool", `${toToolDisplayName(toolName)} · ${remaining} active, ${completed} completed`),

@@ -105,6 +105,7 @@ describe("builtin command content", () => {
     const body = buildBuiltinConfigBody(runtimeConfig, "senren-dusk", "arrow");
 
     expect(body).toContain("## Recode Configuration");
+    expect(body).toContain("Todo panel: enabled");
     expect(body).toContain("Primary");
     expect(body).toContain("`gpt-4.1`");
   });

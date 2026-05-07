@@ -36,7 +36,11 @@ export function createTodoWriteTool(): ToolDefinition {
             properties: {
               content: {
                 type: "string",
-                description: "Brief description of the task."
+                description: "Brief imperative description of the task, for example 'Run tests'."
+              },
+              activeForm: {
+                type: "string",
+                description: "Present-continuous form shown while active, for example 'Running tests'."
               },
               status: {
                 type: "string",
@@ -47,7 +51,7 @@ export function createTodoWriteTool(): ToolDefinition {
                 description: "Priority level: high, medium, or low."
               }
             },
-            required: ["content", "status", "priority"],
+            required: ["content", "activeForm", "status", "priority"],
             additionalProperties: false
           },
           maxItems: MAX_TODO_ITEMS
@@ -84,8 +88,14 @@ export function parseTodoWriteInput(arguments_: ToolArguments): TodoWriteInput {
     throw new ToolExecutionError(`TodoWrite accepts at most ${MAX_TODO_ITEMS} todo items.`);
   }
 
+  const todos = todosValue.map(parseTodoItem);
+  const activeCount = todos.filter((todo) => todo.status === "in_progress").length;
+  if (activeCount > 1) {
+    throw new ToolExecutionError("TodoWrite allows at most one todo item with status 'in_progress'.");
+  }
+
   return {
-    todos: todosValue.map(parseTodoItem)
+    todos
   };
 }
 
@@ -96,10 +106,11 @@ function parseTodoItem(value: unknown, index: number): TodoItem {
 
   const record = value as Record<string, unknown>;
   const content = readTodoContent(record["content"], index);
+  const activeForm = readTodoActiveForm(record["activeForm"], index);
   const status = readTodoStatus(record["status"], index);
   const priority = readTodoPriority(record["priority"], index);
 
-  return { content, status, priority };
+  return { content, activeForm, status, priority };
 }
 
 function readTodoContent(value: unknown, index: number): string {
@@ -110,6 +121,19 @@ function readTodoContent(value: unknown, index: number): string {
   const normalized = value.trim().replace(/\s+/g, " ");
   if (normalized.length > MAX_TODO_CONTENT_LENGTH) {
     throw new ToolExecutionError(`Todo item ${index + 1} content is too long.`);
+  }
+
+  return normalized;
+}
+
+function readTodoActiveForm(value: unknown, index: number): string {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new ToolExecutionError(`Todo item ${index + 1} requires a non-empty 'activeForm' string.`);
+  }
+
+  const normalized = value.trim().replace(/\s+/g, " ");
+  if (normalized.length > MAX_TODO_CONTENT_LENGTH) {
+    throw new ToolExecutionError(`Todo item ${index + 1} activeForm is too long.`);
   }
 
   return normalized;

@@ -6,6 +6,7 @@ import { describe, expect, it } from "bun:test";
 import type { ConversationMessage } from "../transcript/message.ts";
 import {
   createEntry,
+  extractLatestTodosFromTranscript,
   formatToolCallEntry,
   rehydrateEntriesFromTranscript,
   renderVisibleEntries
@@ -79,8 +80,8 @@ describe("transcript entry helpers", () => {
         metadata: {
           kind: "todo-list",
           todos: [
-            { content: "Inspect code", status: "completed", priority: "medium" },
-            { content: "Add tests", status: "in_progress", priority: "high" }
+            { content: "Inspect code", activeForm: "Inspecting code", status: "completed", priority: "medium" },
+            { content: "Add tests", activeForm: "Adding tests", status: "in_progress", priority: "high" }
           ]
         }
       }
@@ -88,6 +89,41 @@ describe("transcript entry helpers", () => {
 
     expect(entries.map((entry) => [entry.kind, entry.body])).toEqual([
       ["tool-preview", "Todo · 1 active, 1 completed"]
+    ]);
+  });
+
+  it("extracts the latest todo list from transcript metadata", () => {
+    const transcript: readonly ConversationMessage[] = [
+      {
+        role: "tool",
+        toolCallId: "call_1",
+        toolName: "TodoWrite",
+        content: "Updated todo list",
+        isError: false,
+        metadata: {
+          kind: "todo-list",
+          todos: [
+            { content: "Old", activeForm: "Doing old", status: "completed", priority: "low" }
+          ]
+        }
+      },
+      {
+        role: "tool",
+        toolCallId: "call_2",
+        toolName: "TodoWrite",
+        content: "Updated todo list",
+        isError: false,
+        metadata: {
+          kind: "todo-list",
+          todos: [
+            { content: "New", activeForm: "Doing new", status: "in_progress", priority: "high" }
+          ]
+        }
+      }
+    ];
+
+    expect(extractLatestTodosFromTranscript(transcript)).toEqual([
+      { content: "New", activeForm: "Doing new", status: "in_progress", priority: "high" }
     ]);
   });
 

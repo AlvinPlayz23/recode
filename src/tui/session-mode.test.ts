@@ -15,6 +15,7 @@ describe("session mode helpers", () => {
   it("keeps all tools in build mode", () => {
     expect(filterToolsForSessionMode(createTools(), "build").map((tool) => tool.name)).toEqual([
       "AskUserQuestion",
+      "TodoWrite",
       "Read",
       "Write",
       "Edit",
@@ -28,6 +29,7 @@ describe("session mode helpers", () => {
   it("keeps AskUserQuestion and read-only tools in plan mode", () => {
     expect(filterToolsForSessionMode(createTools(), "plan").map((tool) => tool.name)).toEqual([
       "AskUserQuestion",
+      "TodoWrite",
       "Read",
       "Glob",
       "Grep",
@@ -40,6 +42,7 @@ describe("session mode helpers", () => {
 function createTools(): readonly ToolDefinition[] {
   return [
     createTool("AskUserQuestion"),
+    createTool("TodoWrite"),
     createTool("Read"),
     createTool("Write"),
     createTool("Edit"),

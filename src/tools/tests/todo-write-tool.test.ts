@@ -9,9 +9,16 @@ import { createTodoWriteTool, parseTodoWriteInput } from "../todo-write-tool.ts"
 describe("TodoWrite tool", () => {
   it("rejects malformed todo lists", () => {
     expect(() => parseTodoWriteInput({})).toThrow(ToolExecutionError);
-    expect(() => parseTodoWriteInput({ todos: [{ content: "", status: "pending", priority: "high" }] })).toThrow(ToolExecutionError);
-    expect(() => parseTodoWriteInput({ todos: [{ content: "Do it", status: "started", priority: "high" }] })).toThrow(ToolExecutionError);
-    expect(() => parseTodoWriteInput({ todos: [{ content: "Do it", status: "pending", priority: "urgent" }] })).toThrow(ToolExecutionError);
+    expect(() => parseTodoWriteInput({ todos: [{ content: "", activeForm: "Doing it", status: "pending", priority: "high" }] })).toThrow(ToolExecutionError);
+    expect(() => parseTodoWriteInput({ todos: [{ content: "Do it", activeForm: "", status: "pending", priority: "high" }] })).toThrow(ToolExecutionError);
+    expect(() => parseTodoWriteInput({ todos: [{ content: "Do it", activeForm: "Doing it", status: "started", priority: "high" }] })).toThrow(ToolExecutionError);
+    expect(() => parseTodoWriteInput({ todos: [{ content: "Do it", activeForm: "Doing it", status: "pending", priority: "urgent" }] })).toThrow(ToolExecutionError);
+    expect(() => parseTodoWriteInput({
+      todos: [
+        { content: "One", activeForm: "Doing one", status: "in_progress", priority: "high" },
+        { content: "Two", activeForm: "Doing two", status: "in_progress", priority: "medium" }
+      ]
+    })).toThrow(ToolExecutionError);
   });
 
   it("returns normalized todos as result metadata", async () => {
@@ -19,8 +26,8 @@ describe("TodoWrite tool", () => {
     const result = await tool.execute(
       {
         todos: [
-          { content: "  Inspect   files  ", status: "completed", priority: "medium" },
-          { content: "Add tests", status: "in_progress", priority: "high" }
+          { content: "  Inspect   files  ", activeForm: " Inspecting  files ", status: "completed", priority: "medium" },
+          { content: "Add tests", activeForm: "Adding tests", status: "in_progress", priority: "high" }
         ]
       },
       { workspaceRoot: "/workspace" }
@@ -31,8 +38,8 @@ describe("TodoWrite tool", () => {
     expect(result.metadata).toEqual({
       kind: "todo-list",
       todos: [
-        { content: "Inspect files", status: "completed", priority: "medium" },
-        { content: "Add tests", status: "in_progress", priority: "high" }
+        { content: "Inspect files", activeForm: "Inspecting files", status: "completed", priority: "medium" },
+        { content: "Add tests", activeForm: "Adding tests", status: "in_progress", priority: "high" }
       ]
     });
   });

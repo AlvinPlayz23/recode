@@ -23,6 +23,6 @@ export function filterToolsForSessionMode(
     return tools;
   }
 
-  const allowedToolNames = new Set(["AskUserQuestion", "Read", "Glob", "Grep", "WebFetch", "WebSearch"]);
+  const allowedToolNames = new Set(["AskUserQuestion", "TodoWrite", "Read", "Glob", "Grep", "WebFetch", "WebSearch"]);
   return tools.filter((tool) => allowedToolNames.has(tool.name));
 }

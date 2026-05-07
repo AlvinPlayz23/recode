@@ -61,6 +61,7 @@ export interface RecodeConfigFile {
   readonly approvalAllowlist?: readonly ToolApprovalScope[];
   readonly layoutMode?: LayoutMode;
   readonly minimalMode?: boolean;
+  readonly todoPanelEnabled?: boolean;
   readonly providers: readonly ConfiguredProvider[];
 }
 
@@ -276,6 +277,16 @@ export function selectConfiguredMinimalMode(
   return patchRecodeConfig(config, { minimalMode });
 }
 
+/**
+ * Update whether the composer todo panel is shown.
+ */
+export function selectConfiguredTodoPanelEnabled(
+  config: RecodeConfigFile,
+  todoPanelEnabled: boolean
+): RecodeConfigFile {
+  return patchRecodeConfig(config, { todoPanelEnabled });
+}
+
 function parseRecodeConfigFile(value: unknown): RecodeConfigFile {
   if (!isRecord(value)) {
     return createEmptyConfig();
@@ -288,6 +299,7 @@ function parseRecodeConfigFile(value: unknown): RecodeConfigFile {
   const approvalAllowlist = readOptionalApprovalAllowlist(value, "approvalAllowlist");
   const layoutMode = readOptionalLayoutMode(value, "layoutMode");
   const minimalMode = readOptionalBoolean(value, "minimalMode");
+  const todoPanelEnabled = readOptionalBoolean(value, "todoPanelEnabled");
   const providersValue = value["providers"];
   const providers = Array.isArray(providersValue)
     ? providersValue.map(parseConfiguredProvider).filter((provider) => provider !== undefined)
@@ -302,6 +314,7 @@ function parseRecodeConfigFile(value: unknown): RecodeConfigFile {
     ...(approvalAllowlist === undefined ? {} : { approvalAllowlist }),
     ...(layoutMode === undefined ? {} : { layoutMode }),
     ...(minimalMode === undefined ? {} : { minimalMode }),
+    ...(todoPanelEnabled === undefined ? {} : { todoPanelEnabled }),
     ...(activeProviderId === undefined ? {} : { activeProviderId })
   };
 }

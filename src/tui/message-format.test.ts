@@ -31,6 +31,7 @@ describe("tui message format", () => {
     expect(parseBuiltinCommand("/provider")).toEqual({ name: "provider", raw: "/provider" });
     expect(parseBuiltinCommand("/theme")).toEqual({ name: "theme", raw: "/theme" });
     expect(parseBuiltinCommand("/customize")).toEqual({ name: "customize", raw: "/customize" });
+    expect(parseBuiltinCommand("/todos")).toEqual({ name: "todos", raw: "/todos" });
     expect(parseBuiltinCommand("/approval-mode")).toEqual({ name: "approval-mode", raw: "/approval-mode" });
     expect(parseBuiltinCommand("/export")).toEqual({ name: "export", raw: "/export" });
     expect(parseBuiltinCommand("/history")).toEqual({ name: "history", raw: "/history" });
@@ -54,6 +55,7 @@ describe("tui message format", () => {
       { name: "provider", command: "/provider", description: "Select, enable, or disable providers" },
       { name: "theme", command: "/theme", description: "Open the theme selector" },
       { name: "customize", command: "/customize", description: "Customize theme and tool marker" },
+      { name: "todos", command: "/todos", description: "Toggle the composer todo panel" },
       { name: "approval-mode", command: "/approval-mode", description: "Open the approval mode selector" },
       { name: "export", command: "/export", description: "Export the current conversation to HTML" },
       { name: "history", command: "/history", description: "Open the conversation history" },
@@ -79,6 +81,7 @@ describe("tui message format", () => {
       "/provider",
       "/theme",
       "/customize",
+      "/todos",
       "/approval-mode",
       "/export",
       "/history",

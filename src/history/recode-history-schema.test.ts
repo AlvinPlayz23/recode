@@ -152,7 +152,8 @@ describe("recode history schema", () => {
             kind: "edit-preview",
             path: "src/index.ts",
             oldText: "old",
-            newText: "new"
+            newText: "new",
+            replacementCount: 2
           }
         }
       ]
@@ -168,7 +169,8 @@ describe("recode history schema", () => {
         kind: "edit-preview",
         path: "src/index.ts",
         oldText: "old",
-        newText: "new"
+        newText: "new",
+        replacementCount: 2
       }
     });
   });
@@ -186,10 +188,11 @@ describe("recode history schema", () => {
           metadata: {
             kind: "todo-list",
             todos: [
-              { content: "Inspect code", status: "completed", priority: "medium" },
-              { content: "Add tests", status: "in_progress", priority: "high" },
-              { content: "", status: "pending", priority: "low" },
-              { content: "Bad status", status: "started", priority: "low" }
+              { content: "Inspect code", activeForm: "Inspecting code", status: "completed", priority: "medium" },
+              { content: "Add tests", activeForm: "Adding tests", status: "in_progress", priority: "high" },
+              { content: "", activeForm: "Waiting", status: "pending", priority: "low" },
+              { content: "Bad status", activeForm: "Bad status", status: "started", priority: "low" },
+              { content: "Missing active form", status: "pending", priority: "low" }
             ]
           }
         }
@@ -205,8 +208,8 @@ describe("recode history schema", () => {
       metadata: {
         kind: "todo-list",
         todos: [
-          { content: "Inspect code", status: "completed", priority: "medium" },
-          { content: "Add tests", status: "in_progress", priority: "high" }
+          { content: "Inspect code", activeForm: "Inspecting code", status: "completed", priority: "medium" },
+          { content: "Add tests", activeForm: "Adding tests", status: "in_progress", priority: "high" }
         ]
       }
     });
