@@ -69,7 +69,39 @@ describe("transcript entry helpers", () => {
     ]);
   });
 
-  it("rehydrates todo tool results as preview entries", () => {
+  it("rehydrates TodoWrite tool calls as preview entries", () => {
+    const entries = rehydrateEntriesFromTranscript([
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: "call_1",
+            name: "TodoWrite",
+            argumentsJson: JSON.stringify({
+              todos: [
+                { content: "Inspect code", activeForm: "Inspecting code", status: "completed", priority: "medium" },
+                { content: "Add tests", activeForm: "Adding tests", status: "in_progress", priority: "high" }
+              ]
+            })
+          }
+        ]
+      }
+    ]);
+
+    expect(entries.map((entry) => [entry.kind, entry.body])).toEqual([
+      ["tool-preview", "Todo · 1 active, 1 completed"]
+    ]);
+    expect(entries[0]?.metadata).toEqual({
+      kind: "todo-list",
+      todos: [
+        { content: "Inspect code", activeForm: "Inspecting code", status: "completed", priority: "medium" },
+        { content: "Add tests", activeForm: "Adding tests", status: "in_progress", priority: "high" }
+      ]
+    });
+  });
+
+  it("hides successful TodoWrite result rows because the call row owns the preview", () => {
     const entries = rehydrateEntriesFromTranscript([
       {
         role: "tool",
@@ -81,15 +113,36 @@ describe("transcript entry helpers", () => {
           kind: "todo-list",
           todos: [
             { content: "Inspect code", activeForm: "Inspecting code", status: "completed", priority: "medium" },
-            { content: "Add tests", activeForm: "Adding tests", status: "in_progress", priority: "high" }
+            { content: "Add tests", activeForm: "Adding tests", status: "completed", priority: "high" }
           ]
         }
       }
     ]);
 
-    expect(entries.map((entry) => [entry.kind, entry.body])).toEqual([
-      ["tool-preview", "Todo · 1 active, 1 completed"]
+    expect(entries).toEqual([]);
+  });
+
+  it("hides completed-only TodoWrite call previews", () => {
+    const entries = rehydrateEntriesFromTranscript([
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: "call_1",
+            name: "TodoWrite",
+            argumentsJson: JSON.stringify({
+              todos: [
+                { content: "Inspect code", activeForm: "Inspecting code", status: "completed", priority: "medium" },
+                { content: "Add tests", activeForm: "Adding tests", status: "completed", priority: "high" }
+              ]
+            })
+          }
+        ]
+      }
     ]);
+
+    expect(entries).toEqual([]);
   });
 
   it("extracts the latest todo list from transcript metadata", () => {

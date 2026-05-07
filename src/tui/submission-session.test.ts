@@ -38,6 +38,61 @@ describe("submission session helpers", () => {
     ]);
   });
 
+  it("renders active TodoWrite calls as preview rows", () => {
+    let entries: readonly UiEntry[] = [createEntry("assistant", "Recode", "")];
+    const currentId = entries[0]?.id;
+
+    appendToolCallEntryAndCreateAssistantPlaceholder({
+      currentStreamingId: currentId,
+      currentStreamingBody: "",
+      toolCall: {
+        id: "call_1",
+        name: "TodoWrite",
+        argumentsJson: JSON.stringify({
+          todos: [
+            { content: "Inspect code", activeForm: "Inspecting code", status: "in_progress", priority: "high" },
+            { content: "Run tests", activeForm: "Running tests", status: "pending", priority: "medium" }
+          ]
+        })
+      },
+      setEntries(setter) {
+        entries = setter(entries);
+      }
+    });
+
+    expect(entries.map((entry) => [entry.kind, entry.body])).toEqual([
+      ["tool-preview", "Todo · 2 active, 0 completed"],
+      ["assistant", ""]
+    ]);
+    expect(entries[0]?.metadata?.kind).toBe("todo-list");
+  });
+
+  it("suppresses completed-only TodoWrite calls without leaving an empty assistant row", () => {
+    let entries: readonly UiEntry[] = [createEntry("assistant", "Recode", "")];
+    const currentId = entries[0]?.id;
+
+    appendToolCallEntryAndCreateAssistantPlaceholder({
+      currentStreamingId: currentId,
+      currentStreamingBody: "",
+      toolCall: {
+        id: "call_1",
+        name: "TodoWrite",
+        argumentsJson: JSON.stringify({
+          todos: [
+            { content: "Inspect code", activeForm: "Inspecting code", status: "completed", priority: "high" }
+          ]
+        })
+      },
+      setEntries(setter) {
+        entries = setter(entries);
+      }
+    });
+
+    expect(entries.map((entry) => [entry.kind, entry.body])).toEqual([
+      ["assistant", ""]
+    ]);
+  });
+
   it("finalizes the last assistant placeholder with final text", () => {
     let entries: readonly UiEntry[] = [createEntry("assistant", "Recode", "")];
     const entryId = entries[0]?.id;

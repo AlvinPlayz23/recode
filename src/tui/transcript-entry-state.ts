@@ -3,6 +3,7 @@
  */
 
 import type { TodoItem, ToolResultMetadata } from "../tools/tool.ts";
+import { parseTodoWriteInput } from "../tools/todo-write-tool.ts";
 import {
   formatContinuationSummaryForDisplay,
   type ConversationMessage,
@@ -135,7 +136,10 @@ export function rehydrateEntriesFromTranscript(transcript: readonly Conversation
           entries.push(createEntry("assistant", "Recode", message.content));
         }
         for (const toolCall of message.toolCalls) {
-          entries.push(createEntry("tool", "tool", formatToolCallEntry(toolCall)));
+          const toolCallEntry = createToolCallUiEntry(toolCall);
+          if (toolCallEntry !== undefined) {
+            entries.push(toolCallEntry);
+          }
         }
         break;
       case "summary":
@@ -159,6 +163,20 @@ export function rehydrateEntriesFromTranscript(transcript: readonly Conversation
   }
 
   return entries;
+}
+
+/**
+ * Create the visible UI entry for a tool call.
+ */
+export function createToolCallUiEntry(toolCall: ToolCall): UiEntry | undefined {
+  if (toolCall.name === "TodoWrite") {
+    const metadata = readTodoToolCallMetadata(toolCall.argumentsJson);
+    if (metadata !== undefined) {
+      return createTodoPreviewEntry(toolCall.name, metadata);
+    }
+  }
+
+  return createEntry("tool", "tool", formatToolCallEntry(toolCall));
 }
 
 /**
@@ -196,19 +214,42 @@ export function createToolResultEntry(
   }
 
   if (metadata?.kind === "todo-list") {
-    const remaining = metadata.todos.filter((todo) => todo.status !== "completed" && todo.status !== "cancelled").length;
-    if (remaining === 0) {
-      return undefined;
-    }
-
-    const completed = metadata.todos.filter((todo) => todo.status === "completed").length;
-    return {
-      ...createEntry("tool-preview", "tool", `${toToolDisplayName(toolName)} · ${remaining} active, ${completed} completed`),
-      metadata
-    };
+    return undefined;
   }
 
   return undefined;
+}
+
+function createTodoPreviewEntry(
+  toolName: string,
+  metadata: ToolResultMetadata & { readonly kind: "todo-list" }
+): UiEntry | undefined {
+  const remaining = metadata.todos.filter((todo) => todo.status !== "completed" && todo.status !== "cancelled").length;
+  if (remaining === 0) {
+    return undefined;
+  }
+
+  const completed = metadata.todos.filter((todo) => todo.status === "completed").length;
+  return {
+    ...createEntry("tool-preview", "tool", `${toToolDisplayName(toolName)} · ${remaining} active, ${completed} completed`),
+    metadata
+  };
+}
+
+function readTodoToolCallMetadata(argumentsJson: string): (ToolResultMetadata & { readonly kind: "todo-list" }) | undefined {
+  const args = parseToolArguments(argumentsJson);
+  if (args === undefined) {
+    return undefined;
+  }
+
+  try {
+    return {
+      kind: "todo-list",
+      todos: parseTodoWriteInput(args).todos
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 /**

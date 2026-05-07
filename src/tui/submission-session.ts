@@ -11,7 +11,7 @@ import type { SessionMode } from "./session-mode.ts";
 import {
   appendEntry,
   createEntry,
-  formatToolCallEntry,
+  createToolCallUiEntry,
   type SetUiEntries,
   type UiEntry
 } from "./transcript-entry-state.ts";
@@ -108,7 +108,18 @@ export function appendToolCallEntryAndCreateAssistantPlaceholder(
   }
 
   const currentBody = options.currentStreamingBody;
-  const toolEntry = createEntry("tool", "tool", formatToolCallEntry(options.toolCall));
+  const toolEntry = createToolCallUiEntry(options.toolCall);
+  if (toolEntry === undefined) {
+    options.setEntries((previous) => {
+      const updatedPrevious = currentBody === ""
+        ? previous
+        : previous.map((entry) => entry.id === currentId ? { ...entry, body: currentBody } : entry);
+      return updatedPrevious.filter((entry) => entry.id !== currentId || entry.body !== "");
+    });
+    const nextEntry = createEntry("assistant", "Recode", "");
+    appendEntry(options.setEntries, nextEntry);
+    return nextEntry;
+  }
 
   options.setEntries((previous) => {
     const current = previous.find((entry) => entry.id === currentId);
