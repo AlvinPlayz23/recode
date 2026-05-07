@@ -26,7 +26,8 @@ export type SpinnerStyleName =
   | "frost-stars"
   | "petal-drift"
   | "solarized-beam"
-  | "monochrome-scan";
+  | "monochrome-scan"
+  | "sunset-pulse";
 
 interface SpinnerThemeDefinition {
   readonly style: SpinnerStyleName;
@@ -109,6 +110,15 @@ const SPINNER_THEME_DEFINITIONS: Readonly<Record<ThemeName, SpinnerThemeDefiniti
     holdEnd: 2,
     headGlyph: "■",
     trailGlyphs: ["▣", "▪", "·"],
+    inactiveGlyph: "·"
+  }),
+  "1998": createScannerDefinition({
+    style: "sunset-pulse",
+    width: 8,
+    holdStart: 2,
+    holdEnd: 2,
+    headGlyph: "◆",
+    trailGlyphs: ["◇", "▪", "·"],
     inactiveGlyph: "·"
   })
 };

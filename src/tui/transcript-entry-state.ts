@@ -3,11 +3,13 @@
  */
 
 import type { TodoItem, ToolResultMetadata } from "../tools/tool.ts";
+import { parseTaskToolInput } from "../tools/task-tool.ts";
 import { parseTodoWriteInput } from "../tools/todo-write-tool.ts";
 import {
   formatContinuationSummaryForDisplay,
   type ConversationMessage,
-  type ToolCall
+  type ToolCall,
+  type ToolResultMessage
 } from "../transcript/message.ts";
 
 /**
@@ -18,6 +20,7 @@ export interface UiEntry {
   readonly kind: "user" | "assistant" | "tool" | "tool-preview" | "tool-group" | "error" | "status";
   readonly title: string;
   readonly body: string;
+  readonly toolCallId?: string;
   readonly metadata?: ToolResultMetadata;
 }
 
@@ -97,6 +100,14 @@ export function summarizeToolArguments(toolName: string, argumentsJson: string):
         ? `${todos.length} todo${todos.length === 1 ? "" : "s"}`
         : "";
     }
+    case "Task": {
+      const subagentType = readTrimmedString(args, "subagentType", 12);
+      const description = readTrimmedString(args, "description", 72);
+      if (subagentType !== "" && description !== "") {
+        return `${subagentType} · ${description}`;
+      }
+      return description || subagentType;
+    }
     case "Read":
     case "Write":
     case "Edit":
@@ -125,6 +136,7 @@ export function summarizeToolArguments(toolName: string, argumentsJson: string):
  */
 export function rehydrateEntriesFromTranscript(transcript: readonly ConversationMessage[]): readonly UiEntry[] {
   const entries: UiEntry[] = [];
+  const completedTaskCallIds = findCompletedTaskToolCallIds(transcript);
 
   for (const message of transcript) {
     switch (message.role) {
@@ -136,6 +148,9 @@ export function rehydrateEntriesFromTranscript(transcript: readonly Conversation
           entries.push(createEntry("assistant", "Recode", message.content));
         }
         for (const toolCall of message.toolCalls) {
+          if (completedTaskCallIds.has(toolCall.id)) {
+            continue;
+          }
           const toolCallEntry = createToolCallUiEntry(toolCall);
           if (toolCallEntry !== undefined) {
             entries.push(toolCallEntry);
@@ -152,7 +167,8 @@ export function rehydrateEntriesFromTranscript(transcript: readonly Conversation
             message.toolName,
             message.content,
             message.isError,
-            message.metadata
+            message.metadata,
+            message.toolCallId
           );
           if (toolResultEntry !== undefined) {
             entries.push(toolResultEntry);
@@ -165,6 +181,17 @@ export function rehydrateEntriesFromTranscript(transcript: readonly Conversation
   return entries;
 }
 
+function findCompletedTaskToolCallIds(transcript: readonly ConversationMessage[]): ReadonlySet<string> {
+  const taskCallIds = new Set<string>();
+  for (const message of transcript) {
+    if (message.role === "tool" && message.toolName === "Task" && message.metadata?.kind === "task-result") {
+      taskCallIds.add(message.toolCallId);
+    }
+  }
+
+  return taskCallIds;
+}
+
 /**
  * Create the visible UI entry for a tool call.
  */
@@ -172,11 +199,21 @@ export function createToolCallUiEntry(toolCall: ToolCall): UiEntry | undefined {
   if (toolCall.name === "TodoWrite") {
     const metadata = readTodoToolCallMetadata(toolCall.argumentsJson);
     if (metadata !== undefined) {
-      return createTodoPreviewEntry(toolCall.name, metadata);
+      return createTodoPreviewEntry(toolCall.name, metadata, toolCall.id);
     }
   }
 
-  return createEntry("tool", "tool", formatToolCallEntry(toolCall));
+  if (toolCall.name === "Task") {
+    const metadata = readTaskToolCallMetadata(toolCall.argumentsJson);
+    if (metadata !== undefined) {
+      return createTaskPreviewEntry(toolCall.name, metadata, toolCall.id);
+    }
+  }
+
+  return {
+    ...createEntry("tool", "tool", formatToolCallEntry(toolCall)),
+    toolCallId: toolCall.id
+  };
 }
 
 /**
@@ -201,7 +238,8 @@ export function extractLatestTodosFromTranscript(
 export function createToolResultEntry(
   toolName: string,
   _content: string,
-  metadata: ToolResultMetadata | undefined
+  metadata: ToolResultMetadata | undefined,
+  toolCallId?: string
 ): UiEntry | undefined {
   if (metadata?.kind === "edit-preview") {
     const detail = metadata.replacementCount === undefined || metadata.replacementCount === 1
@@ -209,6 +247,7 @@ export function createToolResultEntry(
       : `${metadata.path} (${metadata.replacementCount} replacements)`;
     return {
       ...createEntry("tool-preview", "tool", `${toToolDisplayName(toolName)} · ${detail}`),
+      ...(toolCallId === undefined ? {} : { toolCallId }),
       metadata
     };
   }
@@ -217,12 +256,17 @@ export function createToolResultEntry(
     return undefined;
   }
 
+  if (metadata?.kind === "task-result") {
+    return createTaskPreviewEntry(toolName, metadata, toolCallId);
+  }
+
   return undefined;
 }
 
 function createTodoPreviewEntry(
   toolName: string,
-  metadata: ToolResultMetadata & { readonly kind: "todo-list" }
+  metadata: ToolResultMetadata & { readonly kind: "todo-list" },
+  toolCallId?: string
 ): UiEntry | undefined {
   const remaining = metadata.todos.filter((todo) => todo.status !== "completed" && todo.status !== "cancelled").length;
   if (remaining === 0) {
@@ -232,8 +276,53 @@ function createTodoPreviewEntry(
   const completed = metadata.todos.filter((todo) => todo.status === "completed").length;
   return {
     ...createEntry("tool-preview", "tool", `${toToolDisplayName(toolName)} · ${remaining} active, ${completed} completed`),
+    ...(toolCallId === undefined ? {} : { toolCallId }),
     metadata
   };
+}
+
+function createTaskPreviewEntry(
+  toolName: string,
+  metadata: ToolResultMetadata & { readonly kind: "task-result" },
+  toolCallId?: string
+): UiEntry {
+  const status = metadata.status === "completed"
+    ? metadata.resumed
+      ? "resumed"
+      : "completed"
+    : "running";
+
+  return {
+    ...createEntry(
+      "tool-preview",
+      "tool",
+      `${toToolDisplayName(toolName)} · ${status} ${metadata.subagentType} · ${metadata.description}`
+    ),
+    ...(toolCallId === undefined ? {} : { toolCallId }),
+    metadata
+  };
+}
+
+function readTaskToolCallMetadata(argumentsJson: string): (ToolResultMetadata & { readonly kind: "task-result" }) | undefined {
+  const args = parseToolArguments(argumentsJson);
+  if (args === undefined) {
+    return undefined;
+  }
+
+  try {
+    const input = parseTaskToolInput(args);
+    return {
+      kind: "task-result",
+      subagentType: input.subagentType,
+      description: input.description,
+      status: "running",
+      summary: "",
+      resumed: input.taskId !== undefined,
+      ...(input.taskId === undefined ? {} : { taskId: input.taskId })
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 function readTodoToolCallMetadata(argumentsJson: string): (ToolResultMetadata & { readonly kind: "todo-list" }) | undefined {
@@ -259,13 +348,58 @@ export function createToolResultUiEntry(
   toolName: string,
   content: string,
   isError: boolean,
-  metadata: ToolResultMetadata | undefined
+  metadata: ToolResultMetadata | undefined,
+  toolCallId?: string
 ): UiEntry | undefined {
   if (isError) {
-    return createEntry("error", "error", `${toolName} failed: ${content}`);
+    return {
+      ...createEntry("error", "error", `${toolName} failed: ${content}`),
+      ...(toolCallId === undefined ? {} : { toolCallId })
+    };
   }
 
-  return createToolResultEntry(toolName, content, metadata);
+  return createToolResultEntry(toolName, content, metadata, toolCallId);
+}
+
+/**
+ * Replace a live Task call row with its completed/error result row.
+ */
+export function replaceTaskToolCallEntryWithResult(
+  entries: readonly UiEntry[],
+  toolResult: ToolResultMessage
+): { readonly entries: readonly UiEntry[]; readonly replaced: boolean } {
+  if (toolResult.toolName !== "Task") {
+    return { entries, replaced: false };
+  }
+
+  const resultEntry = createToolResultUiEntry(
+    toolResult.toolName,
+    toolResult.content,
+    toolResult.isError,
+    toolResult.metadata,
+    toolResult.toolCallId
+  );
+  if (resultEntry === undefined) {
+    return { entries, replaced: false };
+  }
+
+  let replaced = false;
+  const updatedEntries = entries.map((entry) => {
+    if (entry.toolCallId !== toolResult.toolCallId) {
+      return entry;
+    }
+
+    replaced = true;
+    return {
+      ...resultEntry,
+      id: entry.id
+    };
+  });
+
+  return {
+    entries: replaced ? updatedEntries : entries,
+    replaced
+  };
 }
 
 /**
@@ -325,6 +459,8 @@ function toToolDisplayName(toolName: string): string {
       return "Ask";
     case "TodoWrite":
       return "Todo";
+    case "Task":
+      return "Task";
     case "Read":
       return "Read";
     case "Write":

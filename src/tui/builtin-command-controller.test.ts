@@ -16,6 +16,7 @@ import {
   dispatchBuiltinCommand,
   type BuiltinCommandDispatchOptions
 } from "./builtin-command-controller.ts";
+import type { SubagentTaskRecord } from "../agent/subagent.ts";
 import type { SpinnerPhase } from "./spinner.tsx";
 import type { UiEntry } from "./transcript-entry-state.ts";
 
@@ -137,6 +138,7 @@ interface FixtureState {
   exited: boolean;
   entries: readonly UiEntry[];
   previousMessages: readonly ConversationMessage[];
+  subagentTasks: readonly SubagentTaskRecord[];
   lastContextEstimate: ContextTokenEstimate | undefined;
   conversation: SavedConversationRecord | undefined;
   sessionMode: "build" | "plan";
@@ -167,6 +169,7 @@ function createDispatchFixture(
     exited: false,
     entries: [],
     previousMessages: transcript,
+    subagentTasks: overrides.currentConversation?.subagentTasks ?? [],
     lastContextEstimate: undefined,
     conversation: overrides.currentConversation,
     sessionMode: "build",
@@ -194,6 +197,7 @@ function createDispatchFixture(
       minimalMode: state.minimalMode,
       entriesCount: state.entries.length,
       transcript,
+      subagentTasks: state.subagentTasks,
       contextWindowStatus: createContextWindowStatus(),
       historyRoot,
       currentConversation: state.conversation,
@@ -230,6 +234,9 @@ function createDispatchFixture(
       },
       setPreviousMessages(value_) {
         state.previousMessages = value_;
+      },
+      setSubagentTasks(value_) {
+        state.subagentTasks = value_;
       },
       setLastContextEstimate(value_) {
         state.lastContextEstimate = value_;

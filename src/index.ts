@@ -7,6 +7,7 @@
 declare const RECODE_VERSION: string;
 
 import { runAgentLoop } from "./agent/run-agent-loop.ts";
+import { runSubagentTask, type SubagentTaskRecord } from "./agent/subagent.ts";
 import { runSetupWizard } from "./cli/setup.ts";
 import { resolveCliWorkspace } from "./cli/workspace.ts";
 import { createLanguageModel } from "./models/create-model-client.ts";
@@ -53,6 +54,7 @@ Options:
   const runtimeConfig = loadRuntimeConfig(workspaceRoot);
   const languageModel = createLanguageModel(runtimeConfig);
   const toolRegistry = new ToolRegistry(createTools());
+  const subagentTasks = new Map<string, SubagentTaskRecord>();
 
   if (prompt === "") {
     await runTui({
@@ -100,7 +102,25 @@ Options:
         toolContext: {
           workspaceRoot: runtimeConfig.workspaceRoot,
           approvalMode: runtimeConfig.approvalMode,
-          approvalAllowlist: runtimeConfig.approvalAllowlist
+          approvalAllowlist: runtimeConfig.approvalAllowlist,
+          runSubagentTask: async (request) => await runSubagentTask({
+            request,
+            parentRuntimeConfig: runtimeConfig,
+            parentSystemPrompt: DEFAULT_SYSTEM_PROMPT,
+            parentToolRegistry: toolRegistry,
+            parentToolContext: {
+              workspaceRoot: runtimeConfig.workspaceRoot,
+              approvalMode: runtimeConfig.approvalMode,
+              approvalAllowlist: runtimeConfig.approvalAllowlist,
+              ...(request.abortSignal === undefined ? {} : { abortSignal: request.abortSignal })
+            },
+            findTask(taskId) {
+              return subagentTasks.get(taskId);
+            },
+            saveTask(record) {
+              subagentTasks.set(record.id, record);
+            }
+          })
         }
       });
 

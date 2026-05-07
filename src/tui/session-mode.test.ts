@@ -16,6 +16,7 @@ describe("session mode helpers", () => {
     expect(filterToolsForSessionMode(createTools(), "build").map((tool) => tool.name)).toEqual([
       "AskUserQuestion",
       "TodoWrite",
+      "Task",
       "Read",
       "Write",
       "Edit",
@@ -43,6 +44,7 @@ function createTools(): readonly ToolDefinition[] {
   return [
     createTool("AskUserQuestion"),
     createTool("TodoWrite"),
+    createTool("Task"),
     createTool("Read"),
     createTool("Write"),
     createTool("Edit"),

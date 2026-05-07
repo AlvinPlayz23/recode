@@ -3,6 +3,7 @@
  */
 
 import type { ConversationMessage } from "../transcript/message.ts";
+import type { SubagentTaskRecord } from "../agent/subagent.ts";
 import type { SessionMode } from "../tui/session-mode.ts";
 
 /**
@@ -27,6 +28,7 @@ export interface SavedConversationMeta {
  */
 export interface SavedConversationRecord extends SavedConversationMeta {
   readonly transcript: readonly ConversationMessage[];
+  readonly subagentTasks?: readonly SubagentTaskRecord[];
 }
 
 /**

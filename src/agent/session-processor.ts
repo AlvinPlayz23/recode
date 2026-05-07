@@ -13,6 +13,7 @@ import type { ToolExecutionContext } from "../tools/tool.ts";
 import { createToolErrorMessage } from "../tools/tool-result-format.ts";
 import { ToolRegistry } from "../tools/tool-registry.ts";
 import type { StepStats } from "./step-stats.ts";
+import { SUBAGENT_TASK_CONCURRENCY_LIMIT } from "./subagent.ts";
 
 const DOOM_LOOP_TURN_LIMIT = 3;
 
@@ -201,7 +202,19 @@ export async function executeAgentSessionToolCalls(
 ): Promise<readonly ConversationMessage[]> {
   const messages: ConversationMessage[] = [];
 
-  for (const toolCall of toolCalls) {
+  for (let index = 0; index < toolCalls.length; index += 1) {
+    const toolCall = toolCalls[index]!;
+    if (toolCall.name === "Task") {
+      const taskBatch = collectContiguousTaskCalls(toolCalls, index);
+      const taskMessages = await executeTaskToolBatch(taskBatch, options);
+      messages.push(...taskMessages);
+      index += taskBatch.length - 1;
+      if (options.abortSignal?.aborted ?? false) {
+        return messages;
+      }
+      continue;
+    }
+
     if (options.abortSignal?.aborted ?? false) {
       const abortedResult = createToolErrorMessage(toolCall, "Request aborted");
       messages.push(abortedResult);
@@ -232,6 +245,79 @@ export async function executeAgentSessionToolCalls(
   }
 
   return messages;
+}
+
+function collectContiguousTaskCalls(toolCalls: readonly ToolCall[], startIndex: number): readonly ToolCall[] {
+  const taskCalls: ToolCall[] = [];
+
+  for (let index = startIndex; index < toolCalls.length; index += 1) {
+    const toolCall = toolCalls[index]!;
+    if (toolCall.name !== "Task") {
+      break;
+    }
+    taskCalls.push(toolCall);
+  }
+
+  return taskCalls;
+}
+
+async function executeTaskToolBatch(
+  toolCalls: readonly ToolCall[],
+  options: AgentSessionToolOptions
+): Promise<readonly ConversationMessage[]> {
+  const results = await runWithConcurrency(
+    toolCalls,
+    SUBAGENT_TASK_CONCURRENCY_LIMIT,
+    async (toolCall) => {
+      if (options.abortSignal?.aborted ?? false) {
+        return createToolErrorMessage(toolCall, "Request aborted");
+      }
+
+      return await executeToolCall(
+        toolCall,
+        options.toolRegistry,
+        withAbortSignal(options.toolContext, options.abortSignal)
+      );
+    }
+  );
+
+  const messages: ConversationMessage[] = [];
+  for (const toolResult of results) {
+    messages.push(toolResult);
+    options.onToolResult?.(toolResult);
+
+    const followUpUserMessage = buildSyntheticUserMessageFromToolResult(
+      toolResult.toolName,
+      toolResult.content,
+      toolResult.isError
+    );
+    if (followUpUserMessage !== undefined) {
+      messages.push(followUpUserMessage);
+    }
+  }
+
+  return messages;
+}
+
+async function runWithConcurrency<TInput, TOutput>(
+  inputs: readonly TInput[],
+  limit: number,
+  worker: (input: TInput) => Promise<TOutput>
+): Promise<readonly TOutput[]> {
+  const results: TOutput[] = new Array<TOutput>(inputs.length);
+  let nextIndex = 0;
+
+  async function runWorker(): Promise<void> {
+    while (nextIndex < inputs.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await worker(inputs[index]!);
+    }
+  }
+
+  const workerCount = Math.min(Math.max(1, limit), inputs.length);
+  await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+  return results;
 }
 
 function withAbortSignal(

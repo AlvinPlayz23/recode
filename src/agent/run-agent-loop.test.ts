@@ -262,6 +262,52 @@ describe("runAgentLoop", () => {
     ]);
   });
 
+  it("runs sibling Task calls with bounded concurrency while preserving result order", async () => {
+    fakeStreamAssistantResponse
+      .mockImplementationOnce(() => makeStreamResult([
+        ...Array.from({ length: 8 }, (_value, index) =>
+          toolCallPart(`call_${index + 1}`, "Task", { index: String(index + 1) })),
+        ...finishParts()
+      ]))
+      .mockImplementationOnce(() => makeStreamResult([
+        textPart("done"),
+        ...finishParts()
+      ]));
+
+    let activeCount = 0;
+    let maxActiveCount = 0;
+    const registry = new ToolRegistry([createDelayedTaskTool(
+      () => {
+        activeCount += 1;
+        maxActiveCount = Math.max(maxActiveCount, activeCount);
+      },
+      () => {
+        activeCount -= 1;
+      }
+    )]);
+
+    const result = await runAgentLoop({
+      systemPrompt: "test",
+      initialUserPrompt: "delegate",
+      languageModel: {} as never,
+      toolRegistry: registry,
+      toolContext: { workspaceRoot: "/tmp/recode", approvalMode: "yolo" }
+    });
+
+    const taskResults = result.transcript.filter((message) => message.role === "tool");
+    expect(maxActiveCount).toBe(6);
+    expect(taskResults.map((message) => message.content)).toEqual([
+      "task 1",
+      "task 2",
+      "task 3",
+      "task 4",
+      "task 5",
+      "task 6",
+      "task 7",
+      "task 8"
+    ]);
+  });
+
   it("publishes partial transcript updates before a later model error", async () => {
     fakeStreamAssistantResponse
       .mockImplementationOnce(() => makeStreamResult([
@@ -487,6 +533,33 @@ function createAbortDuringTool(abortController: AbortController): ToolDefinition
       return {
         content: "aborted after tool work",
         isError: true
+      };
+    }
+  };
+}
+
+function createDelayedTaskTool(onStart: () => void, onFinish: () => void): ToolDefinition {
+  return {
+    name: "Task",
+    description: "Delayed task.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: true
+    },
+    async execute(arguments_: ToolArguments, _context: ToolExecutionContext): Promise<ToolResult> {
+      const index = arguments_["index"];
+      if (typeof index !== "string") {
+        throw new Error("missing index");
+      }
+
+      onStart();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      onFinish();
+      return {
+        content: `task ${index}`,
+        isError: false
       };
     }
   };

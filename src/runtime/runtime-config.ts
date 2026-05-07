@@ -7,6 +7,7 @@
 import {
   loadRecodeConfigFile,
   resolveConfigPath,
+  type ConfiguredAgent,
   type ConfiguredProvider
 } from "../config/recode-config.ts";
 import {
@@ -37,6 +38,7 @@ export interface RuntimeConfig {
   readonly providers: readonly RuntimeProviderConfig[];
   readonly approvalMode: ApprovalMode;
   readonly approvalAllowlist: readonly ToolApprovalScope[];
+  readonly agents?: Readonly<Record<string, ConfiguredAgent>>;
   readonly apiKey?: string;
   readonly providerHeaders?: Readonly<Record<string, string>>;
   readonly providerOptions?: JsonObject;
@@ -85,6 +87,7 @@ export function selectRuntimeProviderModel(
     providers,
     approvalMode: runtimeConfig.approvalMode,
     approvalAllowlist: runtimeConfig.approvalAllowlist,
+    ...(runtimeConfig.agents === undefined ? {} : { agents: runtimeConfig.agents }),
     workspaceRoot: runtimeConfig.workspaceRoot,
     configPath: runtimeConfig.configPath,
     baseUrl: selectedProvider.baseUrl,
@@ -219,6 +222,7 @@ export function loadRuntimeConfig(workspaceRoot: string): RuntimeConfig {
     providers,
     approvalMode: config.approvalMode ?? "approval",
     approvalAllowlist: config.approvalAllowlist ?? [],
+    ...(config.agents === undefined ? {} : { agents: config.agents }),
     ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
     ...(temperature === undefined ? {} : { temperature }),
     ...(toolChoice === undefined ? {} : { toolChoice }),

@@ -44,6 +44,11 @@ import {
   type ContextTokenEstimate
 } from "../agent/compact-conversation.ts";
 import {
+  runSubagentTask,
+  type SubagentTaskHandler,
+  type SubagentTaskRecord
+} from "../agent/subagent.ts";
+import {
   loadRecodeConfigFile,
   saveRecodeConfigFile,
   selectConfiguredApprovalAllowlist,
@@ -215,6 +220,7 @@ import {
   createToolResultUiEntry,
   extractLatestTodosFromTranscript,
   rehydrateEntriesFromTranscript,
+  replaceTaskToolCallEntryWithResult,
   renderVisibleEntries,
   updateEntryBody,
   type UiEntry
@@ -279,6 +285,7 @@ export function TuiApp(props: TuiAppProps) {
   const [lastContextEstimate, setLastContextEstimate] = createSignal<ContextTokenEstimate | undefined>(undefined);
   const [sessionMode, setSessionMode] = createSignal<SessionMode>("build");
   const [currentConversation, setCurrentConversation] = createSignal<SavedConversationRecord | undefined>(undefined);
+  const [subagentTasks, setSubagentTasks] = createSignal<readonly SubagentTaskRecord[]>([]);
   const [statusTick, setStatusTick] = createSignal(0);
   const [streamingEntryId, setStreamingEntryId] = createSignal<string | undefined>(undefined);
   const [streamingBody, setStreamingBody] = createSignal("");
@@ -374,12 +381,41 @@ export function TuiApp(props: TuiAppProps) {
     || activeApprovalRequest() !== undefined
     || activeQuestionRequest() !== undefined
   );
+  const runTuiSubagentTask: SubagentTaskHandler = async (request) => {
+    const currentConversationId = currentConversation()?.id;
+    return await runSubagentTask({
+      request,
+      parentRuntimeConfig: sessionRuntimeConfig(),
+      parentSystemPrompt: props.systemPrompt,
+      parentToolRegistry: props.toolRegistry,
+      parentToolContext: {
+        ...props.toolContext,
+        approvalMode: approvalMode(),
+        approvalAllowlist: approvalAllowlist(),
+        requestToolApproval,
+        requestQuestionAnswers,
+        ...(request.abortSignal === undefined ? {} : { abortSignal: request.abortSignal })
+      },
+      findTask(taskId) {
+        return subagentTasks().find((task) => task.id === taskId);
+      },
+      saveTask(record) {
+        setSubagentTasks((previous) => [
+          ...previous.filter((task) => task.id !== record.id),
+          record
+        ]);
+      },
+      ...(currentConversationId === undefined ? {} : { requestAffinityKey: currentConversationId })
+    });
+  };
+
   const sessionToolContext = createMemo<ToolExecutionContext>(() => ({
     ...props.toolContext,
     approvalMode: approvalMode(),
     approvalAllowlist: approvalAllowlist(),
     requestToolApproval,
-    requestQuestionAnswers
+    requestQuestionAnswers,
+    runSubagentTask: runTuiSubagentTask
   }));
 
   const statusMarquee = createMemo(() => buildStatusMarquee(themeName(), statusTick(), t(), busyPhase()));
@@ -830,7 +866,8 @@ export function TuiApp(props: TuiAppProps) {
       sessionRuntimeConfig(),
       compacted.transcript,
       currentConversation(),
-      sessionMode()
+      sessionMode(),
+      subagentTasks()
     );
     setCurrentConversation(persistedConversation);
     appendEntry(
@@ -856,6 +893,7 @@ export function TuiApp(props: TuiAppProps) {
     inputRef?.focus();
     applyInputCursorStyle(inputRef, t().brandShimmer);
     setCurrentConversation(createDraftConversation(sessionRuntimeConfig(), "build"));
+    setSubagentTasks([]);
     setEntries([]);
     setTranscriptMessages([]);
     setLastContextEstimate(undefined);
@@ -1229,6 +1267,7 @@ export function TuiApp(props: TuiAppProps) {
           setConversation: setCurrentConversation,
           setEntries,
           setPreviousMessages: setTranscriptMessages,
+          setSubagentTasks,
           setLastContextEstimate,
           rehydrateEntries: rehydrateEntriesFromTranscript,
           close() {
@@ -1273,6 +1312,7 @@ export function TuiApp(props: TuiAppProps) {
           currentConversation: currentConversation(),
           currentMode: sessionMode(),
           transcript: previousMessages(),
+          subagentTasks: subagentTasks(),
           setRuntimeConfig: setSessionRuntimeConfig,
           setConversation: setCurrentConversation,
           appendEntry(entry) {
@@ -1329,6 +1369,7 @@ export function TuiApp(props: TuiAppProps) {
           currentConversation: currentConversation(),
           currentMode: sessionMode(),
           transcript: previousMessages(),
+          subagentTasks: subagentTasks(),
           setConversation: setCurrentConversation,
           appendEntry(entry) {
             appendEntry(setEntries, entry);
@@ -1566,6 +1607,7 @@ export function TuiApp(props: TuiAppProps) {
       minimalMode: minimalMode(),
       entriesCount: entries().length,
       transcript: previousMessages(),
+      subagentTasks: subagentTasks(),
       contextWindowStatus: currentContextWindowStatus(),
       historyRoot: historyRoot(),
       currentConversation: currentConversation(),
@@ -1646,6 +1688,7 @@ export function TuiApp(props: TuiAppProps) {
       setConversation: setCurrentConversation,
       setEntries,
       setPreviousMessages: setTranscriptMessages,
+      setSubagentTasks,
       setLastContextEstimate,
       setStreamingBody,
       setStreamingEntryId,
@@ -1757,6 +1800,17 @@ export function TuiApp(props: TuiAppProps) {
               setTodoDropupOpen(false);
             }
           }
+          if (toolResult.toolName === "Task") {
+            let replaced = false;
+            setEntries((previous) => {
+              const replacement = replaceTaskToolCallEntryWithResult(previous, toolResult);
+              replaced = replacement.replaced;
+              return replacement.entries;
+            });
+            if (replaced) {
+              return;
+            }
+          }
           if (toolResultEntry !== undefined) {
             appendEntry(setEntries, toolResultEntry);
           }
@@ -1779,6 +1833,7 @@ export function TuiApp(props: TuiAppProps) {
         historyRoot: historyRoot(),
         runtimeConfig: sessionRuntimeConfig(),
         transcript: result.transcript,
+        subagentTasks: subagentTasks(),
         currentConversation: currentConversation(),
         sessionMode: sessionMode(),
         setPreviousMessages: setTranscriptMessages,
@@ -1803,6 +1858,7 @@ export function TuiApp(props: TuiAppProps) {
           historyRoot: historyRoot(),
           runtimeConfig: sessionRuntimeConfig(),
           transcript: transcriptSnapshot,
+          subagentTasks: subagentTasks(),
           currentConversation: currentConversation(),
           sessionMode: sessionMode(),
           setPreviousMessages: setTranscriptMessages,
@@ -2554,6 +2610,7 @@ interface SubmitProviderPickerSelectionOptions {
   readonly currentConversation: SavedConversationRecord | undefined;
   readonly currentMode: SessionMode;
   readonly transcript: readonly ConversationMessage[];
+  readonly subagentTasks: readonly SubagentTaskRecord[];
   readonly setRuntimeConfig: (value: RuntimeConfig) => void;
   readonly setConversation: (value: SavedConversationRecord) => void;
   readonly appendEntry: (entry: UiEntry) => void;
@@ -2591,7 +2648,8 @@ function submitSelectedProviderPickerItem(options: SubmitProviderPickerSelection
       nextRuntimeConfig,
       options.transcript,
       options.currentConversation,
-      options.currentMode
+      options.currentMode,
+      options.subagentTasks
     );
     options.setConversation(nextConversation);
     options.appendEntry(createEntry("status", "status", `Selected provider ${selectedItem.providerName} · ${modelId}`));
@@ -2789,6 +2847,7 @@ interface SubmitModelPickerSelectionOptions {
   readonly currentConversation: SavedConversationRecord | undefined;
   readonly currentMode: SessionMode;
   readonly transcript: readonly ConversationMessage[];
+  readonly subagentTasks: readonly SubagentTaskRecord[];
   readonly setConversation: (value: SavedConversationRecord) => void;
   readonly appendEntry: (entry: UiEntry) => void;
   readonly close: () => void;
@@ -2815,7 +2874,8 @@ async function submitSelectedModelPickerOption(options: SubmitModelPickerSelecti
       nextRuntimeConfig,
       options.transcript,
       options.currentConversation,
-      options.currentMode
+      options.currentMode,
+      options.subagentTasks
     );
     options.setConversation(nextConversation);
     options.appendEntry(createEntry(

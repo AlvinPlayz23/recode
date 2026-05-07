@@ -67,7 +67,7 @@ export interface ThemeColors {
 }
 
 /** Named theme identifiers. */
-export type ThemeName = "senren-dusk" | "matcha-night" | "midnight-ink" | "amber-terminal" | "frost-glass" | "sakura-bloom" | "solarized-light" | "monochrome";
+export type ThemeName = "senren-dusk" | "matcha-night" | "midnight-ink" | "amber-terminal" | "frost-glass" | "sakura-bloom" | "solarized-light" | "monochrome" | "1998";
 
 /** Named tool marker identifiers. */
 export type ToolMarkerName = "arrow" | "hook" | "fancy" | "triangle" | "minimal" | "stylized";
@@ -348,6 +348,37 @@ export const MONOCHROME_THEME: ThemeColors = {
   diffRemoved: "#3a3a3a",
 };
 
+/** Professional charcoal theme with restrained sunset accents. */
+export const SUNSET_CHARCOAL_THEME: ThemeColors = {
+  text: "#FAFAFA",
+  inverseText: "#121113",
+  brand: "#DE8550",
+  brandShimmer: "#E78A53",
+  inactive: "#ACACAC",
+  subtle: "#858585",
+  success: "#59A6A6",
+  error: "#E5484D",
+  warning: "#D27E4C",
+  suggestion: "#DE8550",
+  userMessageBackground: "#1C1A1D",
+  userMessageBackgroundHover: "#242126",
+  messageActionsBackground: "#2B272B",
+  promptBorder: "#DE855055",
+  bashBorder: "#59A6A6",
+  bashMessageBackgroundColor: "#181619",
+  selectionBg: "#493426",
+  statusText: "#E8E0DA",
+  hintText: "#ACACAC",
+  divider: "#454146",
+  active: "#E78A53",
+  user: "#FAFAFA",
+  assistantLabel: "#DE8550",
+  assistantBody: "#F2F2F2",
+  tool: "#59A6A6",
+  diffAdded: "#1F3D3D",
+  diffRemoved: "#4A2023",
+};
+
 const THEMES: readonly ThemeDefinition[] = [
   {
     name: "senren-dusk",
@@ -404,6 +435,13 @@ const THEMES: readonly ThemeDefinition[] = [
     description: "High-contrast grayscale theme with no color accents.",
     colors: MONOCHROME_THEME,
     promptMarker: "•"
+  },
+  {
+    name: "1998",
+    label: "1998",
+    description: "Professional charcoal palette with muted sunset accents.",
+    colors: SUNSET_CHARCOAL_THEME,
+    promptMarker: "◆"
   }
 ] as const;
 

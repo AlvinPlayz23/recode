@@ -6,9 +6,11 @@ import { describe, expect, it } from "bun:test";
 import type { ConversationMessage } from "../transcript/message.ts";
 import {
   createEntry,
+  createToolCallUiEntry,
   extractLatestTodosFromTranscript,
   formatToolCallEntry,
   rehydrateEntriesFromTranscript,
+  replaceTaskToolCallEntryWithResult,
   renderVisibleEntries
 } from "./transcript-entry-state.ts";
 
@@ -143,6 +145,116 @@ describe("transcript entry helpers", () => {
     ]);
 
     expect(entries).toEqual([]);
+  });
+
+  it("renders Task call and result rows as compact summaries", () => {
+    const callOnlyEntries = rehydrateEntriesFromTranscript([
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: "call_task",
+            name: "Task",
+            argumentsJson: JSON.stringify({
+              description: "Inspect routing",
+              prompt: "Find routing code.",
+              subagentType: "explore"
+            })
+          }
+        ]
+      }
+    ]);
+
+    expect(callOnlyEntries.map((entry) => [entry.kind, entry.body])).toEqual([
+      ["tool-preview", "Task · running explore · Inspect routing"]
+    ]);
+
+    const completedEntries = rehydrateEntriesFromTranscript([
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: "call_task",
+            name: "Task",
+            argumentsJson: JSON.stringify({
+              description: "Inspect routing",
+              prompt: "Find routing code.",
+              subagentType: "explore"
+            })
+          }
+        ]
+      },
+      {
+        role: "tool",
+        toolCallId: "call_task",
+        toolName: "Task",
+        content: "task_id: task_1",
+        isError: false,
+        metadata: {
+          kind: "task-result",
+          taskId: "task_1",
+          subagentType: "explore",
+          description: "Inspect routing",
+          status: "completed",
+          summary: "Routing lives in src/routes.ts.",
+          resumed: false
+        }
+      }
+    ]);
+
+    expect(completedEntries.map((entry) => [entry.kind, entry.body])).toEqual([
+      ["tool-preview", "Task · completed explore · Inspect routing"]
+    ]);
+  });
+
+  it("replaces a live Task call row with the completed result row", () => {
+    const taskCall = {
+      id: "call_task",
+      name: "Task",
+      argumentsJson: JSON.stringify({
+        description: "Inspect routing",
+        prompt: "Find routing code.",
+        subagentType: "explore"
+      })
+    };
+    const runningEntry = createToolCallUiEntry(taskCall);
+    expect(runningEntry?.body).toBe("Task · running explore · Inspect routing");
+
+    const replacement = replaceTaskToolCallEntryWithResult(
+      runningEntry === undefined ? [] : [runningEntry],
+      {
+        role: "tool",
+        toolCallId: "call_task",
+        toolName: "Task",
+        content: "task_id: task_1",
+        isError: false,
+        metadata: {
+          kind: "task-result",
+          taskId: "task_1",
+          subagentType: "explore",
+          description: "Inspect routing",
+          status: "completed",
+          summary: "Routing lives in src/routes.ts.",
+          resumed: false
+        }
+      }
+    );
+
+    expect(replacement.replaced).toBe(true);
+    expect(replacement.entries).toHaveLength(1);
+    expect(replacement.entries[0]?.id).toBe(runningEntry?.id);
+    expect(replacement.entries[0]?.body).toBe("Task · completed explore · Inspect routing");
+    expect(replacement.entries[0]?.metadata).toEqual({
+      kind: "task-result",
+      taskId: "task_1",
+      subagentType: "explore",
+      description: "Inspect routing",
+      status: "completed",
+      summary: "Routing lives in src/routes.ts.",
+      resumed: false
+    });
   });
 
   it("extracts the latest todo list from transcript metadata", () => {

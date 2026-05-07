@@ -211,6 +211,45 @@ describe("recode config", () => {
     expect(loadRecodeConfigFile(configPath).approvalAllowlist).toEqual(["read", "web"]);
   });
 
+  it("loads configured subagents while dropping invalid tool flags", () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "recode-config-"));
+    const configPath = resolveConfigPath(workspaceRoot, ".recode/config.json");
+    const rawConfig = {
+      version: 1,
+      providers: [],
+      agents: {
+        explore: {
+          providerId: "openai",
+          model: "gpt-4.1-mini",
+          prompt: "Explore only.",
+          description: "Read-only explorer",
+          tools: {
+            Read: true,
+            Write: false,
+            Bad: "nope"
+          }
+        },
+        empty: {}
+      }
+    };
+
+    mkdirSync(dirname(configPath), { recursive: true });
+    writeFileSync(configPath, `${JSON.stringify(rawConfig, null, 2)}\n`, "utf8");
+
+    expect(loadRecodeConfigFile(configPath).agents).toEqual({
+      explore: {
+        providerId: "openai",
+        model: "gpt-4.1-mini",
+        prompt: "Explore only.",
+        description: "Read-only explorer",
+        tools: {
+          Read: true,
+          Write: false
+        }
+      }
+    });
+  });
+
   it("preserves unrelated settings across config selectors", () => {
     const config = selectConfiguredToolMarker(
       selectConfiguredMinimalMode(

@@ -10,7 +10,7 @@ import {
   type SyntaxStyle
 } from "@opentui/core";
 import { For, Show } from "solid-js";
-import type { EditToolResultMetadata, TodoItem } from "../tools/tool.ts";
+import type { EditToolResultMetadata, TaskToolResultMetadata, TodoItem } from "../tools/tool.ts";
 import { toDisplayLines } from "./message-format.ts";
 import {
   getTheme,
@@ -167,6 +167,9 @@ export function renderEntry(
       const editMetadata = metadata?.kind === "edit-preview"
         ? (metadata as EditToolResultMetadata)
         : undefined;
+      const taskMetadata = metadata?.kind === "task-result"
+        ? (metadata as TaskToolResultMetadata)
+        : undefined;
       const counts = editMetadata !== undefined
         ? countDiffLines(editMetadata.oldText ?? "", editMetadata.newText ?? "")
         : undefined;
@@ -215,6 +218,16 @@ export function renderEntry(
               <For each={metadata?.kind === "todo-list" ? metadata.todos : []}>
                 {(todo) => <TodoLine todo={todo} t={t} />}
               </For>
+            </box>
+          </Show>
+          <Show when={taskMetadata !== undefined && taskMetadata?.status === "completed"}>
+            <box flexDirection="column" paddingLeft={2} paddingTop={1} paddingRight={1}>
+              <Show when={taskMetadata?.taskId !== undefined}>
+                <text fg={t().hintText} attributes={TextAttributes.DIM}>{`task_id: ${taskMetadata?.taskId ?? ""}`}</text>
+              </Show>
+              <Show when={(taskMetadata?.summary ?? "") !== ""}>
+                <text fg={t().assistantBody}>{taskMetadata?.summary ?? ""}</text>
+              </Show>
             </box>
           </Show>
         </box>

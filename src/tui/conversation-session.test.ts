@@ -12,6 +12,7 @@ import type { ConversationMessage } from "../transcript/message.ts";
 import type { RuntimeConfig, RuntimeProviderConfig } from "../runtime/runtime-config.ts";
 import {
   createDraftConversation,
+  forkConversationSession,
   persistConversationSession,
   restoreSavedConversationRuntime
 } from "./conversation-session.ts";
@@ -76,6 +77,41 @@ describe("conversation session helpers", () => {
     expect(historyIndex.lastConversationId).toBe(conversation.id);
     expect(historyIndex.conversations).toHaveLength(1);
     expect(historyIndex.conversations[0]?.id).toBe(conversation.id);
+  });
+
+  it("persists and forks embedded subagent task records", () => {
+    const runtimeConfig = createRuntimeConfig();
+    const historyRoot = join(tempRoots[0]!, "history");
+    const transcript: readonly ConversationMessage[] = [{ role: "user", content: "hello" }];
+    const subagentTasks = [
+      {
+        id: "task_1",
+        subagentType: "explore" as const,
+        description: "Inspect code",
+        prompt: "Inspect code.",
+        transcript: [{ role: "user" as const, content: "Inspect code." }],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:01.000Z",
+        providerId: "primary",
+        providerName: "Primary",
+        model: "gpt-4.1",
+        status: "completed" as const
+      }
+    ];
+
+    const conversation = persistConversationSession(
+      historyRoot,
+      runtimeConfig,
+      transcript,
+      undefined,
+      "build",
+      subagentTasks
+    );
+    const forked = forkConversationSession(historyRoot, runtimeConfig, transcript, "build", conversation.subagentTasks);
+
+    expect(conversation.subagentTasks?.[0]?.id).toBe("task_1");
+    expect(forked.id).not.toBe(conversation.id);
+    expect(forked.subagentTasks?.[0]?.id).toBe("task_1");
   });
 
   it("restores a saved provider/model selection into runtime config", () => {

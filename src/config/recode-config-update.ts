@@ -3,6 +3,7 @@
  */
 
 import type {
+  ConfiguredAgent,
   ConfiguredProvider,
   RecodeConfigFile
 } from "./recode-config.ts";
@@ -21,6 +22,7 @@ export interface RecodeConfigPatch {
   readonly layoutMode?: LayoutMode;
   readonly minimalMode?: boolean;
   readonly todoPanelEnabled?: boolean;
+  readonly agents?: Readonly<Record<string, ConfiguredAgent>>;
   readonly providers?: readonly ConfiguredProvider[];
 }
 
@@ -39,6 +41,7 @@ export function patchRecodeConfig(
   const layoutMode = patch.layoutMode ?? config.layoutMode;
   const minimalMode = patch.minimalMode ?? config.minimalMode;
   const todoPanelEnabled = patch.todoPanelEnabled ?? config.todoPanelEnabled;
+  const agents = patch.agents ?? config.agents;
 
   return {
     version: config.version,
@@ -50,6 +53,7 @@ export function patchRecodeConfig(
     ...(approvalAllowlist === undefined ? {} : { approvalAllowlist }),
     ...(layoutMode === undefined ? {} : { layoutMode }),
     ...(minimalMode === undefined ? {} : { minimalMode }),
-    ...(todoPanelEnabled === undefined ? {} : { todoPanelEnabled })
+    ...(todoPanelEnabled === undefined ? {} : { todoPanelEnabled }),
+    ...(agents === undefined ? {} : { agents })
   };
 }

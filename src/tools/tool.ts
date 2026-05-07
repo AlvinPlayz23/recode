@@ -4,6 +4,8 @@
  * @author dev
  */
 
+import type { SubagentTaskHandler } from "../agent/subagent.ts";
+
 /**
  * JSON Schema string definition.
  */
@@ -129,6 +131,7 @@ export interface ToolExecutionContext {
   readonly abortSignal?: AbortSignal;
   readonly requestToolApproval?: ToolApprovalHandler;
   readonly requestQuestionAnswers?: QuestionRequestHandler;
+  readonly runSubagentTask?: SubagentTaskHandler;
 }
 
 /** Structured preview for one successful Edit tool replacement. */
@@ -154,8 +157,19 @@ export interface TodoToolResultMetadata {
   readonly todos: readonly TodoItem[];
 }
 
+/** Structured task state produced by the Task tool. */
+export interface TaskToolResultMetadata {
+  readonly kind: "task-result";
+  readonly taskId?: string;
+  readonly subagentType: "explore" | "general";
+  readonly description: string;
+  readonly status: "running" | "completed";
+  readonly summary: string;
+  readonly resumed: boolean;
+}
+
 /** Structured metadata attached to a tool result. */
-export type ToolResultMetadata = EditToolResultMetadata | TodoToolResultMetadata;
+export type ToolResultMetadata = EditToolResultMetadata | TodoToolResultMetadata | TaskToolResultMetadata;
 
 /**
  * Tool execution result.

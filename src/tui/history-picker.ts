@@ -6,6 +6,7 @@ import {
   estimateConversationContextTokens,
   type ContextTokenEstimate
 } from "../agent/compact-conversation.ts";
+import type { SubagentTaskRecord } from "../agent/subagent.ts";
 import {
   listHistoryForWorkspace,
   loadConversation,
@@ -105,6 +106,7 @@ export interface SubmitHistoryPickerSelectionOptions<TEntry> {
   readonly setConversation: (value: SavedConversationRecord) => void;
   readonly setEntries: (value: readonly TEntry[]) => void;
   readonly setPreviousMessages: (value: readonly ConversationMessage[]) => void;
+  readonly setSubagentTasks?: (value: readonly SubagentTaskRecord[]) => void;
   readonly setLastContextEstimate: (value: ContextTokenEstimate | undefined) => void;
   readonly rehydrateEntries: (transcript: readonly ConversationMessage[]) => readonly TEntry[];
   readonly close: () => void;
@@ -134,6 +136,7 @@ export async function submitSelectedHistoryPickerItem<TEntry>(
     options.setConversation(conversation);
     options.setEntries(options.rehydrateEntries(conversation.transcript));
     options.setPreviousMessages(conversation.transcript);
+    options.setSubagentTasks?.(conversation.subagentTasks ?? []);
     options.setLastContextEstimate(estimateConversationContextTokens(conversation.transcript));
     options.close();
   } finally {

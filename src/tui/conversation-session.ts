@@ -17,6 +17,7 @@ import {
   selectRuntimeProviderModel,
   type RuntimeConfig
 } from "../runtime/runtime-config.ts";
+import type { SubagentTaskRecord } from "../agent/subagent.ts";
 import type { SessionMode } from "./session-mode.ts";
 
 /**
@@ -37,15 +38,18 @@ export function persistConversationSession(
   runtimeConfig: RuntimeConfig,
   transcript: readonly ConversationMessage[],
   currentConversation: SavedConversationRecord | undefined,
-  mode: SessionMode
+  mode: SessionMode,
+  subagentTasks?: readonly SubagentTaskRecord[]
 ): SavedConversationRecord {
+  const embeddedTasks = subagentTasks ?? currentConversation?.subagentTasks ?? [];
   const conversation = createConversationRecord(
     runtimeConfig,
     transcript,
     mode,
     currentConversation === undefined
       ? undefined
-      : { id: currentConversation.id, createdAt: currentConversation.createdAt }
+      : { id: currentConversation.id, createdAt: currentConversation.createdAt },
+    embeddedTasks
   );
 
   if (transcript.length > 0) {
@@ -62,9 +66,10 @@ export function forkConversationSession(
   historyRoot: string,
   runtimeConfig: RuntimeConfig,
   transcript: readonly ConversationMessage[],
-  mode: SessionMode
+  mode: SessionMode,
+  subagentTasks?: readonly SubagentTaskRecord[]
 ): SavedConversationRecord {
-  const conversation = createConversationRecord(runtimeConfig, transcript, mode);
+  const conversation = createConversationRecord(runtimeConfig, transcript, mode, undefined, subagentTasks);
 
   if (transcript.length > 0) {
     saveConversation(historyRoot, conversation, true);

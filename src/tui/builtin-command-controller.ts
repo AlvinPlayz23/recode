@@ -3,6 +3,7 @@
  */
 
 import type { AiModel } from "../ai/types.ts";
+import type { SubagentTaskRecord } from "../agent/subagent.ts";
 import {
   compactConversation,
   estimateConversationContextTokens,
@@ -69,6 +70,7 @@ export interface BuiltinCommandDispatchOptions {
   readonly minimalMode: boolean;
   readonly entriesCount: number;
   readonly transcript: readonly ConversationMessage[];
+  readonly subagentTasks: readonly SubagentTaskRecord[];
   readonly contextWindowStatus: ContextWindowStatusSnapshot;
   readonly historyRoot: string;
   readonly currentConversation: SavedConversationRecord | undefined;
@@ -88,6 +90,7 @@ export interface BuiltinCommandDispatchOptions {
   readonly setConversation: (value: SavedConversationRecord) => void;
   readonly setEntries: (value: readonly UiEntry[]) => void;
   readonly setPreviousMessages: (value: readonly ConversationMessage[]) => void;
+  readonly setSubagentTasks: (value: readonly SubagentTaskRecord[]) => void;
   readonly setLastContextEstimate: (value: ContextTokenEstimate | undefined) => void;
   readonly setStreamingBody: (value: string) => void;
   readonly setStreamingEntryId: (value: string | undefined) => void;
@@ -257,6 +260,7 @@ function startNewConversation(options: BuiltinCommandDispatchOptions): void {
   options.setConversation(conversation);
   options.setEntries([createEntry("status", "status", "Started a new conversation")]);
   options.setPreviousMessages([]);
+  options.setSubagentTasks([]);
   options.setLastContextEstimate(undefined);
   options.setStreamingBody("");
   options.setStreamingEntryId(undefined);
@@ -272,11 +276,13 @@ function forkCurrentConversation(options: BuiltinCommandDispatchOptions): void {
     options.historyRoot,
     options.runtimeConfig,
     options.transcript,
-    options.sessionMode
+    options.sessionMode,
+    options.subagentTasks
   );
 
   options.setConversation(forkedConversation);
   options.setPreviousMessages(forkedConversation.transcript);
+  options.setSubagentTasks(forkedConversation.subagentTasks ?? []);
   options.setLastContextEstimate(estimateConversationContextTokens(forkedConversation.transcript));
   options.setStreamingBody("");
   options.setStreamingEntryId(undefined);
@@ -311,7 +317,8 @@ async function compactCurrentConversation(options: BuiltinCommandDispatchOptions
       options.runtimeConfig,
       compacted.transcript,
       options.currentConversation,
-      options.sessionMode
+      options.sessionMode,
+      options.subagentTasks
     );
     options.setConversation(persistedConversation);
     options.appendEntry(
@@ -345,7 +352,8 @@ function switchSessionMode(
     options.runtimeConfig,
     options.transcript,
     options.currentConversation,
-    nextMode
+    nextMode,
+    options.subagentTasks
   );
   options.setConversation(persistedConversation);
   options.appendEntry(

@@ -50,6 +50,17 @@ export interface ConfiguredProvider {
 }
 
 /**
+ * Optional configuration for a built-in subagent.
+ */
+export interface ConfiguredAgent {
+  readonly providerId?: string;
+  readonly model?: string;
+  readonly prompt?: string;
+  readonly description?: string;
+  readonly tools?: Readonly<Record<string, boolean>>;
+}
+
+/**
  * Persistent Recode config file.
  */
 export interface RecodeConfigFile {
@@ -62,6 +73,7 @@ export interface RecodeConfigFile {
   readonly layoutMode?: LayoutMode;
   readonly minimalMode?: boolean;
   readonly todoPanelEnabled?: boolean;
+  readonly agents?: Readonly<Record<string, ConfiguredAgent>>;
   readonly providers: readonly ConfiguredProvider[];
 }
 
@@ -300,6 +312,7 @@ function parseRecodeConfigFile(value: unknown): RecodeConfigFile {
   const layoutMode = readOptionalLayoutMode(value, "layoutMode");
   const minimalMode = readOptionalBoolean(value, "minimalMode");
   const todoPanelEnabled = readOptionalBoolean(value, "todoPanelEnabled");
+  const agents = readOptionalConfiguredAgents(value, "agents");
   const providersValue = value["providers"];
   const providers = Array.isArray(providersValue)
     ? providersValue.map(parseConfiguredProvider).filter((provider) => provider !== undefined)
@@ -315,6 +328,7 @@ function parseRecodeConfigFile(value: unknown): RecodeConfigFile {
     ...(layoutMode === undefined ? {} : { layoutMode }),
     ...(minimalMode === undefined ? {} : { minimalMode }),
     ...(todoPanelEnabled === undefined ? {} : { todoPanelEnabled }),
+    ...(agents === undefined ? {} : { agents }),
     ...(activeProviderId === undefined ? {} : { activeProviderId })
   };
 }
@@ -382,6 +396,54 @@ function parseConfiguredModel(value: unknown): ConfiguredModel | undefined {
   };
 }
 
+function readOptionalConfiguredAgents(
+  record: Record<string, unknown>,
+  key: string
+): Readonly<Record<string, ConfiguredAgent>> | undefined {
+  const value = record[key];
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const entries = Object.entries(value)
+    .map(([agentName, agentValue]) => [agentName, parseConfiguredAgent(agentValue)] as const)
+    .filter((entry): entry is readonly [string, ConfiguredAgent] =>
+      entry[0].trim() !== "" && entry[1] !== undefined
+    );
+
+  return entries.length === 0 ? undefined : Object.fromEntries(entries);
+}
+
+function parseConfiguredAgent(value: unknown): ConfiguredAgent | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const providerId = readOptionalNonEmptyString(value, "providerId");
+  const model = readOptionalNonEmptyString(value, "model");
+  const prompt = readOptionalNonEmptyString(value, "prompt");
+  const description = readOptionalNonEmptyString(value, "description");
+  const tools = readOptionalBooleanRecord(value, "tools");
+
+  if (
+    providerId === undefined
+    && model === undefined
+    && prompt === undefined
+    && description === undefined
+    && tools === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    ...(providerId === undefined ? {} : { providerId }),
+    ...(model === undefined ? {} : { model }),
+    ...(prompt === undefined ? {} : { prompt }),
+    ...(description === undefined ? {} : { description }),
+    ...(tools === undefined ? {} : { tools })
+  };
+}
+
 function readOptionalNonEmptyString(record: Record<string, unknown>, key: string): string | undefined {
   const value = record[key];
   if (typeof value !== "string") {
@@ -406,6 +468,23 @@ function readOptionalStringRecord(
       typeof entry[1] === "string" && entry[1].trim() !== ""
     )
     .map(([entryKey, entryValue]) => [entryKey, entryValue.trim()] as const);
+
+  return entries.length === 0 ? undefined : Object.fromEntries(entries);
+}
+
+function readOptionalBooleanRecord(
+  record: Record<string, unknown>,
+  key: string
+): Readonly<Record<string, boolean>> | undefined {
+  const value = record[key];
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const entries = Object.entries(value)
+    .filter((entry): entry is [string, boolean] =>
+      entry[0].trim() !== "" && typeof entry[1] === "boolean"
+    );
 
   return entries.length === 0 ? undefined : Object.fromEntries(entries);
 }

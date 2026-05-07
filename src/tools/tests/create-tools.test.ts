@@ -11,6 +11,7 @@ describe("createTools", () => {
       "Bash",
       "AskUserQuestion",
       "TodoWrite",
+      "Task",
       "Read",
       "Write",
       "Edit",

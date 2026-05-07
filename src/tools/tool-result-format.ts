@@ -88,6 +88,8 @@ function getToolFailureRecoveryHint(toolName: string, message: string): string |
       return "Retry with 1-4 questions, each with non-empty options and short labels.";
     case "TodoWrite":
       return "Retry with a todos array. Each item needs content, activeForm, status, and priority. Use at most one in_progress item.";
+    case "Task":
+      return "Retry with description, prompt, and subagentType set to explore or general. Use the returned task_id only when resuming an existing child task.";
     default:
       return undefined;
   }

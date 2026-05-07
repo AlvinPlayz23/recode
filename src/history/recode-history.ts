@@ -5,6 +5,7 @@
  */
 
 import { join, resolve } from "node:path";
+import type { SubagentTaskRecord } from "../agent/subagent.ts";
 import type { RuntimeConfig } from "../runtime/runtime-config.ts";
 import type {
   AssistantMessage,
@@ -66,7 +67,8 @@ export function createConversationRecord(
   runtimeConfig: Pick<RuntimeConfig, "workspaceRoot" | "providerId" | "providerName" | "model">,
   transcript: readonly ConversationMessage[],
   mode: SessionMode,
-  seed?: Partial<Pick<SavedConversationRecord, "id" | "createdAt">>
+  seed?: Partial<Pick<SavedConversationRecord, "id" | "createdAt">>,
+  subagentTasks?: readonly SubagentTaskRecord[]
 ): SavedConversationRecord {
   const now = new Date().toISOString();
   const createdAt = seed?.createdAt ?? now;
@@ -74,7 +76,8 @@ export function createConversationRecord(
 
   return {
     ...buildConversationMeta(runtimeConfig, transcript, mode, createdAt, now, id),
-    transcript
+    transcript,
+    ...(subagentTasks === undefined || subagentTasks.length === 0 ? {} : { subagentTasks })
   };
 }
 

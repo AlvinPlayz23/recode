@@ -215,6 +215,64 @@ describe("recode history schema", () => {
     });
   });
 
+  it("parses task-result metadata and embedded subagent task records", () => {
+    const record = parseConversationRecord({
+      ...baseConversationMeta(),
+      transcript: [
+        {
+          role: "tool",
+          toolCallId: "call_task",
+          toolName: "Task",
+          content: "task_id: task_1",
+          isError: false,
+          metadata: {
+            kind: "task-result",
+            taskId: "task_1",
+            subagentType: "explore",
+            description: "Inspect routing",
+            status: "completed",
+            summary: "Routing lives in src/routes.ts.",
+            resumed: false
+          }
+        }
+      ],
+      subagentTasks: [
+        {
+          id: "task_1",
+          subagentType: "explore",
+          description: "Inspect routing",
+          prompt: "Find routing.",
+          transcript: [{ role: "user", content: "Find routing." }],
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:01.000Z",
+          providerId: "openai",
+          providerName: "OpenAI",
+          model: "gpt-4.1",
+          status: "completed"
+        }
+      ]
+    });
+
+    expect(record?.transcript[0]).toEqual({
+      role: "tool",
+      toolCallId: "call_task",
+      toolName: "Task",
+      content: "task_id: task_1",
+      isError: false,
+      metadata: {
+        kind: "task-result",
+        taskId: "task_1",
+        subagentType: "explore",
+        description: "Inspect routing",
+        status: "completed",
+        summary: "Routing lives in src/routes.ts.",
+        resumed: false
+      }
+    });
+    expect(record?.subagentTasks?.[0]?.id).toBe("task_1");
+    expect(record?.subagentTasks?.[0]?.transcript).toEqual([{ role: "user", content: "Find routing." }]);
+  });
+
   it("keeps continuation summaries and rejects malformed summary messages", () => {
     const record = parseConversationRecord({
       ...baseConversationMeta(),

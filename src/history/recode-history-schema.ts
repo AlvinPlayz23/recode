@@ -3,6 +3,7 @@
  */
 
 import type { StepStats, StepTokenUsage } from "../agent/step-stats.ts";
+import { isSubagentType, type SubagentTaskRecord } from "../agent/subagent.ts";
 import { isRecord } from "../shared/is-record.ts";
 import { isJsonObject } from "../shared/json-value.ts";
 import type {
@@ -13,7 +14,7 @@ import type {
   ToolResultMessage,
   UserMessage
 } from "../transcript/message.ts";
-import type { EditToolResultMetadata, TodoItem, TodoToolResultMetadata, ToolResultMetadata } from "../tools/tool.ts";
+import type { EditToolResultMetadata, TaskToolResultMetadata, TodoItem, TodoToolResultMetadata, ToolResultMetadata } from "../tools/tool.ts";
 import type {
   RecodeHistoryIndex,
   SavedConversationMeta,
@@ -89,10 +90,15 @@ export function parseConversationRecord(value: unknown): SavedConversationRecord
   const transcript = Array.isArray(transcriptValue)
     ? transcriptValue.map(parseConversationMessage).filter((item) => item !== undefined)
     : [];
+  const subagentTasksValue = value["subagentTasks"];
+  const subagentTasks = Array.isArray(subagentTasksValue)
+    ? subagentTasksValue.map(parseSubagentTaskRecord).filter((item) => item !== undefined)
+    : [];
 
   return {
     ...meta,
-    transcript
+    transcript,
+    ...(subagentTasks.length === 0 ? {} : { subagentTasks })
   };
 }
 
@@ -267,9 +273,61 @@ function parseToolResultMetadata(value: unknown): ToolResultMetadata | undefined
       return parseEditToolResultMetadata(value);
     case "todo-list":
       return parseTodoToolResultMetadata(value);
+    case "task-result":
+      return parseTaskToolResultMetadata(value);
     default:
       return undefined;
   }
+}
+
+function parseSubagentTaskRecord(value: unknown): SubagentTaskRecord | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const id = readOptionalString(value, "id");
+  const subagentType = readOptionalString(value, "subagentType");
+  const description = readOptionalString(value, "description");
+  const prompt = readOptionalString(value, "prompt");
+  const createdAt = readOptionalString(value, "createdAt");
+  const updatedAt = readOptionalString(value, "updatedAt");
+  const providerId = readOptionalString(value, "providerId");
+  const providerName = readOptionalString(value, "providerName");
+  const model = readOptionalString(value, "model");
+  const transcriptValue = value["transcript"];
+  const transcript = Array.isArray(transcriptValue)
+    ? transcriptValue.map(parseConversationMessage).filter((item) => item !== undefined)
+    : [];
+
+  if (
+    id === undefined
+    || subagentType === undefined
+    || !isSubagentType(subagentType)
+    || description === undefined
+    || prompt === undefined
+    || createdAt === undefined
+    || updatedAt === undefined
+    || providerId === undefined
+    || providerName === undefined
+    || model === undefined
+    || value["status"] !== "completed"
+  ) {
+    return undefined;
+  }
+
+  return {
+    id,
+    subagentType,
+    description,
+    prompt,
+    transcript,
+    createdAt,
+    updatedAt,
+    providerId,
+    providerName,
+    model,
+    status: "completed"
+  };
 }
 
 function parseEditToolResultMetadata(value: Record<string, unknown>): EditToolResultMetadata | undefined {
@@ -303,6 +361,35 @@ function parseTodoToolResultMetadata(value: Record<string, unknown>): TodoToolRe
   return {
     kind: "todo-list",
     todos
+  };
+}
+
+function parseTaskToolResultMetadata(value: Record<string, unknown>): TaskToolResultMetadata | undefined {
+  const subagentType = readOptionalString(value, "subagentType");
+  const description = readOptionalString(value, "description");
+  const summary = typeof value["summary"] === "string" ? value["summary"] : undefined;
+  const status = value["status"];
+  const taskId = readOptionalString(value, "taskId");
+
+  if (
+    subagentType === undefined
+    || !isSubagentType(subagentType)
+    || description === undefined
+    || summary === undefined
+    || (status !== "running" && status !== "completed")
+    || typeof value["resumed"] !== "boolean"
+  ) {
+    return undefined;
+  }
+
+  return {
+    kind: "task-result",
+    subagentType,
+    description,
+    status,
+    summary,
+    resumed: value["resumed"],
+    ...(taskId === undefined ? {} : { taskId })
   };
 }
 
