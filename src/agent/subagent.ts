@@ -9,7 +9,14 @@ import { selectRuntimeProviderModel, type RuntimeConfig } from "../runtime/runti
 import type { ConversationMessage } from "../transcript/message.ts";
 import type { ToolDefinition, ToolExecutionContext } from "../tools/tool.ts";
 import { ToolRegistry } from "../tools/tool-registry.ts";
-import { runAgentLoop, type ProviderStatusObserver } from "./run-agent-loop.ts";
+import {
+  runAgentLoop,
+  type ProviderStatusObserver,
+  type TextDeltaObserver,
+  type ToolCallObserver,
+  type ToolResultObserver,
+  type TranscriptObserver
+} from "./run-agent-loop.ts";
 
 /** Built-in subagent type identifiers. */
 export type SubagentType = "explore" | "general";
@@ -69,7 +76,11 @@ export interface RunSubagentTaskOptions {
   readonly findTask: (taskId: string) => SubagentTaskRecord | undefined;
   readonly saveTask: (record: SubagentTaskRecord) => void;
   readonly requestAffinityKey?: string;
+  readonly onToolCall?: ToolCallObserver;
+  readonly onTextDelta?: TextDeltaObserver;
+  readonly onToolResult?: ToolResultObserver;
   readonly onProviderStatus?: ProviderStatusObserver;
+  readonly onTranscriptUpdate?: TranscriptObserver;
 }
 
 const EXPLORE_TOOL_NAMES = new Set(["Read", "Glob", "Grep", "WebFetch", "WebSearch"]);
@@ -161,7 +172,11 @@ export async function runSubagentTask(options: RunSubagentTaskOptions): Promise<
     toolContext: childToolContext,
     ...(options.request.abortSignal === undefined ? {} : { abortSignal: options.request.abortSignal }),
     requestAffinityKey: affinityKey,
-    ...(options.onProviderStatus === undefined ? {} : { onProviderStatus: options.onProviderStatus })
+    ...(options.onToolCall === undefined ? {} : { onToolCall: options.onToolCall }),
+    ...(options.onTextDelta === undefined ? {} : { onTextDelta: options.onTextDelta }),
+    ...(options.onToolResult === undefined ? {} : { onToolResult: options.onToolResult }),
+    ...(options.onProviderStatus === undefined ? {} : { onProviderStatus: options.onProviderStatus }),
+    ...(options.onTranscriptUpdate === undefined ? {} : { onTranscriptUpdate: options.onTranscriptUpdate })
   });
 
   const now = new Date().toISOString();

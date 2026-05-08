@@ -45,6 +45,7 @@ import {
 } from "../agent/compact-conversation.ts";
 import {
   runSubagentTask,
+  resolveSubagentRuntimeConfig,
   type SubagentTaskHandler,
   type SubagentTaskRecord
 } from "../agent/subagent.ts";
@@ -148,6 +149,20 @@ import {
   type ModelPickerRenderedLine
 } from "./selector-navigation.ts";
 import { filterToolsForSessionMode, getSessionModeLabel, type SessionMode } from "./session-mode.ts";
+import {
+  appendLiveSubagentTextDelta,
+  appendLiveSubagentToolCall,
+  appendLiveSubagentToolResult,
+  applyLiveSubagentTranscriptUpdate,
+  completeLiveSubagentTask,
+  createLiveSubagentTask,
+  createLiveSubagentTasksFromRecords,
+  cycleChatView,
+  failLiveSubagentTask,
+  upsertLiveSubagentTask,
+  type ChatView,
+  type LiveSubagentTask
+} from "./subagent-view.ts";
 import { getFooterTip } from "./startup-quotes.ts";
 import { getSpinnerPhaseGlyph, getSpinnerSegments, type SpinnerPhase } from "./spinner.tsx";
 import {
@@ -286,6 +301,8 @@ export function TuiApp(props: TuiAppProps) {
   const [sessionMode, setSessionMode] = createSignal<SessionMode>("build");
   const [currentConversation, setCurrentConversation] = createSignal<SavedConversationRecord | undefined>(undefined);
   const [subagentTasks, setSubagentTasks] = createSignal<readonly SubagentTaskRecord[]>([]);
+  const [liveSubagentTasks, setLiveSubagentTasks] = createSignal<readonly LiveSubagentTask[]>([]);
+  const [activeChatView, setActiveChatView] = createSignal<ChatView>({ kind: "parent" });
   const [statusTick, setStatusTick] = createSignal(0);
   const [streamingEntryId, setStreamingEntryId] = createSignal<string | undefined>(undefined);
   const [streamingBody, setStreamingBody] = createSignal("");
@@ -381,32 +398,88 @@ export function TuiApp(props: TuiAppProps) {
     || activeApprovalRequest() !== undefined
     || activeQuestionRequest() !== undefined
   );
+  const activeSubagentTask = createMemo(() => {
+    const view = activeChatView();
+    return view.kind === "subagent"
+      ? liveSubagentTasks().find((task) => task.id === view.taskId)
+      : undefined;
+  });
+  const visibleEntries = createMemo(() => activeSubagentTask()?.entries ?? entries());
+  const visibleStreamingEntryId = createMemo(() => activeSubagentTask()?.streamingEntryId ?? streamingEntryId());
+  const visibleStreamingBody = createMemo(() => activeSubagentTask()?.streamingBody ?? streamingBody());
+  const activeChatIsSubagent = createMemo(() => activeSubagentTask() !== undefined);
+  const restoreSubagentTaskState = (records: readonly SubagentTaskRecord[]) => {
+    setSubagentTasks(records);
+    setLiveSubagentTasks(createLiveSubagentTasksFromRecords(records));
+    setActiveChatView({ kind: "parent" });
+  };
   const runTuiSubagentTask: SubagentTaskHandler = async (request) => {
     const currentConversationId = currentConversation()?.id;
-    return await runSubagentTask({
-      request,
-      parentRuntimeConfig: sessionRuntimeConfig(),
-      parentSystemPrompt: props.systemPrompt,
-      parentToolRegistry: props.toolRegistry,
-      parentToolContext: {
-        ...props.toolContext,
-        approvalMode: approvalMode(),
-        approvalAllowlist: approvalAllowlist(),
-        requestToolApproval,
-        requestQuestionAnswers,
-        ...(request.abortSignal === undefined ? {} : { abortSignal: request.abortSignal })
-      },
-      findTask(taskId) {
-        return subagentTasks().find((task) => task.id === taskId);
-      },
-      saveTask(record) {
-        setSubagentTasks((previous) => [
-          ...previous.filter((task) => task.id !== record.id),
-          record
-        ]);
-      },
-      ...(currentConversationId === undefined ? {} : { requestAffinityKey: currentConversationId })
-    });
+    const existingTask = request.taskId === undefined
+      ? undefined
+      : subagentTasks().find((task) => task.id === request.taskId);
+    const taskId = existingTask?.id ?? request.taskId ?? crypto.randomUUID();
+    const now = new Date().toISOString();
+    const subagentRuntimeConfig = resolveSubagentRuntimeConfig(sessionRuntimeConfig(), request.subagentType);
+    setLiveSubagentTasks((previous) => upsertLiveSubagentTask(previous, createLiveSubagentTask({
+      id: taskId,
+      subagentType: request.subagentType,
+      description: request.description,
+      prompt: request.prompt,
+      transcript: existingTask?.transcript ?? [],
+      createdAt: existingTask?.createdAt ?? now,
+      updatedAt: now,
+      providerId: subagentRuntimeConfig.providerId,
+      providerName: subagentRuntimeConfig.providerName,
+      model: subagentRuntimeConfig.model,
+      status: "running"
+    })));
+
+    try {
+      return await runSubagentTask({
+        request: {
+          ...request,
+          taskId
+        },
+        parentRuntimeConfig: sessionRuntimeConfig(),
+        parentSystemPrompt: props.systemPrompt,
+        parentToolRegistry: props.toolRegistry,
+        parentToolContext: {
+          ...props.toolContext,
+          approvalMode: approvalMode(),
+          approvalAllowlist: approvalAllowlist(),
+          requestToolApproval,
+          requestQuestionAnswers,
+          ...(request.abortSignal === undefined ? {} : { abortSignal: request.abortSignal })
+        },
+        findTask(taskId) {
+          return subagentTasks().find((task) => task.id === taskId);
+        },
+        saveTask(record) {
+          setSubagentTasks((previous) => [
+            ...previous.filter((task) => task.id !== record.id),
+            record
+          ]);
+          setLiveSubagentTasks((previous) => completeLiveSubagentTask(previous, record));
+        },
+        onTextDelta(delta) {
+          setLiveSubagentTasks((previous) => appendLiveSubagentTextDelta(previous, taskId, delta));
+        },
+        onToolCall(toolCall) {
+          setLiveSubagentTasks((previous) => appendLiveSubagentToolCall(previous, taskId, toolCall));
+        },
+        onToolResult(toolResult) {
+          setLiveSubagentTasks((previous) => appendLiveSubagentToolResult(previous, taskId, toolResult));
+        },
+        onTranscriptUpdate(transcript) {
+          setLiveSubagentTasks((previous) => applyLiveSubagentTranscriptUpdate(previous, taskId, transcript));
+        },
+        ...(currentConversationId === undefined ? {} : { requestAffinityKey: currentConversationId })
+      });
+    } catch (error) {
+      setLiveSubagentTasks((previous) => failLiveSubagentTask(previous, taskId, toErrorMessage(error)));
+      throw error;
+    }
   };
 
   const sessionToolContext = createMemo<ToolExecutionContext>(() => ({
@@ -417,6 +490,13 @@ export function TuiApp(props: TuiAppProps) {
     requestQuestionAnswers,
     runSubagentTask: runTuiSubagentTask
   }));
+
+  createEffect(() => {
+    const view = activeChatView();
+    if (view.kind === "subagent" && !liveSubagentTasks().some((task) => task.id === view.taskId)) {
+      setActiveChatView({ kind: "parent" });
+    }
+  });
 
   const statusMarquee = createMemo(() => buildStatusMarquee(themeName(), statusTick(), t(), busyPhase()));
   const commandSuggestions = createMemo(() => findBuiltinCommands(draft()));
@@ -482,12 +562,12 @@ export function TuiApp(props: TuiAppProps) {
   const headerHeight = createMemo(() => estimateHeaderHeight(minimalMode(), showSplashLogo(), effectiveSplashDetailsVisible()));
   const availableConversationHeight = createMemo(() => Math.max(1, terminal().height - headerHeight() - 4));
   const composerDocked = createMemo(() => estimateConversationFlowHeight(
-    entries(),
+    visibleEntries(),
     conversationFlowWidth(),
-    commandPanel(),
-    fileSuggestionPanel(),
+    activeChatIsSubagent() ? undefined : commandPanel(),
+    activeChatIsSubagent() ? undefined : fileSuggestionPanel(),
     draft(),
-    todoPanelEnabled() && todoDropupOpen() ? getTodoDropupHeight(todos()) : 0
+    !activeChatIsSubagent() && todoPanelEnabled() && todoDropupOpen() ? getTodoDropupHeight(todos()) : 0
   ) >= availableConversationHeight());
   const footerTipText = createMemo(() => getFooterTip(footerTipIndex()).text);
   const promptPlaceholder = createMemo(() => {
@@ -898,7 +978,7 @@ export function TuiApp(props: TuiAppProps) {
     inputRef?.focus();
     applyInputCursorStyle(inputRef, t().brandShimmer);
     setCurrentConversation(createDraftConversation(sessionRuntimeConfig(), "build"));
-    setSubagentTasks([]);
+    restoreSubagentTaskState([]);
     setEntries([]);
     setTranscriptMessages([]);
     setLastContextEstimate(undefined);
@@ -1061,6 +1141,19 @@ export function TuiApp(props: TuiAppProps) {
       key.stopPropagation();
       if (!modalOpen()) {
         toggleComposerTodoPanel();
+      }
+      return;
+    }
+
+    if (key.ctrl && key.name === "g") {
+      key.preventDefault();
+      key.stopPropagation();
+      if (!modalOpen()) {
+        const nextView = cycleChatView(activeChatView(), liveSubagentTasks());
+        setActiveChatView(nextView);
+        if (nextView.kind === "parent") {
+          inputRef?.focus();
+        }
       }
       return;
     }
@@ -1272,7 +1365,7 @@ export function TuiApp(props: TuiAppProps) {
           setConversation: setCurrentConversation,
           setEntries,
           setPreviousMessages: setTranscriptMessages,
-          setSubagentTasks,
+          setSubagentTasks: restoreSubagentTaskState,
           setLastContextEstimate,
           rehydrateEntries: rehydrateEntriesFromTranscript,
           close() {
@@ -1699,7 +1792,7 @@ export function TuiApp(props: TuiAppProps) {
       setConversation: setCurrentConversation,
       setEntries,
       setPreviousMessages: setTranscriptMessages,
-      setSubagentTasks,
+      setSubagentTasks: restoreSubagentTaskState,
       setLastContextEstimate,
       setStreamingBody,
       setStreamingEntryId,
@@ -1894,7 +1987,70 @@ export function TuiApp(props: TuiAppProps) {
     }
   };
 
-  const renderComposer = () => (
+  const renderSubagentComposer = (task: LiveSubagentTask) => (
+    <box flexDirection="column" paddingX={2} paddingBottom={1} flexShrink={0}>
+      <box
+        flexDirection="column"
+        border
+        borderColor={task.status === "failed" ? t().error : t().promptBorder}
+        paddingLeft={1}
+        paddingRight={1}
+        paddingTop={0}
+        paddingBottom={0}
+        flexShrink={0}
+      >
+        <box flexDirection="row" justifyContent="space-between" alignItems="center">
+          <box flexDirection="row" alignItems="center" gap={1}>
+            <text fg={task.status === "running" ? t().brandShimmer : task.status === "failed" ? t().error : t().success} attributes={TextAttributes.BOLD}>
+              {task.status}
+            </text>
+            <text fg={t().divider} attributes={TextAttributes.DIM}>·</text>
+            <text fg={t().tool}>{task.subagentType}</text>
+            <text fg={t().divider} attributes={TextAttributes.DIM}>·</text>
+            <text fg={t().text}>{task.description}</text>
+          </box>
+          <text fg={t().hintText} attributes={TextAttributes.DIM}>Ctrl+G switch</text>
+        </box>
+        <box flexDirection="row" justifyContent="space-between" alignItems="center">
+          <text fg={t().hintText} attributes={TextAttributes.DIM}>{`Viewing subagent · ${task.providerName} · ${task.model}`}</text>
+          <text fg={t().hintText} attributes={TextAttributes.DIM}>{`task_id: ${task.id}`}</text>
+        </box>
+      </box>
+    </box>
+  );
+
+  const renderSubagentBreadcrumb = () => (
+    <Show when={activeSubagentTask()}>
+      {(task: () => LiveSubagentTask) => (
+        <box
+          flexDirection="row"
+          alignItems="center"
+          gap={1}
+          paddingLeft={4}
+          paddingBottom={0}
+          flexShrink={0}
+        >
+          <text fg={t().hintText} attributes={TextAttributes.DIM}>parent</text>
+          <text fg={t().divider} attributes={TextAttributes.DIM}>/</text>
+          <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>{task().description}</text>
+          <text fg={t().divider} attributes={TextAttributes.DIM}>·</text>
+          <text fg={t().tool}>{task().subagentType}</text>
+          <text fg={t().divider} attributes={TextAttributes.DIM}>·</text>
+          <text fg={task().status === "failed" ? t().error : task().status === "running" ? t().brandShimmer : t().success}>
+            {task().status}
+          </text>
+        </box>
+      )}
+    </Show>
+  );
+
+  const renderComposer = () => {
+    const childTask = activeSubagentTask();
+    if (childTask !== undefined) {
+      return renderSubagentComposer(childTask);
+    }
+
+    return (
     <box flexDirection="column" paddingX={2} paddingBottom={1} flexShrink={0}>
       <TodoDropup
         open={todoPanelEnabled() && todoDropupOpen()}
@@ -2126,7 +2282,8 @@ export function TuiApp(props: TuiAppProps) {
         </box>
       </Show>
     </box>
-  );
+    );
+  };
 
   return (
     <box width="100%" height="100%" flexDirection="column" paddingX={1} paddingTop={minimalMode() ? 0 : 1} paddingBottom={0}>
@@ -2156,9 +2313,10 @@ export function TuiApp(props: TuiAppProps) {
         when={composerDocked()}
         fallback={
           <box flexDirection="column" flexGrow={1} paddingRight={1}>
+            {renderSubagentBreadcrumb()}
             <box flexDirection="column" flexShrink={0}>
-              <For each={renderVisibleEntries(entries(), toolsCollapsed())}>
-                {(entry) => renderEntry(entry, t, markdownStyle, streamingEntryId, streamingBody, layoutMode, () => toolMarkerDefinition().symbol)}
+              <For each={renderVisibleEntries(visibleEntries(), activeChatIsSubagent() ? false : toolsCollapsed())}>
+                {(entry) => renderEntry(entry, t, markdownStyle, visibleStreamingEntryId, visibleStreamingBody, layoutMode, () => toolMarkerDefinition().symbol)}
               </For>
             </box>
             {renderComposer()}
@@ -2166,10 +2324,11 @@ export function TuiApp(props: TuiAppProps) {
         }
       >
         <box flexDirection="column" flexGrow={1} paddingRight={1}>
+          {renderSubagentBreadcrumb()}
           <scrollbox flexGrow={1} flexShrink={1} minHeight={0} scrollY stickyScroll stickyStart="bottom">
             <box flexDirection="column" flexShrink={0}>
-              <For each={renderVisibleEntries(entries(), toolsCollapsed())}>
-                {(entry) => renderEntry(entry, t, markdownStyle, streamingEntryId, streamingBody, layoutMode, () => toolMarkerDefinition().symbol)}
+              <For each={renderVisibleEntries(visibleEntries(), activeChatIsSubagent() ? false : toolsCollapsed())}>
+                {(entry) => renderEntry(entry, t, markdownStyle, visibleStreamingEntryId, visibleStreamingBody, layoutMode, () => toolMarkerDefinition().symbol)}
               </For>
             </box>
           </scrollbox>
