@@ -61,10 +61,12 @@ function getToolFailureRecoveryHint(toolName: string, message: string): string |
   switch (toolName) {
     case "ApplyPatch":
       return [
-        "Retry with a Begin Patch/End Patch envelope.",
+        message.includes("hunk target")
+          ? "Read the target file again before retrying; the file content may have changed or your context may be stale."
+          : "Retry with a Begin Patch/End Patch envelope.",
         "Use headers like '*** Update File: path'.",
         "Prefix hunk lines with ' ', '+', or '-'.",
-        "If matching failed, read the target file again and include a smaller unique context block."
+        "Include a smaller unique context block that matches the freshly read file."
       ].join(" ");
     case "Edit":
       return message.includes("exactly once") || message.includes("not found")

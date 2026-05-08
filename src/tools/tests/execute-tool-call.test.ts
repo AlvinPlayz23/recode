@@ -76,6 +76,20 @@ const FAILING_APPLY_PATCH_TOOL: ToolDefinition = {
   }
 };
 
+const FAILING_APPLY_PATCH_HUNK_TOOL: ToolDefinition = {
+  name: "ApplyPatch",
+  description: "Apply a patch.",
+  inputSchema: {
+    type: "object",
+    properties: {},
+    required: [],
+    additionalProperties: false
+  },
+  async execute() {
+    throw new ToolExecutionError("Patch hunk target was not found in: src/example.ts.");
+  }
+};
+
 describe("executeToolCall approval handling", () => {
   it("blocks tools that require approval when no interactive handler exists", async () => {
     const result = await executeToolCall(
@@ -182,6 +196,21 @@ describe("executeToolCall approval handling", () => {
     expect(result.content).toContain("Tool execution failed: Patch must include");
     expect(result.content).toContain("Recovery hint:");
     expect(result.content).toContain("Begin Patch/End Patch");
+  });
+
+  it("tells the model to reread files after ApplyPatch hunk misses", async () => {
+    const result = await executeToolCall(
+      createToolCall("ApplyPatch"),
+      new ToolRegistry([FAILING_APPLY_PATCH_HUNK_TOOL]),
+      {
+        workspaceRoot: "/workspace",
+        approvalMode: "yolo"
+      }
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("Patch hunk target was not found");
+    expect(result.content).toContain("Read the target file again before retrying");
   });
 });
 
