@@ -31,11 +31,11 @@ describe("WebFetch tool", () => {
 
     const tool = createWebFetchTool();
     const result = await tool.execute({
-      url: "http://example.com/path?q=1",
+      url: "http://93.184.216.34/path?q=1",
       format: "text"
     }, context());
 
-    expect(fetchedUrls).toEqual(["https://example.com/path?q=1"]);
+    expect(fetchedUrls).toEqual(["https://93.184.216.34/path?q=1"]);
     expect(result).toEqual({
       content: "hello",
       isError: false
@@ -49,7 +49,7 @@ describe("WebFetch tool", () => {
 
     const tool = createWebFetchTool();
     const result = await tool.execute({
-      url: "https://example.com"
+      url: "https://93.184.216.34"
     }, context());
 
     expect(result.content).toContain("# Title");
@@ -64,7 +64,7 @@ describe("WebFetch tool", () => {
 
     const tool = createWebFetchTool();
     const result = await tool.execute({
-      url: "https://example.com",
+      url: "https://93.184.216.34",
       format: "html"
     }, context());
 
@@ -79,7 +79,7 @@ describe("WebFetch tool", () => {
     const tool = createWebFetchTool();
 
     await expect(tool.execute({
-      url: "https://example.com/file.pdf"
+      url: "https://93.184.216.34/file.pdf"
     }, context())).rejects.toThrow("binary or unsupported content type");
   });
 
@@ -94,7 +94,7 @@ describe("WebFetch tool", () => {
     const tool = createWebFetchTool();
 
     await expect(tool.execute({
-      url: "https://example.com/large.txt"
+      url: "https://93.184.216.34/large.txt"
     }, context())).rejects.toThrow("too large");
   });
 
@@ -109,9 +109,56 @@ describe("WebFetch tool", () => {
     const tool = createWebFetchTool();
 
     await expect(tool.execute({
-      url: "https://example.com/slow",
+      url: "https://93.184.216.34/slow",
       timeoutSeconds: 0.001
     }, context())).rejects.toThrow("timed out");
+  });
+
+  it("blocks localhost and private network targets before fetching", async () => {
+    const fetchedUrls: string[] = [];
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
+      fetchedUrls.push(String(input));
+      return new Response("private", {
+        headers: { "content-type": "text/plain" }
+      });
+    }) as unknown as typeof fetch;
+
+    const tool = createWebFetchTool();
+
+    await expect(tool.execute({
+      url: "https://localhost/status"
+    }, context())).rejects.toThrow("private network");
+
+    await expect(tool.execute({
+      url: "https://192.168.1.10/status"
+    }, context())).rejects.toThrow("private network");
+
+    await expect(tool.execute({
+      url: "https://[::1]/status"
+    }, context())).rejects.toThrow("private network");
+
+    expect(fetchedUrls).toEqual([]);
+  });
+
+  it("blocks redirects to private network targets before following them", async () => {
+    const fetchedUrls: string[] = [];
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
+      fetchedUrls.push(String(input));
+      return new Response("", {
+        status: 302,
+        headers: {
+          location: "https://127.0.0.1/private"
+        }
+      });
+    }) as unknown as typeof fetch;
+
+    const tool = createWebFetchTool();
+
+    await expect(tool.execute({
+      url: "https://93.184.216.34/redirect"
+    }, context())).rejects.toThrow("private network");
+
+    expect(fetchedUrls).toEqual(["https://93.184.216.34/redirect"]);
   });
 });
 

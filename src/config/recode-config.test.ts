@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import {
@@ -74,6 +74,18 @@ describe("recode config", () => {
     expect(rawText).toContain("\"auto-edits\"");
 
     expect(loadRecodeConfigFile(configPath)).toEqual(approvalConfig);
+  });
+
+  it("locks down saved config file permissions on POSIX filesystems", () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "recode-config-"));
+    const configPath = resolveConfigPath(workspaceRoot, ".recode/config.json");
+
+    saveRecodeConfigFile(configPath, createEmptyConfig());
+
+    if (process.platform !== "win32") {
+      expect(statSync(configPath).mode & 0o777).toBe(0o600);
+      expect(statSync(dirname(configPath)).mode & 0o777).toBe(0o700);
+    }
   });
 
   it("updates the active provider and selected model", () => {

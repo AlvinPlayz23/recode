@@ -4,7 +4,7 @@
  * @author dev
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { parseProviderKind, type ProviderKind } from "../providers/provider-kind.ts";
@@ -78,6 +78,8 @@ export interface RecodeConfigFile {
 }
 
 const CONFIG_VERSION = 1;
+const CONFIG_DIRECTORY_MODE = 0o700;
+const CONFIG_FILE_MODE = 0o600;
 
 /**
  * Create an empty config object.
@@ -121,8 +123,22 @@ export function loadRecodeConfigFile(configPath: string): RecodeConfigFile {
  * Save a config file to disk.
  */
 export function saveRecodeConfigFile(configPath: string, config: RecodeConfigFile): void {
-  mkdirSync(dirname(configPath), { recursive: true });
-  writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  const configDirectory = dirname(configPath);
+  mkdirSync(configDirectory, { recursive: true, mode: CONFIG_DIRECTORY_MODE });
+  chmodIfSupported(configDirectory, CONFIG_DIRECTORY_MODE);
+  writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: CONFIG_FILE_MODE
+  });
+  chmodIfSupported(configPath, CONFIG_FILE_MODE);
+}
+
+function chmodIfSupported(path: string, mode: number): void {
+  try {
+    chmodSync(path, mode);
+  } catch {
+    // Windows and some mounted filesystems do not fully support POSIX modes.
+  }
 }
 
 /**
