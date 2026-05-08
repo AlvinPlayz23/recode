@@ -16,7 +16,7 @@ It provides an interactive terminal UI, a one-shot CLI mode, persistent conversa
 - Paste mode for compact multi-line paste placeholders in the composer
 - Session export to standalone HTML
 - Built-in tools: `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`
-- Shell safety checks with OS-level sandboxing temporarily disabled pending redesign
+- Unsandboxed shell execution with approval prompts, best-effort guardrails, and current-shell-path limitations
 - Native binary builds for Linux, macOS, and Windows
 
 ## Quick Start
@@ -191,6 +191,8 @@ When `RECODE_AI_TIMING=1`, provider timing events are written to `~/.recode/ai-t
 
 ## Approval Modes
 
+Approval modes are a UX and control feature, not a security sandbox.
+
 Recode supports three tool approval modes:
 
 - `approval`
@@ -210,6 +212,20 @@ When a tool needs approval, Recode opens a popup with:
 - deny
 
 “Always allow” is persisted in the global config allowlist.
+
+## Security Model
+
+Recode runs locally on your machine and can operate on files in your workspace through its tools. The `Bash` tool is intentionally unsandboxed: commands run as a normal child process of Recode with your user permissions.
+
+Current shell support is limited to the execution paths Recode implements today:
+- Windows: Git Bash when available, otherwise PowerShell
+- Unix-like hosts: `zsh`
+
+Recode does not currently promise generic shell portability across other Unix shells such as `bash` or `sh`.
+
+Approval prompts, approval modes, allowlists, command validation, timeouts, and workspace path checks are guardrails to help you see and control what the agent is doing. They are not designed to provide security isolation and should not be treated as a complete security boundary.
+
+If you need real isolation, run Recode inside a container, VM, disposable workspace, or another environment you are comfortable letting an agent control.
 
 ## Themes And Loaders
 
@@ -318,14 +334,14 @@ RECODE_MODEL=Qwen/Qwen3-Coder-480B-A35B-Instruct
 
 | Tool | Purpose | Notes |
 | --- | --- | --- |
-| `Bash` | Run shell commands | 30s timeout, 12KB output cap, approval + validation checks |
+| `Bash` | Run shell commands | Unsandboxed child process; 30s timeout, 12KB output cap, approval + best-effort validation guardrails; currently uses Git Bash or PowerShell on Windows and `zsh` on Unix-like hosts |
 | `Read` | Read files | Limited to text files up to 1MB |
 | `Write` | Write files | Creates parent directories automatically |
 | `Edit` | Replace one unique text fragment | Fails if the target is missing or not unique |
 | `Glob` | Find files by glob pattern | Up to 100 results |
 | `Grep` | Search file contents by regex | Supports content mode and files-with-matches mode |
 
-All file operations are constrained to the workspace root through safe path resolution.
+Direct file tools are constrained to the workspace root through safe path resolution. `Bash` is different: it is unsandboxed shell execution, so its approval prompts and validation checks should be treated as guardrails, not isolation. It is also tied to the currently implemented shell paths rather than being portable across every user shell.
 
 ## Project Layout
 

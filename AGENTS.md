@@ -140,7 +140,7 @@ runAgentLoop()
 | `src/prompt/` | system prompt loading | `system-prompt.ts`, `system-prompt.md` |
 | `src/runtime/` | runtime config assembly from config + env | `runtime-config.ts` |
 | `src/shared/` | small reusable helpers | `is-record.ts` |
-| `src/tools/` | tool definitions, registry, execution, sandboxing | see below |
+| `src/tools/` | tool definitions, registry, execution, safety guardrails | see below |
 | `src/tui/` | interactive UI, selectors, prompt, history/model/theme flow | `app.tsx`, `run-tui.tsx`, `theme.ts`, `message-format.ts` |
 
 ## Model Layer
@@ -175,8 +175,8 @@ ToolDefinition
 
 Safety:
 - file access is constrained through safe path resolution
-- bash has app-layer validation
-- bubblewrap is used when available
+- bash is intentionally unsandboxed
+- bash approval prompts and app-layer validation are UX guardrails, not a security boundary
 
 ## TUI Layout Model
 

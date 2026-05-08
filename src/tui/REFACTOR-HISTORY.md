@@ -4,9 +4,9 @@ This file tracks responsibility extractions from [app.tsx](./app.tsx) so future 
 
 ## Current Size
 
-- Current [app.tsx](./app.tsx): `2987` lines
+- Current [app.tsx](./app.tsx): `2306` lines
 - Starting point for this refactor effort: `4632` lines
-- Net reduction so far: `1645` lines
+- Net reduction so far: `2326` lines
 
 | Pass | What Was Refactored Out of `app.tsx` | New File |
 | --- | --- | --- |
@@ -37,6 +37,9 @@ This file tracks responsibility extractions from [app.tsx](./app.tsx) so future 
 | 8 | Slash-command draft visibility and textarea draft normalization helpers used by composer/layout code | [prompt-draft.ts](./prompt-draft.ts) |
 | 9 | Provider picker row shaping and default-model helpers for the `/provider` manager | [provider-picker.ts](./provider-picker.ts) |
 | 9 | Provider manager overlay JSX for selecting and enabling/disabling providers | [provider-picker-overlay.tsx](./provider-picker-overlay.tsx) |
+| 10 | Composer JSX/chrome, subagent composer, subagent breadcrumb, busy row display helpers, and todo dropup height helper | [composer.tsx](./composer.tsx) |
+| 11 | Prompt paste placeholder handling, global paste registration, global keyboard routing order, and shared picker/suggestion key dispatch wiring | [input-router.ts](./input-router.ts) |
+| 12 | Provider/model picker action helpers, appearance/customize/status/layout helpers, and shared TUI helper output formatting | [provider-picker.ts](./provider-picker.ts), [model-picker.ts](./model-picker.ts), [appearance-settings.ts](./appearance-settings.ts), [tui-helper-output.ts](./tui-helper-output.ts) |
 
 ## Stabilization After Pass 5
 
@@ -64,8 +67,8 @@ This file tracks responsibility extractions from [app.tsx](./app.tsx) so future 
 
 ## Notes
 
-- `app.tsx` still owns picker state, TUI lifecycle effects, draft/input focus, and overlay wiring.
-- The next likely seams are composer JSX/chrome and a deeper prompt-run controller once the surrounding state is thinner.
+- `app.tsx` still owns picker state, TUI lifecycle effects, draft/input focus, prompt-run orchestration, and overlay wiring.
+- The next likely seams are prompt-run orchestration, lifecycle effects, and remaining context/subagent helper logic.
 - When moving logic out of `app.tsx`, prefer modules that are either:
   - pure formatting/data helpers with direct tests, or
   - stateful helpers with a narrow, explicit API and dedicated tests.

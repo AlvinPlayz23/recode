@@ -11,7 +11,7 @@ import {
 /**
  * Bash execution isolation mode.
  */
-export type BashExecutionIsolation = "bubblewrap" | "guarded-direct";
+export type BashExecutionIsolation = "unsandboxed";
 
 /**
  * Resolved Bash execution policy.
@@ -27,32 +27,31 @@ export interface BashExecutionPolicy {
 }
 
 /**
- * Resolve the safest available Bash execution policy for this host.
+ * Resolve the active Bash execution policy.
  */
 export async function resolveBashExecutionPolicy(): Promise<BashExecutionPolicy> {
-  // TODO: Re-enable OS-level sandboxing once the bwrap path is redesigned and
-  // tested across Windows/macOS/Linux. It currently causes tool hangs on some
-  // hosts, so Bash temporarily uses guarded direct execution instead.
+  // Bash is intentionally unsandboxed. Approval prompts and validation are UX
+  // guardrails only; they are not an isolation boundary.
   return {
-    isolation: "guarded-direct",
+    isolation: "unsandboxed",
     validate(command, workspaceRoot) {
-      return validateCommandForGuardedDirectExecution(command, workspaceRoot);
+      return validateCommandForUnsandboxedExecution(command, workspaceRoot);
     },
     spawn: spawnDirect
   };
 }
 
 /**
- * Validate a command for direct execution when no OS sandbox is available.
+ * Validate a command before unsandboxed direct execution.
  */
-export function validateCommandForGuardedDirectExecution(command: string, workspaceRoot: string): string | null {
+export function validateCommandForUnsandboxedExecution(command: string, workspaceRoot: string): string | null {
   const validationError = validateCommand(command, workspaceRoot);
   if (validationError !== null) {
     return validationError;
   }
 
   if (usesUnsupportedShellExpansion(command)) {
-    return "Shell expansions and command substitution are not allowed when bubblewrap sandboxing is unavailable.";
+    return "Shell expansions and command substitution are not allowed by Recode's Bash guardrails.";
   }
 
   return null;

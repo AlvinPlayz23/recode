@@ -21,18 +21,14 @@
  */
 
 import {
-  decodePasteBytes,
   type KeyEvent,
-  type PasteEvent,
-  stripAnsiSequences,
-  TextAttributes,
   InputRenderable,
   type ScrollBoxRenderable,
   type KeyBinding as TextareaKeyBinding,
   type TextareaRenderable,
   defaultTextareaKeyBindings
 } from "@opentui/core";
-import { useKeyboard, usePaste, useRenderer, useSelectionHandler, useTerminalDimensions } from "@opentui/solid";
+import { useRenderer, useSelectionHandler, useTerminalDimensions } from "@opentui/solid";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type { AiModel } from "../ai/types.ts";
 import {
@@ -52,14 +48,7 @@ import {
 import {
   loadRecodeConfigFile,
   saveRecodeConfigFile,
-  selectConfiguredApprovalAllowlist,
-  selectConfiguredApprovalMode,
-  selectConfiguredLayoutMode,
-  selectConfiguredTodoPanelEnabled,
-  setConfiguredProviderDisabled,
-  setConfiguredModelContextWindow,
-  selectConfiguredTheme,
-  selectConfiguredToolMarker
+  setConfiguredModelContextWindow
 } from "../config/recode-config.ts";
 import { OperationAbortedError } from "../errors/recode-error.ts";
 import {
@@ -70,11 +59,10 @@ import {
   type ConversationMessage
 } from "../transcript/message.ts";
 import { createLanguageModel } from "../models/create-model-client.ts";
-import { listModelsForProvider, type ListedModelGroup } from "../models/list-models.ts";
+import type { ListedModelGroup } from "../models/list-models.ts";
 import { PLAN_SYSTEM_PROMPT } from "../prompt/plan-system-prompt.ts";
 import {
   setRuntimeModelContextWindow,
-  selectRuntimeProviderModel,
   type RuntimeConfig
 } from "../runtime/runtime-config.ts";
 import type {
@@ -100,8 +88,7 @@ import {
 } from "./builtin-command-content.ts";
 import {
   createDraftConversation,
-  persistConversationSession,
-  persistSelectedModelSelection
+  persistConversationSession
 } from "./conversation-session.ts";
 import {
   buildHistoryPickerItems,
@@ -115,9 +102,33 @@ import {
   getFileSuggestionQuery,
   invalidateWorkspaceFileSuggestionCache,
   loadWorkspaceFileSuggestions,
-  type FileSuggestionItem,
-  type FileSuggestionPanelState
+  type FileSuggestionItem
 } from "./file-suggestions.ts";
+import {
+  Composer,
+  getTodoDropupHeight,
+  SubagentBreadcrumb
+} from "./composer.tsx";
+import {
+  buildApprovalModePickerItems,
+  buildCustomizeRows,
+  buildLayoutPickerItems,
+  buildStatusMarquee,
+  buildThemePickerItems,
+  closeApprovalModePicker,
+  closeCustomizePicker,
+  closeLayoutPicker,
+  closeThemePicker,
+  cycleCustomizeSetting,
+  openApprovalModePicker,
+  openCustomizePicker,
+  openLayoutPicker,
+  openThemePicker,
+  persistSelectedApprovalAllowlist,
+  submitSelectedApprovalModePickerItem,
+  submitSelectedLayoutPickerItem,
+  submitSelectedThemePickerItem
+} from "./appearance-settings.ts";
 import { ApprovalModeOverlay } from "./approval-mode-overlay.tsx";
 import { Logo } from "./logo.tsx";
 import { CustomizeOverlay } from "./customize-overlay.tsx";
@@ -148,7 +159,7 @@ import {
   updateModelPickerWindow,
   type ModelPickerRenderedLine
 } from "./selector-navigation.ts";
-import { filterToolsForSessionMode, getSessionModeLabel, type SessionMode } from "./session-mode.ts";
+import { filterToolsForSessionMode, type SessionMode } from "./session-mode.ts";
 import {
   appendLiveSubagentTextDelta,
   appendLiveSubagentToolCall,
@@ -164,13 +175,11 @@ import {
   type LiveSubagentTask
 } from "./subagent-view.ts";
 import { getFooterTip } from "./startup-quotes.ts";
-import { getSpinnerPhaseGlyph, getSpinnerSegments, type SpinnerPhase } from "./spinner.tsx";
+import type { SpinnerPhase } from "./spinner.tsx";
 import {
   DEFAULT_LAYOUT_MODE,
   DEFAULT_TOOL_MARKER_NAME,
   DEFAULT_THEME_NAME,
-  getAvailableThemes,
-  getAvailableToolMarkers,
   getThemeDefinition,
   getToolMarkerDefinition,
   getTheme,
@@ -181,19 +190,17 @@ import {
 } from "./theme.ts";
 import { ThemePickerOverlay } from "./theme-picker-overlay.tsx";
 import { ToastOverlay } from "./toast-overlay.tsx";
-import { TodoDropup } from "./todo-dropup.tsx";
-import { formatTodoChip } from "./todo-summary.ts";
 import { ToolApprovalOverlay } from "./tool-approval-overlay.tsx";
 import {
-  handleCommandPanelKey,
   handleCustomizePickerKey,
-  handleFileSuggestionPanelKey,
-  handleLinearPickerKey,
-  handleProviderPickerKey,
   handleQuestionRequestKey,
-  handleToolApprovalKey,
   type CommandPanelState
 } from "./keyboard-router.ts";
+import {
+  createPromptPasteHandler,
+  isLikelyPlainTextPasteChunk,
+  registerTuiInputHandlers
+} from "./input-router.ts";
 import {
   expandDraftPastes,
   runSingleTurn,
@@ -225,10 +232,17 @@ import {
 } from "./transcript-entry.tsx";
 import {
   buildProviderPickerItems,
-  findActiveProviderPickerItemIndex,
-  getProviderDefaultModelId,
-  type ProviderPickerItem
+  closeProviderPicker,
+  openProviderPicker,
+  submitSelectedProviderPickerItem,
+  toggleSelectedProviderPickerItem
 } from "./provider-picker.ts";
+import {
+  buildModelPickerOptions,
+  closeModelPicker,
+  openModelPicker,
+  submitSelectedModelPickerOption
+} from "./model-picker.ts";
 import {
   appendEntry,
   createEntry,
@@ -243,12 +257,7 @@ import {
 import type {
   ActiveApprovalRequest,
   ActiveQuestionRequest,
-  ActiveToast,
-  ApprovalModePickerItem,
-  CustomizeRow,
-  LayoutPickerItem,
-  ModelPickerOption,
-  ThemePickerItem
+  ActiveToast
 } from "./tui-app-types.ts";
 import { dispatchBuiltinCommand } from "./builtin-command-controller.ts";
 import {
@@ -371,9 +380,10 @@ export function TuiApp(props: TuiAppProps) {
   let pendingStreamEntryId: string | undefined;
   let streamFlushTimer: ReturnType<typeof setTimeout> | undefined;
   let syncingVisibleDraft = false;
-  let pasteCounter = 0;
-  let lastHandledPasteSignature: string | undefined;
-  let lastHandledPasteAt = 0;
+  let promptPasteTokenCounter = 0;
+  let plainTextPasteFallbackStartDraft: string | undefined;
+  let plainTextPasteFallbackLastChunkAt = 0;
+  let plainTextPasteFallbackTimer: ReturnType<typeof setTimeout> | undefined;
   let exitHintTimer: ReturnType<typeof setTimeout> | undefined;
   let activeToastTimer: ReturnType<typeof setTimeout> | undefined;
   let ctrlCArmed = false;
@@ -596,6 +606,9 @@ export function TuiApp(props: TuiAppProps) {
     }
     if (exitHintTimer !== undefined) {
       clearTimeout(exitHintTimer);
+    }
+    if (plainTextPasteFallbackTimer !== undefined) {
+      clearTimeout(plainTextPasteFallbackTimer);
     }
     if (activeToastTimer !== undefined) {
       clearTimeout(activeToastTimer);
@@ -1070,46 +1083,25 @@ export function TuiApp(props: TuiAppProps) {
     );
   });
 
-  const handlePromptPaste = (event: Pick<PasteEvent, "preventDefault">, rawText: string): boolean => {
-    if (busy() || modalOpen() || inputRef === undefined || isCommandDraft(draft())) {
-      return false;
+  const handlePromptPaste = createPromptPasteHandler({
+    isBusy: busy,
+    isModalOpen: modalOpen,
+    isCommandDraft: () => isCommandDraft(draft()),
+    getInput: () => inputRef,
+    getDraft: draft,
+    addPendingPaste(paste) {
+      setPendingPastes((current) => [...current, paste]);
+    },
+    createPasteToken: createPromptPasteToken,
+    syncDraftValue,
+    resetCommandSelection() {
+      setCommandSelectionIndex(0);
     }
-
-    const normalizedText = normalizePastedText(stripAnsiSequences(rawText));
-    const lineCount = countPastedLines(normalizedText.trimEnd());
-    const shouldSummarize = lineCount > 1;
-
-    if (!shouldSummarize) {
-      return false;
-    }
-
-    const signature = `${normalizedText.length}:${lineCount}:${normalizedText.slice(0, 96)}`;
-    const now = Date.now();
-    if (lastHandledPasteSignature === signature && now - lastHandledPasteAt < 120) {
-      event.preventDefault();
-      return true;
-    }
-
-    lastHandledPasteSignature = signature;
-    lastHandledPasteAt = now;
-    event.preventDefault();
-
-    pasteCounter += 1;
-    const token = `{Paste ${lineCount} lines #${pasteCounter}}`;
-    setPendingPastes((current) => [...current, { token, text: normalizedText }]);
-    inputRef.insertText(`${token} `);
-    syncDraftValue(normalizeDraftInput(draft(), getRenderableText(inputRef)));
-    setCommandSelectionIndex(0);
-    inputRef.focus();
-    return true;
-  };
-
-  usePaste((event) => {
-    void handlePromptPaste(event, decodePasteBytes(event.bytes));
   });
 
-  useKeyboard((key) => {
-    if (key.ctrl && key.name === "c") {
+  registerTuiInputHandlers({
+    handlePromptPaste,
+    handleCtrlC(key) {
       key.preventDefault();
       key.stopPropagation();
 
@@ -1133,19 +1125,15 @@ export function TuiApp(props: TuiAppProps) {
         setExitHintVisible(false);
         exitHintTimer = undefined;
       }, 1800);
-      return;
-    }
-
-    if (key.ctrl && key.name === "t") {
+    },
+    handleToggleTodos(key) {
       key.preventDefault();
       key.stopPropagation();
       if (!modalOpen()) {
         toggleComposerTodoPanel();
       }
-      return;
-    }
-
-    if (key.ctrl && key.name === "g") {
+    },
+    handleCycleChatView(key) {
       key.preventDefault();
       key.stopPropagation();
       if (!modalOpen()) {
@@ -1155,46 +1143,31 @@ export function TuiApp(props: TuiAppProps) {
           inputRef?.focus();
         }
       }
-      return;
-    }
-
-    if (handleQuestionRequestKey({
-      key,
-      request: activeQuestionRequest(),
-      contextWindowRequest: isContextWindowQuestionRequest(activeQuestionRequest()),
-      dismiss: resolveQuestionRequest,
-      submit: submitActiveQuestionRequest,
-      moveQuestion: moveActiveQuestionIndex,
-      moveOption: moveActiveQuestionOptionIndex,
-      toggleOption: toggleActiveQuestionOption
-    })) {
-      return;
-    }
-
-    if (handleToolApprovalKey({
-      key,
-      request: activeApprovalRequest(),
-      optionCount: APPROVAL_DECISIONS.length,
-      resolve: resolveApprovalRequest,
-      moveSelected(direction) {
-        setActiveApprovalRequest((current) => current === undefined
-          ? current
-          : {
-              ...current,
-              selectedIndex: moveBuiltinCommandSelectionIndex(current.selectedIndex, APPROVAL_DECISIONS.length, direction)
-            });
-      },
-      decisionAt(index) {
-        return APPROVAL_DECISIONS[index]?.decision;
-      }
-    })) {
-      return;
-    }
-
-    if (handleLinearPickerKey({
-      key,
-      open: approvalModePickerOpen(),
-      totalCount: approvalModePickerTotalOptionCount(),
+    },
+    handleQuestionKey(key) {
+      return handleQuestionRequestKey({
+        key,
+        request: activeQuestionRequest(),
+        contextWindowRequest: isContextWindowQuestionRequest(activeQuestionRequest()),
+        dismiss: resolveQuestionRequest,
+        submit: submitActiveQuestionRequest,
+        moveQuestion: moveActiveQuestionIndex,
+        moveOption: moveActiveQuestionOptionIndex,
+        toggleOption: toggleActiveQuestionOption
+      });
+    },
+    activeApprovalRequest,
+    resolveApprovalRequest,
+    setActiveApprovalRequest(updater) {
+      setActiveApprovalRequest(updater);
+    },
+    approvalDecisionCount: APPROVAL_DECISIONS.length,
+    approvalDecisionAt(index) {
+      return APPROVAL_DECISIONS[index]?.decision;
+    },
+    approvalModePicker: {
+      open: approvalModePickerOpen,
+      totalCount: approvalModePickerTotalOptionCount,
       close() {
         closeApprovalModePicker(inputRef, setApprovalModePickerOpen, setApprovalModePickerSelectedIndex, setApprovalModePickerWindowStart);
       },
@@ -1224,14 +1197,10 @@ export function TuiApp(props: TuiAppProps) {
           }
         });
       }
-    })) {
-      return;
-    }
-
-    if (handleLinearPickerKey({
-      key,
-      open: layoutPickerOpen(),
-      totalCount: layoutPickerTotalOptionCount(),
+    },
+    layoutPicker: {
+      open: layoutPickerOpen,
+      totalCount: layoutPickerTotalOptionCount,
       close() {
         closeLayoutPicker(inputRef, setLayoutPickerOpen, setLayoutPickerSelectedIndex, setLayoutPickerWindowStart);
       },
@@ -1261,42 +1230,39 @@ export function TuiApp(props: TuiAppProps) {
           }
         });
       }
-    })) {
-      return;
-    }
-
-    if (handleCustomizePickerKey({
-      key,
-      open: customizePickerOpen(),
-      rows: customizeRows(),
-      close() {
-        closeCustomizePicker(inputRef, setCustomizePickerOpen, setCustomizePickerSelectedRow);
-      },
-      moveRow(direction) {
-        setCustomizePickerSelectedRow((current) => moveBuiltinCommandSelectionIndex(current, customizeRows().length, direction));
-      },
-      cycle(direction) {
-        cycleCustomizeSetting({
-          direction,
-          rowIndex: customizePickerSelectedRow(),
-          configPath: sessionRuntimeConfig().configPath,
-          themeName,
-          setThemeName,
-          toolMarkerName,
-          setToolMarkerName,
-          todoPanelEnabled,
-          setTodoPanelEnabled,
-          setTodoDropupOpen
+    },
+    customizePicker: {
+      handle(key) {
+        return handleCustomizePickerKey({
+          key,
+          open: customizePickerOpen(),
+          rows: customizeRows(),
+          close() {
+            closeCustomizePicker(inputRef, setCustomizePickerOpen, setCustomizePickerSelectedRow);
+          },
+          moveRow(direction) {
+            setCustomizePickerSelectedRow((current) => moveBuiltinCommandSelectionIndex(current, customizeRows().length, direction));
+          },
+          cycle(direction) {
+            cycleCustomizeSetting({
+              direction,
+              rowIndex: customizePickerSelectedRow(),
+              configPath: sessionRuntimeConfig().configPath,
+              themeName,
+              setThemeName,
+              toolMarkerName,
+              setToolMarkerName,
+              todoPanelEnabled,
+              setTodoPanelEnabled,
+              setTodoDropupOpen
+            });
+          }
         });
       }
-    })) {
-      return;
-    }
-
-    if (handleLinearPickerKey({
-      key,
-      open: themePickerOpen(),
-      totalCount: themePickerTotalOptionCount(),
+    },
+    themePicker: {
+      open: themePickerOpen,
+      totalCount: themePickerTotalOptionCount,
       close() {
         closeThemePicker(inputRef, setThemePickerOpen, setThemePickerQuery, setThemePickerSelectedIndex, setThemePickerWindowStart);
       },
@@ -1325,15 +1291,11 @@ export function TuiApp(props: TuiAppProps) {
           }
         });
       }
-    })) {
-      return;
-    }
-
-    if (handleLinearPickerKey({
-      key,
-      open: historyPickerOpen(),
-      totalCount: historyPickerTotalOptionCount(),
-      busy: historyPickerBusy(),
+    },
+    historyPicker: {
+      open: historyPickerOpen,
+      totalCount: historyPickerTotalOptionCount,
+      busy: historyPickerBusy,
       close() {
         closeHistoryPicker(
           setHistoryPickerOpen,
@@ -1379,14 +1341,10 @@ export function TuiApp(props: TuiAppProps) {
           }
         });
       }
-    })) {
-      return;
-    }
-
-    if (handleProviderPickerKey({
-      key,
-      open: providerPickerOpen(),
-      totalCount: providerPickerTotalOptionCount(),
+    },
+    providerPicker: {
+      open: providerPickerOpen,
+      totalCount: providerPickerTotalOptionCount,
       close() {
         closeProviderPicker(inputRef, setProviderPickerOpen, setProviderPickerSelectedIndex, setProviderPickerWindowStart);
       },
@@ -1432,15 +1390,11 @@ export function TuiApp(props: TuiAppProps) {
           }
         });
       }
-    })) {
-      return;
-    }
-
-    if (handleLinearPickerKey({
-      key,
-      open: modelPickerOpen(),
-      totalCount: modelPickerTotalOptionCount(),
-      busy: modelPickerBusy(),
+    },
+    modelPicker: {
+      open: modelPickerOpen,
+      totalCount: modelPickerTotalOptionCount,
+      busy: modelPickerBusy,
       close() {
         closeModelPicker(inputRef, setModelPickerOpen, setModelPickerQuery, setModelPickerSelectedIndex, setModelPickerWindowStart);
       },
@@ -1477,104 +1431,34 @@ export function TuiApp(props: TuiAppProps) {
           }
         });
       }
-    })) {
-      return;
-    }
-
-    if (key.name === "escape" && todoDropupOpen()) {
-      key.preventDefault();
-      key.stopPropagation();
+    },
+    todoDropupOpen,
+    closeTodoDropup() {
       setTodoDropupOpen(false);
+    },
+    focusPrompt() {
       inputRef?.focus();
-      return;
-    }
-
-    if (key.name === "escape" && busy()) {
-      key.preventDefault();
-      key.stopPropagation();
-      abortActiveRun();
-      return;
-    }
-
-    const filePanel = fileSuggestionPanel();
-    const panel = commandPanel();
-
-    if (key.name === "escape" && handleFileSuggestionPanelKey({
-      key,
-      panel: filePanel,
-      currentDraft: draft(),
-      setDraft,
-      setSelectionIndex: setFileSuggestionSelectionIndex,
-      setRenderableDraft(value) {
-        setRenderableText(inputRef, toVisibleDraft(value));
-      },
-      focusPrompt() {
-        inputRef?.focus();
-      }
-    })) {
-      return;
-    }
-
-    if (key.name === "escape" && handleCommandPanelKey({
-      key,
-      panel,
-      clearDraft() {
-        clearDraft(inputRef, setDraft);
-        setPendingPastes([]);
-      },
-      setSelectionIndex: setCommandSelectionIndex,
-      applyCommand(command) {
-        applyCommandDraft(inputRef, setDraft, setCommandSelectionIndex, command);
-      },
-      submitCommand(command) {
-        void submitPrompt(command);
-      },
-      focusPrompt() {
-        inputRef?.focus();
-      }
-    })) {
-      return;
-    }
-
-    if (busy()) {
-      return;
-    }
-
-    if (handleFileSuggestionPanelKey({
-      key,
-      panel: filePanel,
-      currentDraft: draft(),
-      setDraft,
-      setSelectionIndex: setFileSuggestionSelectionIndex,
-      setRenderableDraft(value) {
-        setRenderableText(inputRef, toVisibleDraft(value));
-      },
-      focusPrompt() {
-        inputRef?.focus();
-      }
-    })) {
-      return;
-    }
-
-    if (handleCommandPanelKey({
-      key,
-      panel,
-      clearDraft() {
-        clearDraft(inputRef, setDraft);
-        setPendingPastes([]);
-      },
-      setSelectionIndex: setCommandSelectionIndex,
-      applyCommand(command) {
-        applyCommandDraft(inputRef, setDraft, setCommandSelectionIndex, command);
-      },
-      submitCommand(command) {
-        void submitPrompt(command);
-      },
-      focusPrompt() {
-        inputRef?.focus();
-      }
-    })) {
-      return;
+    },
+    isBusy: busy,
+    abortActiveRun,
+    fileSuggestionPanel,
+    commandPanel,
+    getDraft: draft,
+    setDraft,
+    setFileSuggestionSelectionIndex,
+    setCommandSelectionIndex,
+    setRenderableDraft(value) {
+      setRenderableText(inputRef, value);
+    },
+    clearPromptDraft() {
+      clearDraft(inputRef, setDraft);
+      setPendingPastes([]);
+    },
+    applyCommandDraft(command) {
+      applyCommandDraft(inputRef, setDraft, setCommandSelectionIndex, command);
+    },
+    submitPrompt(value) {
+      void submitPrompt(value);
     }
   });
 
@@ -1599,7 +1483,7 @@ export function TuiApp(props: TuiAppProps) {
     lastCopiedSelectionText = selectedText;
   });
 
-  const resolveApprovalRequest = (decision: ToolApprovalDecision) => {
+  function resolveApprovalRequest(decision: ToolApprovalDecision): void {
     const request = activeApprovalRequest();
     if (request === undefined) {
       return;
@@ -1626,9 +1510,9 @@ export function TuiApp(props: TuiAppProps) {
     setActiveApprovalRequest(undefined);
     request.resolve(decision);
     inputRef?.focus();
-  };
+  }
 
-  const resolveQuestionRequest = (decision: QuestionToolDecision) => {
+  function resolveQuestionRequest(decision: QuestionToolDecision): void {
     const request = activeQuestionRequest();
     if (request === undefined) {
       return;
@@ -1637,25 +1521,25 @@ export function TuiApp(props: TuiAppProps) {
     setActiveQuestionRequest(undefined);
     request.resolve(decision);
     inputRef?.focus();
-  };
+  }
 
-  const moveActiveQuestionIndex = (direction: -1 | 1) => {
+  function moveActiveQuestionIndex(direction: -1 | 1): void {
     setActiveQuestionRequest((current) => moveQuestionIndex(current, direction));
-  };
+  }
 
-  const moveActiveQuestionOptionIndex = (direction: -1 | 1) => {
+  function moveActiveQuestionOptionIndex(direction: -1 | 1): void {
     setActiveQuestionRequest((current) => moveQuestionOptionIndex(current, direction));
-  };
+  }
 
-  const toggleActiveQuestionOption = () => {
+  function toggleActiveQuestionOption(): void {
     setActiveQuestionRequest(toggleQuestionOption);
-  };
+  }
 
   const updateActiveQuestionCustomText = (value: string) => {
     setActiveQuestionRequest((current) => updateQuestionCustomText(current, value));
   };
 
-  const submitActiveQuestionRequest = () => {
+  function submitActiveQuestionRequest(): void {
     const request = activeQuestionRequest();
     if (request === undefined) {
       return;
@@ -1678,7 +1562,7 @@ export function TuiApp(props: TuiAppProps) {
     }
 
     resolveQuestionRequest(submission.decision);
-  };
+  }
 
   const handleQuestionOverlayKey = (key: KeyEvent) => {
     handleQuestionRequestKey({
@@ -1987,303 +1871,142 @@ export function TuiApp(props: TuiAppProps) {
     }
   };
 
-  const renderSubagentComposer = (task: LiveSubagentTask) => (
-    <box flexDirection="column" paddingX={2} paddingBottom={1} flexShrink={0}>
-      <box
-        flexDirection="column"
-        border
-        borderColor={task.status === "failed" ? t().error : t().promptBorder}
-        paddingLeft={1}
-        paddingRight={1}
-        paddingTop={0}
-        paddingBottom={0}
-        flexShrink={0}
-      >
-        <box flexDirection="row" justifyContent="space-between" alignItems="center">
-          <box flexDirection="row" alignItems="center" gap={1}>
-            <text fg={task.status === "running" ? t().brandShimmer : task.status === "failed" ? t().error : t().success} attributes={TextAttributes.BOLD}>
-              {task.status}
-            </text>
-            <text fg={t().divider} attributes={TextAttributes.DIM}>·</text>
-            <text fg={t().tool}>{task.subagentType}</text>
-            <text fg={t().divider} attributes={TextAttributes.DIM}>·</text>
-            <text fg={t().text}>{task.description}</text>
-          </box>
-          <text fg={t().hintText} attributes={TextAttributes.DIM}>Ctrl+G switch</text>
-        </box>
-        <box flexDirection="row" justifyContent="space-between" alignItems="center">
-          <text fg={t().hintText} attributes={TextAttributes.DIM}>{`Viewing subagent · ${task.providerName} · ${task.model}`}</text>
-          <text fg={t().hintText} attributes={TextAttributes.DIM}>{`task_id: ${task.id}`}</text>
-        </box>
-      </box>
-    </box>
-  );
+  const bindPromptRef = (value: TextareaRenderable) => {
+    inputRef = value;
+    const visibleDraft = toVisibleDraft(draft());
+    if (value.plainText !== visibleDraft) {
+      setRenderableText(value, visibleDraft);
+    } else {
+      value.cursorOffset = visibleDraft.length;
+    }
+    applyInputCursorStyle(value, t().brandShimmer);
+    if (!modalOpen()) {
+      value.focus();
+    }
+  };
 
-  const renderSubagentBreadcrumb = () => (
-    <Show when={activeSubagentTask()}>
-      {(task: () => LiveSubagentTask) => (
-        <box
-          flexDirection="row"
-          alignItems="center"
-          gap={1}
-          paddingLeft={4}
-          paddingBottom={0}
-          flexShrink={0}
-        >
-          <text fg={t().hintText} attributes={TextAttributes.DIM}>parent</text>
-          <text fg={t().divider} attributes={TextAttributes.DIM}>/</text>
-          <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>{task().description}</text>
-          <text fg={t().divider} attributes={TextAttributes.DIM}>·</text>
-          <text fg={t().tool}>{task().subagentType}</text>
-          <text fg={t().divider} attributes={TextAttributes.DIM}>·</text>
-          <text fg={task().status === "failed" ? t().error : task().status === "running" ? t().brandShimmer : t().success}>
-            {task().status}
-          </text>
-        </box>
-      )}
-    </Show>
-  );
+  const handlePromptContentChange = () => {
+    if (syncingVisibleDraft) {
+      return;
+    }
+    const nextDraft = normalizeDraftInput(draft(), inputRef?.plainText ?? "");
+    syncDraftValue(nextDraft);
+    setCommandSelectionIndex(0);
+    setFileSuggestionSelectionIndex(0);
+  };
 
-  const renderComposer = () => {
-    const childTask = activeSubagentTask();
-    if (childTask !== undefined) {
-      return renderSubagentComposer(childTask);
+  const handlePromptKeyDown = (key: KeyEvent): boolean => {
+    if (isLikelyPlainTextPasteChunk(key)) {
+      notePlainTextPasteFallbackChunk();
+      return false;
     }
 
-    return (
-    <box flexDirection="column" paddingX={2} paddingBottom={1} flexShrink={0}>
-      <TodoDropup
-        open={todoPanelEnabled() && todoDropupOpen()}
-        todos={todos()}
-        theme={t()}
-      />
-      <Show when={commandPanel() !== undefined}>
-        <>
-          <box
-            flexDirection="column"
-            border
-            borderColor={t().promptBorder}
-            backgroundColor={t().inverseText}
-            marginBottom={1}
-            paddingLeft={1}
-            paddingRight={1}
-            paddingTop={0}
-            paddingBottom={0}
-            flexShrink={0}
-          >
-            <box flexDirection="row" justifyContent="space-between" alignItems="center">
-              <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>commands</text>
-              <text fg={t().hintText} attributes={TextAttributes.DIM}>
-                {`${commandPanel()!.commands.length} match${commandPanel()!.commands.length === 1 ? "" : "es"}`}
-              </text>
-            </box>
-            <Show
-              when={commandPanel()!.commands.length > 0}
-              fallback={<text fg={t().hintText}>No command found. Use /help to see available commands.</text>}
-            >
-              <For each={commandPanel()!.commands}>
-                {(command, index) => (
-                  <box flexDirection="row" gap={1}>
-                    <box width={18} flexShrink={0}>
-                      <text
-                        fg={index() === commandPanel()!.selectedIndex ? t().brandShimmer : t().text}
-                        attributes={index() === commandPanel()!.selectedIndex ? TextAttributes.BOLD : TextAttributes.NONE}
-                      >
-                        {`${index() === commandPanel()!.selectedIndex ? "›" : " "} ${command.command}`}
-                      </text>
-                    </box>
-                    <box flexGrow={1} flexShrink={1} minWidth={0}>
-                      <text fg={index() === commandPanel()!.selectedIndex ? t().brandShimmer : t().hintText}>{command.description}</text>
-                    </box>
-                  </box>
-                )}
-              </For>
-              <Show when={commandPanel()!.hasMore}>
-                <text fg={t().hintText} attributes={TextAttributes.DIM}>… more commands available</text>
-              </Show>
-            </Show>
-            <box flexDirection="row" justifyContent="space-between" marginTop={1}>
-              <text fg={t().hintText} attributes={TextAttributes.DIM}>↑↓ navigate · ↵ run · tab complete</text>
-              <text fg={t().hintText} attributes={TextAttributes.DIM}>esc cancel</text>
-            </box>
-          </box>
-        </>
-      </Show>
-      <Show when={fileSuggestionPanel() !== undefined}>
-        <box
-          flexDirection="column"
-          border
-          borderColor={t().promptBorder}
-          marginBottom={1}
-          paddingLeft={1}
-          paddingRight={1}
-          flexShrink={0}
-        >
-          <Show
-            when={fileSuggestionPanel()!.items.length > 0}
-            fallback={<text fg={t().hintText}>No workspace path matched that @ query.</text>}
-          >
-            <For each={fileSuggestionPanel()!.items}>
-              {(item, index) => (
-                <box flexDirection="row" gap={1}>
-                  <box width={28} flexShrink={0}>
-                    <text
-                      fg={index() === fileSuggestionPanel()!.selectedIndex ? t().brandShimmer : t().text}
-                      attributes={index() === fileSuggestionPanel()!.selectedIndex ? TextAttributes.BOLD : TextAttributes.NONE}
-                    >
-                      {`${index() === fileSuggestionPanel()!.selectedIndex ? "›" : " "} @${item.displayPath}`}
-                    </text>
-                  </box>
-                  <box flexGrow={1} flexShrink={1} minWidth={0}>
-                    <text fg={index() === fileSuggestionPanel()!.selectedIndex ? t().brandShimmer : t().hintText}>
-                      {item.directory ? "Directory" : "File"}
-                    </text>
-                  </box>
-                </box>
-              )}
-            </For>
-            <Show when={fileSuggestionPanel()!.hasMore}>
-              <text fg={t().hintText} attributes={TextAttributes.DIM}>… more workspace paths available</text>
-            </Show>
-          </Show>
-        </box>
-      </Show>
-      <Show when={busy() || modelPickerBusy() || historyPickerBusy()}>
-        <box
-          flexDirection="row"
-          justifyContent="space-between"
-          alignItems="center"
-          paddingTop={0}
-          paddingBottom={0}
-          paddingLeft={1}
-          paddingRight={1}
-          flexShrink={0}
-        >
-          <box flexDirection="row" alignItems="center" gap={1}>
-            <box flexDirection="row">
-              <For each={buildBusyIndicator(themeName(), statusTick(), t(), busyPhase())}>
-                {(segment) => <text fg={segment.color}>{segment.text}</text>}
-              </For>
-            </box>
-            <text fg={t().hintText}>{providerStatusText() ?? getSpinnerPhaseLabel(busyPhase())}</text>
-          </box>
-          <text fg={t().hintText} attributes={TextAttributes.DIM}>
-            {modalOpen() ? "esc close" : "⌃C cancel · esc abort"}
-          </text>
-        </box>
-      </Show>
-      <box
-        flexDirection="row"
-        alignItems="flex-start"
-        border
-        borderColor={isCommandDraft(draft()) ? t().brandShimmer : t().promptBorder}
-        paddingLeft={1}
-        paddingRight={1}
-        paddingTop={0}
-        paddingBottom={0}
-        flexShrink={0}
-      >
-        <Show
-          when={busy()}
-          fallback={
-            <text fg={t().brandShimmer} attributes={TextAttributes.BOLD}>
-              {isCommandDraft(draft()) ? "/ " : `${themeDefinition().promptMarker} `}
-            </text>
-          }
-        >
-          <text fg={t().statusText}>◇ </text>
-        </Show>
-        <textarea
-          ref={(value: TextareaRenderable) => {
-            inputRef = value;
-            const visibleDraft = toVisibleDraft(draft());
-            if (value.plainText !== visibleDraft) {
-              setRenderableText(value, visibleDraft);
-            } else {
-              value.cursorOffset = visibleDraft.length;
-            }
-            applyInputCursorStyle(value, t().brandShimmer);
-            if (!modalOpen()) {
-              value.focus();
-            }
-          }}
-          initialValue={toVisibleDraft(draft())}
-          focused={!modalOpen()}
-          flexGrow={1}
-          minHeight={1}
-          maxHeight={4}
-          wrapMode="word"
-          placeholder={promptPlaceholder()}
-          keyBindings={PROMPT_TEXTAREA_KEY_BINDINGS}
-          onPaste={(event) => {
-            void handlePromptPaste(event, decodePasteBytes(event.bytes));
-          }}
-          onContentChange={() => {
-            if (syncingVisibleDraft) {
-              return;
-            }
-            const nextDraft = normalizeDraftInput(draft(), inputRef?.plainText ?? "");
-            syncDraftValue(nextDraft);
-            setCommandSelectionIndex(0);
-            setFileSuggestionSelectionIndex(0);
-          }}
-          onKeyDown={(key) => {
-            if (key.name === "escape" && busy()) {
-              key.preventDefault();
-              key.stopPropagation();
-              abortActiveRun();
-            }
-          }}
-          onSubmit={() => {
-            void submitPrompt(draft());
-          }}
-        />
-      </box>
-      <box
-        flexDirection="row"
-        justifyContent="space-between"
-        alignItems="center"
-        paddingLeft={1}
-        paddingRight={1}
-        paddingTop={0}
-        paddingBottom={0}
-        flexShrink={0}
-      >
-        <box flexDirection="row" alignItems="center" gap={1}>
-          <text
-            fg={sessionMode() === "plan" ? t().brandShimmer : t().success}
-            attributes={TextAttributes.BOLD}
-          >
-            {getSessionModeLabel(sessionMode()).toLowerCase()}
-          </text>
-          <text fg={t().divider} attributes={TextAttributes.DIM}>·</text>
-          <text fg={t().tool}>{sessionRuntimeConfig().model}</text>
-          <text fg={t().divider} attributes={TextAttributes.DIM}>·</text>
-          <text fg={t().hintText} attributes={TextAttributes.DIM}>{approvalMode()}</text>
-        </box>
-        <box flexDirection="row" alignItems="center" gap={1}>
-          <Show when={todoPanelEnabled() && todos().length > 0}>
-            <text
-              fg={todoDropupOpen() ? t().brandShimmer : t().hintText}
-              attributes={todoDropupOpen() ? TextAttributes.BOLD : TextAttributes.DIM}
-            >
-              {`${formatTodoChip(todos())} ⌃T`}
-            </text>
-            <text fg={t().divider} attributes={TextAttributes.DIM}>·</text>
-          </Show>
-          <text fg={t().hintText} attributes={TextAttributes.DIM}>
-            {isCommandDraft(draft()) ? "↵ run  ⇧↵ newline  @ file" : "↵ send  ⇧↵ newline  @ file"}
-          </text>
-        </box>
-      </box>
-      <Show when={exitHintVisible()}>
-        <box justifyContent="center" paddingTop={0}>
-          <text fg={t().error} attributes={TextAttributes.BOLD}>Try Ctrl+C again to exit</text>
-        </box>
-      </Show>
-    </box>
-    );
+    if ((key.name === "return" || key.name === "enter") && shouldTreatReturnAsPlainTextPasteNewline()) {
+      key.preventDefault();
+      key.stopPropagation();
+      inputRef?.insertText("\n");
+      handlePromptContentChange();
+      notePlainTextPasteFallbackChunk();
+      return true;
+    }
+
+    return false;
   };
+
+  const notePlainTextPasteFallbackChunk = () => {
+    if (plainTextPasteFallbackStartDraft === undefined) {
+      plainTextPasteFallbackStartDraft = draft();
+    }
+    plainTextPasteFallbackLastChunkAt = Date.now();
+    schedulePlainTextPasteFallbackSummary();
+  };
+
+  const shouldTreatReturnAsPlainTextPasteNewline = () =>
+    plainTextPasteFallbackStartDraft !== undefined && Date.now() - plainTextPasteFallbackLastChunkAt < 120;
+
+  const schedulePlainTextPasteFallbackSummary = () => {
+    if (plainTextPasteFallbackTimer !== undefined) {
+      clearTimeout(plainTextPasteFallbackTimer);
+    }
+
+    plainTextPasteFallbackTimer = setTimeout(() => {
+      plainTextPasteFallbackTimer = undefined;
+      summarizePlainTextPasteFallback();
+    }, 90);
+  };
+
+  const summarizePlainTextPasteFallback = () => {
+    const startDraft = plainTextPasteFallbackStartDraft;
+    plainTextPasteFallbackStartDraft = undefined;
+
+    if (startDraft === undefined || inputRef === undefined || busy() || modalOpen() || isCommandDraft(draft())) {
+      return;
+    }
+
+    const nextDraft = normalizeDraftInput(draft(), inputRef.plainText);
+    if (!nextDraft.startsWith(startDraft)) {
+      return;
+    }
+
+    const pastedText = nextDraft.slice(startDraft.length);
+    const normalizedPastedText = pastedText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    const lineCount = normalizedPastedText.trimEnd() === ""
+      ? 0
+      : normalizedPastedText.trimEnd().split("\n").length;
+
+    if (lineCount <= 1) {
+      return;
+    }
+
+    const token = createPromptPasteToken(lineCount);
+    setPendingPastes((current) => [...current, { token, text: normalizedPastedText }]);
+    const nextVisibleDraft = `${startDraft}${token} `;
+    setRenderableText(inputRef, toVisibleDraft(nextVisibleDraft));
+    syncDraftValue(nextVisibleDraft);
+    setCommandSelectionIndex(0);
+    inputRef.focus();
+  };
+
+  function createPromptPasteToken(lineCount: number): string {
+    promptPasteTokenCounter += 1;
+    return `{Paste ${lineCount} lines #${promptPasteTokenCounter}}`;
+  }
+
+  const TuiComposer = () => (
+    <Composer
+      subagentTask={activeSubagentTask()}
+      theme={t()}
+      themeName={themeName()}
+      statusTick={statusTick()}
+      busyPhase={busyPhase()}
+      providerStatusText={providerStatusText()}
+      busy={busy()}
+      modelPickerBusy={modelPickerBusy()}
+      historyPickerBusy={historyPickerBusy()}
+      modalOpen={modalOpen()}
+      commandPanel={commandPanel()}
+      fileSuggestionPanel={fileSuggestionPanel()}
+      todoPanelEnabled={todoPanelEnabled()}
+      todoDropupOpen={todoDropupOpen()}
+      todos={todos()}
+      draft={draft()}
+      promptMarker={themeDefinition().promptMarker}
+      promptPlaceholder={promptPlaceholder()}
+      sessionMode={sessionMode()}
+      model={sessionRuntimeConfig().model}
+      approvalMode={approvalMode()}
+      exitHintVisible={exitHintVisible()}
+      promptKeyBindings={PROMPT_TEXTAREA_KEY_BINDINGS}
+      bindPromptRef={bindPromptRef}
+      onPromptContentChange={handlePromptContentChange}
+      onPromptKeyDown={handlePromptKeyDown}
+      abortActiveRun={abortActiveRun}
+      handlePromptPaste={handlePromptPaste}
+      submitPrompt={(value) => {
+        void submitPrompt(value);
+      }}
+    />
+  );
 
   return (
     <box width="100%" height="100%" flexDirection="column" paddingX={1} paddingTop={minimalMode() ? 0 : 1} paddingBottom={0}>
@@ -2313,18 +2036,18 @@ export function TuiApp(props: TuiAppProps) {
         when={composerDocked()}
         fallback={
           <box flexDirection="column" flexGrow={1} paddingRight={1}>
-            {renderSubagentBreadcrumb()}
+            <SubagentBreadcrumb task={activeSubagentTask()} theme={t()} />
             <box flexDirection="column" flexShrink={0}>
               <For each={renderVisibleEntries(visibleEntries(), activeChatIsSubagent() ? false : toolsCollapsed())}>
                 {(entry) => renderEntry(entry, t, markdownStyle, visibleStreamingEntryId, visibleStreamingBody, layoutMode, () => toolMarkerDefinition().symbol)}
               </For>
             </box>
-            {renderComposer()}
+            <TuiComposer />
           </box>
         }
       >
         <box flexDirection="column" flexGrow={1} paddingRight={1}>
-          {renderSubagentBreadcrumb()}
+          <SubagentBreadcrumb task={activeSubagentTask()} theme={t()} />
           <scrollbox flexGrow={1} flexShrink={1} minHeight={0} scrollY stickyScroll stickyStart="bottom">
             <box flexDirection="column" flexShrink={0}>
               <For each={renderVisibleEntries(visibleEntries(), activeChatIsSubagent() ? false : toolsCollapsed())}>
@@ -2332,7 +2055,7 @@ export function TuiApp(props: TuiAppProps) {
               </For>
             </box>
           </scrollbox>
-          {renderComposer()}
+          <TuiComposer />
         </box>
       </Show>
 
@@ -2574,774 +2297,10 @@ function createToolRegistryForMode(baseRegistry: ToolRegistry, mode: SessionMode
     : new ToolRegistry(filterToolsForSessionMode(baseRegistry.list(), mode));
 }
 
-function buildThemePickerItems(activeThemeName: ThemeName, query: string): readonly ThemePickerItem[] {
-  const normalizedQuery = query.trim().toLowerCase();
-
-  return getAvailableThemes()
-    .filter((theme) => {
-      if (normalizedQuery === "") {
-        return true;
-      }
-
-      const haystack = `${theme.label} ${theme.name} ${theme.description}`.toLowerCase();
-      return haystack.includes(normalizedQuery);
-    })
-    .map((theme) => ({
-      ...theme,
-      active: theme.name === activeThemeName
-    }));
-}
-
-function openThemePicker(
-  setOpen: (value: boolean) => void,
-  setQuery: (value: string) => void,
-  setSelectedIndex: (value: number) => void,
-  setWindowStart: (value: number) => void,
-  activeThemeName: ThemeName
-): void {
-  const activeIndex = getAvailableThemes().findIndex((theme) => theme.name === activeThemeName);
-  setOpen(true);
-  setQuery("");
-  setSelectedIndex(activeIndex === -1 ? 0 : activeIndex);
-  setWindowStart(0);
-}
-
-function closeThemePicker(
-  input: PromptRenderable | undefined,
-  setOpen: (value: boolean) => void,
-  setQuery: (value: string) => void,
-  setSelectedIndex: (value: number) => void,
-  setWindowStart: (value: number) => void
-): void {
-  setOpen(false);
-  setQuery("");
-  setSelectedIndex(0);
-  setWindowStart(0);
-  input?.focus();
-}
-
-interface SubmitThemePickerSelectionOptions {
-  readonly configPath: string;
-  readonly selectedIndex: number;
-  readonly items: readonly ThemePickerItem[];
-  readonly setThemeName: (value: ThemeName) => void;
-  readonly appendEntry: (entry: UiEntry) => void;
-  readonly close: () => void;
-}
-
-async function submitSelectedThemePickerItem(options: SubmitThemePickerSelectionOptions): Promise<void> {
-  const selectedItem = options.items[options.selectedIndex];
-  if (selectedItem === undefined) {
-    return;
-  }
-
-  try {
-    persistSelectedTheme(options.configPath, selectedItem.name);
-    options.setThemeName(selectedItem.name);
-    options.appendEntry(createEntry("status", "status", `Selected theme ${selectedItem.label}`));
-    options.close();
-  } catch (error) {
-    options.appendEntry(createEntry("error", "error", toErrorMessage(error)));
-  }
-}
-
-function buildApprovalModePickerItems(activeMode: ApprovalMode): readonly ApprovalModePickerItem[] {
-  return [
-    {
-      mode: "approval",
-      label: "Approval",
-      description: "Local read tools run directly. Edit, Bash, and web tools ask first.",
-      active: activeMode === "approval"
-    },
-    {
-      mode: "auto-edits",
-      label: "Auto-Edits",
-      description: "Local read and edit tools run directly. Bash and web tools ask first.",
-      active: activeMode === "auto-edits"
-    },
-    {
-      mode: "yolo",
-      label: "YOLO",
-      description: "Run local, Bash, and web tools without asking.",
-      active: activeMode === "yolo"
-    }
-  ];
-}
-
-function openApprovalModePicker(
-  setOpen: (value: boolean) => void,
-  setSelectedIndex: (value: number) => void,
-  setWindowStart: (value: number) => void,
-  currentMode: ApprovalMode
-): void {
-  const items = buildApprovalModePickerItems(currentMode);
-  const activeIndex = items.findIndex((item) => item.mode === currentMode);
-  setOpen(true);
-  setSelectedIndex(activeIndex === -1 ? 0 : activeIndex);
-  setWindowStart(0);
-}
-
-function closeApprovalModePicker(
-  input: PromptRenderable | undefined,
-  setOpen: (value: boolean) => void,
-  setSelectedIndex: (value: number) => void,
-  setWindowStart: (value: number) => void
-): void {
-  setOpen(false);
-  setSelectedIndex(0);
-  setWindowStart(0);
-  input?.focus();
-}
-
-interface SubmitApprovalModePickerSelectionOptions {
-  readonly configPath: string;
-  readonly selectedIndex: number;
-  readonly items: readonly ApprovalModePickerItem[];
-  readonly approvalAllowlist: readonly ToolApprovalScope[];
-  readonly updateApprovalSettings: (
-    approvalMode: ApprovalMode,
-    approvalAllowlist: readonly ToolApprovalScope[]
-  ) => void;
-  readonly appendEntry: (entry: UiEntry) => void;
-  readonly close: () => void;
-}
-
-function submitSelectedApprovalModePickerItem(options: SubmitApprovalModePickerSelectionOptions): void {
-  const selectedItem = options.items[options.selectedIndex];
-  if (selectedItem === undefined) {
-    return;
-  }
-
-  try {
-    persistSelectedApprovalMode(options.configPath, selectedItem.mode);
-    options.updateApprovalSettings(selectedItem.mode, options.approvalAllowlist);
-    options.appendEntry(createEntry("status", "status", `Selected approval mode ${selectedItem.label}`));
-    options.close();
-  } catch (error) {
-    options.appendEntry(createEntry("error", "error", toErrorMessage(error)));
-  }
-}
-
-function persistSelectedApprovalMode(configPath: string, approvalMode: ApprovalMode): void {
-  const config = loadRecodeConfigFile(configPath);
-  const nextConfig = selectConfiguredApprovalMode(config, approvalMode);
-  saveRecodeConfigFile(configPath, nextConfig);
-}
-
-function persistSelectedApprovalAllowlist(
-  configPath: string,
-  approvalAllowlist: readonly ToolApprovalScope[]
-): void {
-  const config = loadRecodeConfigFile(configPath);
-  const nextConfig = selectConfiguredApprovalAllowlist(config, approvalAllowlist);
-  saveRecodeConfigFile(configPath, nextConfig);
-}
-
-function countPastedLines(value: string): number {
-  if (value === "") {
-    return 0;
-  }
-
-  return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").length;
-}
-
-function normalizePastedText(value: string): string {
-  return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-}
-
-function openProviderPicker(
-  setOpen: (value: boolean) => void,
-  setSelectedIndex: (value: number) => void,
-  setWindowStart: (value: number) => void,
-  items: readonly ProviderPickerItem[]
-): void {
-  setOpen(true);
-  setSelectedIndex(findActiveProviderPickerItemIndex(items));
-  setWindowStart(0);
-}
-
-function closeProviderPicker(
-  input: PromptRenderable | undefined,
-  setOpen: (value: boolean) => void,
-  setSelectedIndex: (value: number) => void,
-  setWindowStart: (value: number) => void
-): void {
-  setOpen(false);
-  setSelectedIndex(0);
-  setWindowStart(0);
-  input?.focus();
-}
-
-interface SubmitProviderPickerSelectionOptions {
-  readonly historyRoot: string;
-  readonly runtimeConfig: RuntimeConfig;
-  readonly selectedIndex: number;
-  readonly items: readonly ProviderPickerItem[];
-  readonly currentConversation: SavedConversationRecord | undefined;
-  readonly currentMode: SessionMode;
-  readonly transcript: readonly ConversationMessage[];
-  readonly subagentTasks: readonly SubagentTaskRecord[];
-  readonly setRuntimeConfig: (value: RuntimeConfig) => void;
-  readonly setConversation: (value: SavedConversationRecord) => void;
-  readonly appendEntry: (entry: UiEntry) => void;
-  readonly close: () => void;
-}
-
-function submitSelectedProviderPickerItem(options: SubmitProviderPickerSelectionOptions): void {
-  const selectedItem = options.items[options.selectedIndex];
-  if (selectedItem === undefined) {
-    return;
-  }
-
-  if (selectedItem.disabled) {
-    options.appendEntry(createEntry("error", "error", `Enable ${selectedItem.providerName} before selecting it.`));
-    return;
-  }
-
-  const selectedProvider = options.runtimeConfig.providers.find((provider) => provider.id === selectedItem.providerId);
-  const modelId = selectedProvider === undefined ? undefined : getProviderDefaultModelId(selectedProvider);
-  if (modelId === undefined) {
-    options.appendEntry(createEntry(
-      "error",
-      "error",
-      `${selectedItem.providerName} has no saved model. Run /models after selecting an enabled provider with a model, or use recode setup to add one.`
-    ));
-    return;
-  }
-
-  try {
-    persistSelectedModelSelection(options.runtimeConfig, selectedItem.providerId, modelId);
-    const nextRuntimeConfig = selectRuntimeProviderModel(options.runtimeConfig, selectedItem.providerId, modelId);
-    options.setRuntimeConfig(nextRuntimeConfig);
-    const nextConversation = persistConversationSession(
-      options.historyRoot,
-      nextRuntimeConfig,
-      options.transcript,
-      options.currentConversation,
-      options.currentMode,
-      options.subagentTasks
-    );
-    options.setConversation(nextConversation);
-    options.appendEntry(createEntry("status", "status", `Selected provider ${selectedItem.providerName} · ${modelId}`));
-    options.close();
-  } catch (error) {
-    options.appendEntry(createEntry("error", "error", toErrorMessage(error)));
-  }
-}
-
-interface ToggleProviderPickerItemOptions {
-  readonly runtimeConfig: RuntimeConfig;
-  readonly selectedIndex: number;
-  readonly items: readonly ProviderPickerItem[];
-  readonly setRuntimeConfig: (value: RuntimeConfig) => void;
-  readonly appendEntry: (entry: UiEntry) => void;
-}
-
-function toggleSelectedProviderPickerItem(options: ToggleProviderPickerItemOptions): void {
-  const selectedItem = options.items[options.selectedIndex];
-  if (selectedItem === undefined) {
-    return;
-  }
-
-  if (selectedItem.active) {
-    options.appendEntry(createEntry("error", "error", "Select another provider before disabling the active one."));
-    return;
-  }
-
-  const nextDisabled = !selectedItem.disabled;
-  try {
-    persistProviderDisabled(options.runtimeConfig.configPath, selectedItem.providerId, nextDisabled);
-    options.setRuntimeConfig({
-      ...options.runtimeConfig,
-      providers: options.runtimeConfig.providers.map((provider) => {
-        if (provider.id !== selectedItem.providerId) {
-          return provider;
-        }
-
-        if (nextDisabled) {
-          return {
-            ...provider,
-            disabled: true
-          };
-        }
-
-        const { disabled: _disabled, ...enabledProvider } = provider;
-        return enabledProvider;
-      })
-    });
-    options.appendEntry(createEntry(
-      "status",
-      "status",
-      `${nextDisabled ? "Disabled" : "Enabled"} provider ${selectedItem.providerName}`
-    ));
-  } catch (error) {
-    options.appendEntry(createEntry("error", "error", toErrorMessage(error)));
-  }
-}
-
-function persistProviderDisabled(configPath: string, providerId: string, disabled: boolean): void {
-  const config = loadRecodeConfigFile(configPath);
-  const nextConfig = setConfiguredProviderDisabled(config, providerId, disabled);
-  saveRecodeConfigFile(configPath, nextConfig);
-}
-
-interface OpenModelPickerOptions {
-  readonly runtimeConfig: RuntimeConfig;
-  readonly setBusy: (value: boolean) => void;
-  readonly setGroups: (value: readonly ListedModelGroup[]) => void;
-  readonly setOpen: (value: boolean) => void;
-  readonly setQuery: (value: string) => void;
-  readonly setSelectedIndex: (value: number) => void;
-  readonly setWindowStart: (value: number) => void;
-  readonly appendEntry: (entry: UiEntry) => void;
-}
-
-async function openModelPicker(options: OpenModelPickerOptions): Promise<void> {
-  const enabledProviders = options.runtimeConfig.providers.filter((provider) => provider.disabled !== true);
-
-  if (enabledProviders.length === 0) {
-    options.appendEntry(createEntry(
-      "error",
-      "error",
-      options.runtimeConfig.providers.length === 0
-        ? "No providers are configured yet. Run `recode setup` first."
-        : "All providers are disabled. Use /provider to enable one first."
-    ));
-    return;
-  }
-
-  options.setOpen(true);
-  options.setBusy(true);
-  options.setQuery("");
-  options.setSelectedIndex(0);
-  options.setWindowStart(0);
-
-  try {
-    const groups = await Promise.all(
-      enabledProviders.map((provider) => listModelsForProvider(provider, options.runtimeConfig.providerId, true))
-    );
-    options.setGroups(groups);
-    options.setSelectedIndex(findActiveModelPickerOptionIndex(groups, options.runtimeConfig));
-  } catch (error) {
-    options.appendEntry(createEntry("error", "error", toErrorMessage(error)));
-    options.setOpen(false);
-  } finally {
-    options.setBusy(false);
-  }
-}
-
-function closeModelPicker(
-  input: PromptRenderable | undefined,
-  setOpen: (value: boolean) => void,
-  setQuery: (value: string) => void,
-  setSelectedIndex: (value: number) => void,
-  setWindowStart: (value: number) => void
-): void {
-  setOpen(false);
-  setQuery("");
-  setSelectedIndex(0);
-  setWindowStart(0);
-  input?.focus();
-}
-
-function buildModelPickerOptions(
-  groups: readonly ListedModelGroup[],
-  query: string,
-  runtimeConfig: RuntimeConfig
-): readonly ModelPickerOption[] {
-  const normalizedQuery = query.trim().toLowerCase();
-  const options: ModelPickerOption[] = [];
-
-  for (const group of groups) {
-    const providerOptions: ModelPickerOption[] = [];
-
-    for (const model of group.models) {
-      const haystack = `${group.providerName} ${group.providerId} ${model.label ?? ""} ${model.id}`.toLowerCase();
-      if (normalizedQuery !== "" && !haystack.includes(normalizedQuery)) {
-        continue;
-      }
-
-      providerOptions.push({
-        providerId: group.providerId,
-        providerName: group.providerName,
-        modelId: model.id,
-        label: model.label ?? model.id,
-        active: model.active,
-        providerActive: group.active,
-        custom: false
-      });
-    }
-
-    options.push(...providerOptions);
-
-    if (group.providerId !== runtimeConfig.providerId) {
-      continue;
-    }
-
-    const customModelId = query.trim();
-    const hasExactMatch = group.models.some((model) => model.id === customModelId);
-    if (customModelId === "" || hasExactMatch) {
-      continue;
-    }
-
-    options.push({
-      providerId: group.providerId,
-      providerName: group.providerName,
-      modelId: customModelId,
-      label: `Custom model ID for ${group.providerName}`,
-      active: false,
-      providerActive: group.active,
-      custom: true
-    });
-  }
-
-  return options;
-}
-
-function findActiveModelPickerOptionIndex(
-  groups: readonly ListedModelGroup[],
-  runtimeConfig: RuntimeConfig
-): number {
-  const options = buildModelPickerOptions(groups, "", runtimeConfig);
-  const activeIndex = options.findIndex((option) => option.active);
-  return activeIndex === -1 ? 0 : activeIndex;
-}
-
-interface SubmitModelPickerSelectionOptions {
-  readonly historyRoot: string;
-  readonly runtimeConfig: RuntimeConfig;
-  readonly selectedIndex: number;
-  readonly options: readonly ModelPickerOption[];
-  readonly setBusy: (value: boolean) => void;
-  readonly setRuntimeConfig: (value: RuntimeConfig) => void;
-  readonly currentConversation: SavedConversationRecord | undefined;
-  readonly currentMode: SessionMode;
-  readonly transcript: readonly ConversationMessage[];
-  readonly subagentTasks: readonly SubagentTaskRecord[];
-  readonly setConversation: (value: SavedConversationRecord) => void;
-  readonly appendEntry: (entry: UiEntry) => void;
-  readonly close: () => void;
-}
-
-async function submitSelectedModelPickerOption(options: SubmitModelPickerSelectionOptions): Promise<void> {
-  const selectedOption = options.options[options.selectedIndex];
-  if (selectedOption === undefined) {
-    return;
-  }
-
-  options.setBusy(true);
-
-  try {
-    persistSelectedModelSelection(options.runtimeConfig, selectedOption.providerId, selectedOption.modelId);
-    const nextRuntimeConfig = selectRuntimeProviderModel(
-      options.runtimeConfig,
-      selectedOption.providerId,
-      selectedOption.modelId
-    );
-    options.setRuntimeConfig(nextRuntimeConfig);
-    const nextConversation = persistConversationSession(
-      options.historyRoot,
-      nextRuntimeConfig,
-      options.transcript,
-      options.currentConversation,
-      options.currentMode,
-      options.subagentTasks
-    );
-    options.setConversation(nextConversation);
-    options.appendEntry(createEntry(
-      "status",
-      "status",
-      `Selected ${selectedOption.providerName} · ${selectedOption.modelId}`
-    ));
-    options.close();
-  } catch (error) {
-    options.appendEntry(createEntry("error", "error", toErrorMessage(error)));
-  } finally {
-    options.setBusy(false);
-  }
-}
-
-function persistSelectedTheme(configPath: string, themeName: ThemeName): void {
-  const config = loadRecodeConfigFile(configPath);
-  const nextConfig = selectConfiguredTheme(config, themeName);
-  saveRecodeConfigFile(configPath, nextConfig);
-}
-
-function persistSelectedToolMarker(configPath: string, toolMarkerName: ToolMarkerName): void {
-  const config = loadRecodeConfigFile(configPath);
-  const nextConfig = selectConfiguredToolMarker(config, toolMarkerName);
-  saveRecodeConfigFile(configPath, nextConfig);
-}
-
-function persistTodoPanelEnabled(configPath: string, enabled: boolean): void {
-  const config = loadRecodeConfigFile(configPath);
-  const nextConfig = selectConfiguredTodoPanelEnabled(config, enabled);
-  saveRecodeConfigFile(configPath, nextConfig);
-}
-
-function getTodoDropupHeight(todos: readonly TodoItem[]): number {
-  if (todos.length === 0) {
-    return 0;
-  }
-
-  return Math.min(6, todos.length) + 3;
-}
-
-function buildCustomizeRows(
-  activeThemeName: ThemeName,
-  activeToolMarkerName: ToolMarkerName,
-  todoPanelEnabled: boolean
-): readonly CustomizeRow[] {
-  const toolMarker = getToolMarkerDefinition(activeToolMarkerName);
-  const theme = getThemeDefinition(activeThemeName);
-
-  return [
-    {
-      id: "tool-marker",
-      label: "Tool Marker",
-      option: {
-        label: toolMarker.label,
-        value: toolMarker.symbol
-      },
-      description: "Controls the marker shown before tool activity lines."
-    },
-    {
-      id: "todo-panel",
-      label: "Todos",
-      option: {
-        label: todoPanelEnabled ? "Enabled" : "Disabled",
-        value: ""
-      },
-      description: "Shows the live TodoWrite panel above the composer."
-    },
-    {
-      id: "theme",
-      label: "Theme",
-      option: {
-        label: theme.label,
-        value: ""
-      },
-      description: "Switches the active color theme immediately."
-    }
-  ];
-}
-
-function openCustomizePicker(
-  setOpen: (value: boolean) => void,
-  setSelectedRow: (value: number) => void
-): void {
-  setOpen(true);
-  setSelectedRow(0);
-}
-
-function closeCustomizePicker(
-  input: PromptRenderable | undefined,
-  setOpen: (value: boolean) => void,
-  setSelectedRow: (value: number) => void
-): void {
-  setOpen(false);
-  setSelectedRow(0);
-  input?.focus();
-}
-
-interface CycleCustomizeSettingOptions {
-  readonly direction: -1 | 1;
-  readonly rowIndex: number;
-  readonly configPath: string;
-  readonly themeName: () => ThemeName;
-  readonly setThemeName: (value: ThemeName) => void;
-  readonly toolMarkerName: () => ToolMarkerName;
-  readonly setToolMarkerName: (value: ToolMarkerName) => void;
-  readonly todoPanelEnabled: () => boolean;
-  readonly setTodoPanelEnabled: (value: boolean) => void;
-  readonly setTodoDropupOpen: (value: boolean) => void;
-}
-
-function cycleCustomizeSetting(options: CycleCustomizeSettingOptions): void {
-  const rowIds = ["tool-marker", "todo-panel", "theme"] as const;
-  const rowId = rowIds[(options.rowIndex % rowIds.length + rowIds.length) % rowIds.length] ?? "tool-marker";
-
-  if (rowId === "tool-marker") {
-    const markers = getAvailableToolMarkers();
-    const currentIndex = markers.findIndex((marker) => marker.name === options.toolMarkerName());
-    const nextIndex = (Math.max(0, currentIndex) + options.direction + markers.length) % markers.length;
-    const nextMarker = markers[nextIndex];
-    if (nextMarker === undefined) {
-      return;
-    }
-    options.setToolMarkerName(nextMarker.name);
-    persistSelectedToolMarker(options.configPath, nextMarker.name);
-    return;
-  }
-
-  if (rowId === "todo-panel") {
-    const nextEnabled = !options.todoPanelEnabled();
-    options.setTodoPanelEnabled(nextEnabled);
-    if (!nextEnabled) {
-      options.setTodoDropupOpen(false);
-    }
-    persistTodoPanelEnabled(options.configPath, nextEnabled);
-    return;
-  }
-
-  const themes = getAvailableThemes();
-  const currentIndex = themes.findIndex((theme) => theme.name === options.themeName());
-  const nextIndex = (Math.max(0, currentIndex) + options.direction + themes.length) % themes.length;
-  const nextTheme = themes[nextIndex];
-  if (nextTheme === undefined) {
-    return;
-  }
-  options.setThemeName(nextTheme.name);
-  persistSelectedTheme(options.configPath, nextTheme.name);
-}
-
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
   }
 
   return "Unknown error";
-}
-
-interface MarqueeSegment {
-  readonly text: string;
-  readonly color: string;
-}
-
-function buildStatusMarquee(
-  themeName: ThemeName,
-  tick: number,
-  theme: ThemeColors,
-  phase: SpinnerPhase
-): readonly MarqueeSegment[] {
-  return [
-    getSpinnerPhaseGlyph(phase, theme),
-    { text: " ", color: theme.divider },
-    ...getSpinnerSegments(themeName, tick, theme),
-    { text: " ", color: theme.divider },
-    { text: getSpinnerPhaseLabel(phase), color: theme.hintText }
-  ];
-}
-
-function buildBusyIndicator(
-  themeName: ThemeName,
-  tick: number,
-  theme: ThemeColors,
-  phase: SpinnerPhase
-): readonly MarqueeSegment[] {
-  return [
-    getSpinnerPhaseGlyph(phase, theme),
-    { text: " ", color: theme.divider },
-    ...getSpinnerSegments(themeName, tick, theme)
-  ];
-}
-
-function getSpinnerPhaseLabel(phase: SpinnerPhase): string {
-  switch (phase) {
-    case "retrying":
-      return "retrying provider";
-    case "tool":
-      return "running tool";
-    case "saving-history":
-      return "saving history";
-    case "thinking":
-    default:
-      return "thinking";
-  }
-}
-
-// ── Layout Picker ──
-
-function buildLayoutPickerItems(currentLayout: LayoutMode, toolsCollapsed: boolean): readonly LayoutPickerItem[] {
-  return [
-    {
-      id: "compact",
-      label: "Compact",
-      description: "Tighter spacing between messages for power users.",
-      active: currentLayout === "compact"
-    },
-    {
-      id: "comfortable",
-      label: "Comfortable",
-      description: "Airy spacing for easier readability.",
-      active: currentLayout === "comfortable"
-    },
-    {
-      id: "collapse-tools",
-      label: toolsCollapsed ? "Expand Tool Output" : "Collapse Tool Output",
-      description: toolsCollapsed
-        ? "Show each tool call individually in the transcript."
-        : "Group consecutive tool calls into a compact summary.",
-      active: false
-    }
-  ];
-}
-
-function openLayoutPicker(
-  setOpen: (value: boolean) => void,
-  setSelectedIndex: (value: number) => void,
-  setWindowStart: (value: number) => void,
-  currentLayout: LayoutMode
-): void {
-  setOpen(true);
-  const activeIndex = currentLayout === "compact" ? 0 : 1;
-  setSelectedIndex(activeIndex);
-  setWindowStart(0);
-}
-
-function closeLayoutPicker(
-  input: PromptRenderable | undefined,
-  setOpen: (value: boolean) => void,
-  setSelectedIndex: (value: number) => void,
-  setWindowStart: (value: number) => void
-): void {
-  setOpen(false);
-  setSelectedIndex(0);
-  setWindowStart(0);
-  input?.focus();
-}
-
-interface SubmitLayoutPickerSelectionOptions {
-  readonly configPath: string;
-  readonly selectedIndex: number;
-  readonly items: readonly LayoutPickerItem[];
-  readonly setLayoutMode: (value: LayoutMode) => void;
-  readonly setToolsCollapsed: (value: boolean) => void;
-  readonly appendEntry: (entry: UiEntry) => void;
-  readonly close: () => void;
-}
-
-function submitSelectedLayoutPickerItem(options: SubmitLayoutPickerSelectionOptions): void {
-  const selectedItem = options.items[options.selectedIndex];
-  if (selectedItem === undefined) {
-    return;
-  }
-
-  if (selectedItem.id === "collapse-tools") {
-    const label = selectedItem.label;
-    options.setToolsCollapsed(label.startsWith("Collapse"));
-    options.appendEntry(createEntry(
-      "status",
-      "status",
-      label.startsWith("Collapse") ? "Tool output collapsed" : "Tool output expanded"
-    ));
-    options.close();
-    return;
-  }
-
-  const nextLayout = selectedItem.id as LayoutMode;
-  try {
-    persistLayoutMode(options.configPath, nextLayout);
-    options.setLayoutMode(nextLayout);
-    options.appendEntry(createEntry("status", "status", `Switched to ${selectedItem.label} layout`));
-    options.close();
-  } catch (error) {
-    options.appendEntry(createEntry("error", "error", toErrorMessage(error)));
-  }
-}
-
-function persistLayoutMode(configPath: string, mode: LayoutMode): void {
-  const config = loadRecodeConfigFile(configPath);
-  const nextConfig = selectConfiguredLayoutMode(config, mode);
-  saveRecodeConfigFile(configPath, nextConfig);
 }
