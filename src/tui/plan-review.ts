@@ -49,6 +49,13 @@ export const PLAN_TAG_FORMAT_REMINDER = [
   "Do not use a markdown heading or horizontal rules instead."
 ].join("\n");
 
+/** Reminder used after the user asks to revise an approval-ready plan. */
+export const PLAN_REVISION_REMINDER = [
+  "System reminder: The user declined implementation and is now giving feedback on the previous approval-ready plan.",
+  "Treat the user's next message as a revision request for the whole existing plan, not as a new standalone task.",
+  "Rewrite the complete <plan> block, incorporating the feedback while preserving the relevant prior plan details."
+].join("\n");
+
 /** Short synthetic reminder injected into each plan-mode model turn. */
 export const PLAN_MODE_TURN_REMINDER = [
   "<system-reminder>",
@@ -64,10 +71,14 @@ export const PLAN_MODE_TURN_REMINDER = [
  */
 export function buildPlanModeModelPrompt(
   userPrompt: string,
-  options: { readonly remindAboutPlanTags: boolean }
+  options: {
+    readonly remindAboutPlanTags: boolean;
+    readonly remindAboutPlanRevision: boolean;
+  }
 ): string {
   return [
     PLAN_MODE_TURN_REMINDER,
+    ...(options.remindAboutPlanRevision ? [PLAN_REVISION_REMINDER] : []),
     ...(options.remindAboutPlanTags ? [PLAN_TAG_FORMAT_REMINDER] : []),
     userPrompt
   ].join("\n\n");

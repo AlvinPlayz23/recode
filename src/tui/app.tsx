@@ -362,6 +362,7 @@ export function TuiApp(props: TuiAppProps) {
   const [activeApprovalRequest, setActiveApprovalRequest] = createSignal<ActiveApprovalRequest | undefined>(undefined);
   const [activePlanReviewRequest, setActivePlanReviewRequest] = createSignal<ActivePlanReviewRequest | undefined>(undefined);
   const [pendingPlanTagFormatReminder, setPendingPlanTagFormatReminder] = createSignal(false);
+  const [pendingPlanRevisionReminder, setPendingPlanRevisionReminder] = createSignal(false);
   const [activeQuestionRequest, setActiveQuestionRequest] = createSignal<ActiveQuestionRequest | undefined>(undefined);
   const [activeToast, setActiveToast] = createSignal<ActiveToast | undefined>(undefined);
   const [exitHintVisible, setExitHintVisible] = createSignal(false);
@@ -1607,6 +1608,7 @@ export function TuiApp(props: TuiAppProps) {
     setActivePlanReviewRequest(undefined);
 
     if (decision === "revise") {
+      setPendingPlanRevisionReminder(true);
       appendEntry(
         setEntries,
         createEntry("status", "status", "Still in PLAN mode — tell Recode what to adjust.")
@@ -1616,6 +1618,7 @@ export function TuiApp(props: TuiAppProps) {
     }
 
     setPendingPlanTagFormatReminder(false);
+    setPendingPlanRevisionReminder(false);
     setSessionMode("build");
     const persistedConversation = persistConversationSession(
       historyRoot(),
@@ -1753,10 +1756,15 @@ export function TuiApp(props: TuiAppProps) {
     const prompt = commandResult.prompt;
     const expandedPrompt = expandDraftPastes(prompt, pendingPastes());
     const planTagFormatReminderActive = pendingPlanTagFormatReminder();
+    const planRevisionReminderActive = pendingPlanRevisionReminder();
     const modelPrompt = sessionMode() === "plan"
-      ? buildPlanModeModelPrompt(expandedPrompt, { remindAboutPlanTags: planTagFormatReminderActive })
+      ? buildPlanModeModelPrompt(expandedPrompt, {
+          remindAboutPlanTags: planTagFormatReminderActive,
+          remindAboutPlanRevision: planRevisionReminderActive
+        })
       : expandedPrompt;
     setPendingPlanTagFormatReminder(false);
+    setPendingPlanRevisionReminder(false);
     clearDraft(inputRef, setDraft);
     setPendingPastes([]);
     setBusyPhase("thinking");

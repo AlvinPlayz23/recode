@@ -5,6 +5,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   PLAN_MODE_TURN_REMINDER,
+  PLAN_REVISION_REMINDER,
   PLAN_TAG_FORMAT_REMINDER,
   buildPlanModeModelPrompt,
   buildPlanImplementationPrompt,
@@ -46,7 +47,10 @@ describe("plan review helpers", () => {
   });
 
   it("builds a synthetic plan-mode model prompt", () => {
-    const prompt = buildPlanModeModelPrompt("create a dashboard", { remindAboutPlanTags: false });
+    const prompt = buildPlanModeModelPrompt("create a dashboard", {
+      remindAboutPlanTags: false,
+      remindAboutPlanRevision: false
+    });
 
     expect(prompt).toContain(PLAN_MODE_TURN_REMINDER);
     expect(prompt).toContain("Plan mode is active");
@@ -55,10 +59,24 @@ describe("plan review helpers", () => {
   });
 
   it("includes the tag reminder in the synthetic prompt when needed", () => {
-    const prompt = buildPlanModeModelPrompt("revise that", { remindAboutPlanTags: true });
+    const prompt = buildPlanModeModelPrompt("revise that", {
+      remindAboutPlanTags: true,
+      remindAboutPlanRevision: false
+    });
 
     expect(prompt).toContain(PLAN_TAG_FORMAT_REMINDER);
     expect(prompt).toContain("revise that");
+  });
+
+  it("includes a full-plan revision reminder after declined implementation", () => {
+    const prompt = buildPlanModeModelPrompt("make sure it is blue", {
+      remindAboutPlanTags: false,
+      remindAboutPlanRevision: true
+    });
+
+    expect(prompt).toContain(PLAN_REVISION_REMINDER);
+    expect(prompt).toContain("whole existing plan");
+    expect(prompt).toContain("Rewrite the complete <plan> block");
   });
 
   it("builds an implementation prompt that preserves context", () => {
