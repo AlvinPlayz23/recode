@@ -1775,6 +1775,19 @@ export function TuiApp(props: TuiAppProps) {
     activeAbortController = abortController;
     let currentStreamingId: string | undefined;
     let latestTranscript: readonly ConversationMessage[] | undefined;
+    let deferredAssistantTextAfterToolCall = "";
+    let shouldDeferAssistantTextUntilToolResult = false;
+    let toolResultSeenForDeferredText = false;
+
+    const flushDeferredAssistantTextAfterToolCall = () => {
+      const body = deferredAssistantTextAfterToolCall;
+      deferredAssistantTextAfterToolCall = "";
+      shouldDeferAssistantTextUntilToolResult = false;
+      toolResultSeenForDeferredText = false;
+      if (body.trim() !== "") {
+        appendEntry(setEntries, createEntry("assistant", "Recode", body));
+      }
+    };
 
     try {
       const preparedTranscript = await prepareTranscriptForPendingPrompt(modelPrompt, abortController.signal);
@@ -1825,21 +1838,39 @@ export function TuiApp(props: TuiAppProps) {
           setBusyPhase("tool");
           setProviderStatusText(undefined);
           flushAndResetPendingStreamText();
-          const nextEntry = appendToolCallEntryAndCreateAssistantPlaceholder({
+          if (shouldDeferAssistantTextUntilToolResult && toolResultSeenForDeferredText) {
+            flushDeferredAssistantTextAfterToolCall();
+          }
+          shouldDeferAssistantTextUntilToolResult = true;
+          toolResultSeenForDeferredText = false;
+          appendToolCallEntryAndCreateAssistantPlaceholder({
             currentStreamingId: currentStreamingId,
             currentStreamingBody: streamingBody(),
             toolCall,
+            appendAssistantPlaceholder: false,
             setEntries
           });
-          currentStreamingId = nextEntry?.id;
+          currentStreamingId = undefined;
           setStreamingBody("");
-          setStreamingEntryId(currentStreamingId);
+          setStreamingEntryId(undefined);
         },
         onTextDelta(delta) {
           if (busyPhase() === "retrying") {
             setBusyPhase("thinking");
           }
           setProviderStatusText(undefined);
+          if (shouldDeferAssistantTextUntilToolResult) {
+            if (!toolResultSeenForDeferredText) {
+              deferredAssistantTextAfterToolCall += delta;
+              return;
+            }
+            flushDeferredAssistantTextAfterToolCall();
+            const nextEntry = createEntry("assistant", "Recode", "");
+            currentStreamingId = nextEntry.id;
+            setStreamingBody("");
+            setStreamingEntryId(currentStreamingId);
+            appendEntry(setEntries, nextEntry);
+          }
           if (currentStreamingId !== undefined) {
             schedulePendingStreamTextFlush(currentStreamingId, delta);
           }
@@ -1847,6 +1878,7 @@ export function TuiApp(props: TuiAppProps) {
         onToolResult(toolResult) {
           setBusyPhase("thinking");
           setProviderStatusText(undefined);
+          toolResultSeenForDeferredText = true;
           invalidateWorkspaceFileSuggestionCache(sessionRuntimeConfig().workspaceRoot);
           setFileSuggestionVersion((value) => value + 1);
           const toolResultEntry = createToolResultUiEntry(
@@ -1885,6 +1917,7 @@ export function TuiApp(props: TuiAppProps) {
 
       // Finalize the last streaming entry by writing finalText or removing the empty placeholder.
       flushAndResetPendingStreamText();
+      flushDeferredAssistantTextAfterToolCall();
       const lastId = currentStreamingId;
       const finalBody = result.finalText !== "" ? result.finalText : streamingBody();
       finalizeAssistantStreamEntry(setEntries, lastId, finalBody);

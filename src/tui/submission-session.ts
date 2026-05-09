@@ -40,6 +40,7 @@ export interface AppendToolCallEntryOptions {
   readonly currentStreamingBody: string;
   readonly toolCall: ToolCall;
   readonly setEntries: SetUiEntries;
+  readonly appendAssistantPlaceholder?: boolean;
 }
 
 /**
@@ -120,7 +121,9 @@ export function appendToolCallEntryAndCreateAssistantPlaceholder(
       return updatedPrevious.filter((entry) => entry.id !== currentId || entry.body !== "");
     });
     const nextEntry = createEntry("assistant", "Recode", "");
-    appendEntry(options.setEntries, nextEntry);
+    if (options.appendAssistantPlaceholder !== false) {
+      appendEntry(options.setEntries, nextEntry);
+    }
     return nextEntry;
   }
 
@@ -138,7 +141,9 @@ export function appendToolCallEntryAndCreateAssistantPlaceholder(
   });
 
   const nextEntry = createEntry("assistant", "Recode", "");
-  appendEntry(options.setEntries, nextEntry);
+  if (options.appendAssistantPlaceholder !== false) {
+    appendEntry(options.setEntries, nextEntry);
+  }
   return nextEntry;
 }
 

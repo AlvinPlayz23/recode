@@ -93,6 +93,30 @@ describe("submission session helpers", () => {
     ]);
   });
 
+  it("can defer the post-tool assistant placeholder", () => {
+    let entries: readonly UiEntry[] = [createEntry("assistant", "Recode", "")];
+    const currentId = entries[0]?.id;
+
+    const nextEntry = appendToolCallEntryAndCreateAssistantPlaceholder({
+      currentStreamingId: currentId,
+      currentStreamingBody: "",
+      toolCall: {
+        id: "call_1",
+        name: "Read",
+        argumentsJson: "{\"path\":\"missing.txt\"}"
+      },
+      appendAssistantPlaceholder: false,
+      setEntries(setter) {
+        entries = setter(entries);
+      }
+    });
+
+    expect(nextEntry?.kind).toBe("assistant");
+    expect(entries.map((entry) => [entry.kind, entry.body])).toEqual([
+      ["tool", "Read · missing.txt"]
+    ]);
+  });
+
   it("finalizes the last assistant placeholder with final text", () => {
     let entries: readonly UiEntry[] = [createEntry("assistant", "Recode", "")];
     const entryId = entries[0]?.id;
