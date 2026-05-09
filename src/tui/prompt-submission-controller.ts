@@ -23,6 +23,7 @@ export interface PendingPaste {
 export interface SingleTurnOptions {
   readonly systemPrompt: string;
   readonly prompt: string;
+  readonly modelPrompt?: string;
   readonly previousMessages: readonly ConversationMessage[];
   readonly languageModel: AiModel;
   readonly toolRegistry: ToolRegistry;
@@ -43,6 +44,7 @@ export async function runSingleTurn(options: SingleTurnOptions): Promise<AgentRu
   return await runAgentLoop({
     systemPrompt: options.systemPrompt,
     initialUserPrompt: options.prompt,
+    ...(options.modelPrompt === undefined ? {} : { initialModelUserPrompt: options.modelPrompt }),
     previousMessages: options.previousMessages,
     languageModel: options.languageModel,
     toolRegistry: options.toolRegistry,

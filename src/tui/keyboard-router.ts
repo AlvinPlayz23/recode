@@ -5,6 +5,7 @@
 import type { QuestionToolDecision, ToolApprovalDecision } from "../tools/tool.ts";
 import { applyFileSuggestionDraftValue, type FileSuggestionItem, type FileSuggestionPanelState } from "./file-suggestions.ts";
 import { moveBuiltinCommandSelectionIndex, normalizeBuiltinCommandSelectionIndex } from "./message-format.ts";
+import type { ActivePlanReviewRequest, PlanReviewDecision } from "./plan-review.ts";
 import type { ActiveApprovalRequest, ActiveQuestionRequest, CustomizeRow } from "./tui-app-types.ts";
 
 /**
@@ -151,6 +152,54 @@ export function handleToolApprovalKey(options: {
       return true;
     }
     default:
+      return true;
+  }
+}
+
+/**
+ * Handle the plan review prompt.
+ */
+export function handlePlanReviewKey(options: {
+  readonly key: TuiKeyEvent;
+  readonly request: ActivePlanReviewRequest | undefined;
+  readonly optionCount: number;
+  readonly resolve: (decision: PlanReviewDecision) => void;
+  readonly moveSelected: (direction: -1 | 1) => void;
+  readonly decisionAt: (index: number) => PlanReviewDecision | undefined;
+}): boolean {
+  if (options.request === undefined) {
+    return false;
+  }
+
+  switch (options.key.name) {
+    case "escape":
+      options.key.preventDefault();
+      options.key.stopPropagation();
+      options.resolve("revise");
+      return true;
+    case "up":
+      options.key.preventDefault();
+      options.key.stopPropagation();
+      options.moveSelected(-1);
+      return true;
+    case "down":
+      options.key.preventDefault();
+      options.key.stopPropagation();
+      options.moveSelected(1);
+      return true;
+    case "return":
+    case "enter": {
+      options.key.preventDefault();
+      options.key.stopPropagation();
+      const selectedIndex = normalizeBuiltinCommandSelectionIndex(
+        options.request.selectedIndex,
+        options.optionCount
+      );
+      options.resolve(options.decisionAt(selectedIndex) ?? "revise");
+      return true;
+    }
+    default:
+      options.key.stopPropagation();
       return true;
   }
 }

@@ -6,6 +6,7 @@ import { describe, expect, it } from "bun:test";
 import {
   handleCommandPanelKey,
   handleFileSuggestionPanelKey,
+  handlePlanReviewKey,
   handleQuestionRequestKey,
   handleLinearPickerKey,
   handleProviderPickerKey,
@@ -193,6 +194,34 @@ describe("keyboard router helpers", () => {
     expect(key.prevented).toBe(true);
     expect(key.stopped).toBe(true);
     expect(submitted).toBe(true);
+  });
+
+  it("submits the selected plan review decision", () => {
+    const key = createKey("enter");
+    let decision: string | undefined;
+
+    const handled = handlePlanReviewKey({
+      key,
+      request: {
+        plan: "Do the thing",
+        selectedIndex: 1
+      },
+      optionCount: 2,
+      resolve(value) {
+        decision = value;
+      },
+      moveSelected() {
+        throw new Error("should not move");
+      },
+      decisionAt(index) {
+        return index === 0 ? "implement" : "revise";
+      }
+    });
+
+    expect(handled).toBe(true);
+    expect(key.prevented).toBe(true);
+    expect(key.stopped).toBe(true);
+    expect(decision).toBe("revise");
   });
 });
 

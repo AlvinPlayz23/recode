@@ -136,6 +136,15 @@ import { HistoryPickerOverlay } from "./history-picker-overlay.tsx";
 import { LayoutPickerOverlay } from "./layout-picker-overlay.tsx";
 import { createMarkdownSyntaxStyle } from "./markdown-style.ts";
 import { ModelPickerOverlay } from "./model-picker-overlay.tsx";
+import {
+  buildPlanModeModelPrompt,
+  buildPlanImplementationPrompt,
+  detectPlanReview,
+  PLAN_REVIEW_OPTIONS,
+  type ActivePlanReviewRequest,
+  type PlanReviewDecision
+} from "./plan-review.ts";
+import { PlanReviewOverlay } from "./plan-review-overlay.tsx";
 import { ProviderPickerOverlay } from "./provider-picker-overlay.tsx";
 import { QuestionOverlay } from "./question-overlay.tsx";
 import {
@@ -351,6 +360,8 @@ export function TuiApp(props: TuiAppProps) {
   const [approvalModePickerWindowStart, setApprovalModePickerWindowStart] = createSignal(0);
   const [approvalModePickerScrollBox, setApprovalModePickerScrollBox] = createSignal<ScrollBoxRenderable | undefined>(undefined);
   const [activeApprovalRequest, setActiveApprovalRequest] = createSignal<ActiveApprovalRequest | undefined>(undefined);
+  const [activePlanReviewRequest, setActivePlanReviewRequest] = createSignal<ActivePlanReviewRequest | undefined>(undefined);
+  const [pendingPlanTagFormatReminder, setPendingPlanTagFormatReminder] = createSignal(false);
   const [activeQuestionRequest, setActiveQuestionRequest] = createSignal<ActiveQuestionRequest | undefined>(undefined);
   const [activeToast, setActiveToast] = createSignal<ActiveToast | undefined>(undefined);
   const [exitHintVisible, setExitHintVisible] = createSignal(false);
@@ -405,6 +416,7 @@ export function TuiApp(props: TuiAppProps) {
     || customizePickerOpen()
     || approvalModePickerOpen()
     || layoutPickerOpen()
+    || activePlanReviewRequest() !== undefined
     || activeApprovalRequest() !== undefined
     || activeQuestionRequest() !== undefined
   );
@@ -1156,6 +1168,15 @@ export function TuiApp(props: TuiAppProps) {
         toggleOption: toggleActiveQuestionOption
       });
     },
+    activePlanReviewRequest,
+    resolvePlanReviewRequest,
+    setActivePlanReviewRequest(updater) {
+      setActivePlanReviewRequest(updater);
+    },
+    planReviewOptionCount: PLAN_REVIEW_OPTIONS.length,
+    planReviewDecisionAt(index) {
+      return PLAN_REVIEW_OPTIONS[index]?.decision;
+    },
     activeApprovalRequest,
     resolveApprovalRequest,
     setActiveApprovalRequest(updater) {
@@ -1577,6 +1598,44 @@ export function TuiApp(props: TuiAppProps) {
     });
   };
 
+  function resolvePlanReviewRequest(decision: PlanReviewDecision): void {
+    const request = activePlanReviewRequest();
+    if (request === undefined) {
+      return;
+    }
+
+    setActivePlanReviewRequest(undefined);
+
+    if (decision === "revise") {
+      appendEntry(
+        setEntries,
+        createEntry("status", "status", "Still in PLAN mode — tell Recode what to adjust.")
+      );
+      inputRef?.focus();
+      return;
+    }
+
+    setPendingPlanTagFormatReminder(false);
+    setSessionMode("build");
+    const persistedConversation = persistConversationSession(
+      historyRoot(),
+      sessionRuntimeConfig(),
+      previousMessages(),
+      currentConversation(),
+      "build",
+      subagentTasks()
+    );
+    setCurrentConversation(persistedConversation);
+    appendEntry(
+      setEntries,
+      createEntry("status", "status", "Plan approved — switched to BUILD mode")
+    );
+
+    queueMicrotask(() => {
+      void submitPrompt(buildPlanImplementationPrompt());
+    });
+  }
+
   const submitPrompt = async (value: string) => {
     const commandResult = await dispatchBuiltinCommand({
       value,
@@ -1693,6 +1752,11 @@ export function TuiApp(props: TuiAppProps) {
 
     const prompt = commandResult.prompt;
     const expandedPrompt = expandDraftPastes(prompt, pendingPastes());
+    const planTagFormatReminderActive = pendingPlanTagFormatReminder();
+    const modelPrompt = sessionMode() === "plan"
+      ? buildPlanModeModelPrompt(expandedPrompt, { remindAboutPlanTags: planTagFormatReminderActive })
+      : expandedPrompt;
+    setPendingPlanTagFormatReminder(false);
     clearDraft(inputRef, setDraft);
     setPendingPastes([]);
     setBusyPhase("thinking");
@@ -1705,7 +1769,7 @@ export function TuiApp(props: TuiAppProps) {
     let latestTranscript: readonly ConversationMessage[] | undefined;
 
     try {
-      const preparedTranscript = await prepareTranscriptForPendingPrompt(expandedPrompt, abortController.signal);
+      const preparedTranscript = await prepareTranscriptForPendingPrompt(modelPrompt, abortController.signal);
       appendEntry(setEntries, createEntry("user", "You", prompt));
 
       const streamingEntry = createEntry("assistant", "Recode", "");
@@ -1718,6 +1782,7 @@ export function TuiApp(props: TuiAppProps) {
       const result = await runSingleTurn({
         systemPrompt: activeSystemPrompt(),
         prompt: expandedPrompt,
+        modelPrompt,
         previousMessages: preparedTranscript,
         languageModel: sessionLanguageModel(),
         toolRegistry: activeToolRegistry(),
@@ -1832,6 +1897,22 @@ export function TuiApp(props: TuiAppProps) {
         setEntries,
         createEntry("status", "status", `✓ ${result.iterations} turns`)
       );
+      const readyPlan = sessionMode() === "plan"
+        ? detectPlanReview(result.finalText)
+        : undefined;
+      if (readyPlan !== undefined) {
+        if (readyPlan.format === "markdown-fallback") {
+          setPendingPlanTagFormatReminder(true);
+          appendEntry(
+            setEntries,
+            createEntry("status", "status", "Plan detected without <plan> tags — Recode will be reminded next turn.")
+          );
+        }
+        setActivePlanReviewRequest({
+          plan: readyPlan.plan,
+          selectedIndex: 0
+        });
+      }
     } catch (error) {
       flushAndResetPendingStreamText();
       const currentId = currentStreamingId;
@@ -2184,6 +2265,12 @@ export function TuiApp(props: TuiAppProps) {
         onCustomTextInput={updateActiveQuestionCustomText}
         onKeyDown={handleQuestionOverlayKey}
         onSubmit={submitActiveQuestionRequest}
+      />
+
+      <PlanReviewOverlay
+        request={activePlanReviewRequest()}
+        options={PLAN_REVIEW_OPTIONS}
+        theme={t()}
       />
 
       <ToolApprovalOverlay

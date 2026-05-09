@@ -13,6 +13,7 @@ import {
   handleCommandPanelKey,
   handleFileSuggestionPanelKey,
   handleLinearPickerKey,
+  handlePlanReviewKey,
   handleProviderPickerKey,
   handleToolApprovalKey,
   type CommandPanelState,
@@ -20,6 +21,7 @@ import {
 } from "./keyboard-router.ts";
 import type { FileSuggestionPanelState } from "./file-suggestions.ts";
 import { moveBuiltinCommandSelectionIndex } from "./message-format.ts";
+import type { ActivePlanReviewRequest, PlanReviewDecision } from "./plan-review.ts";
 import { normalizeDraftInput, toVisibleDraft } from "./prompt-draft.ts";
 import type { ActiveApprovalRequest } from "./tui-app-types.ts";
 
@@ -108,6 +110,11 @@ export interface InputRouterOptions {
   readonly handleToggleTodos: (key: KeyEvent) => void;
   readonly handleCycleChatView: (key: KeyEvent) => void;
   readonly handleQuestionKey: (key: KeyEvent) => boolean;
+  readonly activePlanReviewRequest: () => ActivePlanReviewRequest | undefined;
+  readonly resolvePlanReviewRequest: (decision: PlanReviewDecision) => void;
+  readonly setActivePlanReviewRequest: (updater: (current: ActivePlanReviewRequest | undefined) => ActivePlanReviewRequest | undefined) => void;
+  readonly planReviewOptionCount: number;
+  readonly planReviewDecisionAt: (index: number) => PlanReviewDecision | undefined;
   readonly activeApprovalRequest: () => ActiveApprovalRequest | undefined;
   readonly resolveApprovalRequest: (decision: ToolApprovalDecision) => void;
   readonly setActiveApprovalRequest: (updater: (current: ActiveApprovalRequest | undefined) => ActiveApprovalRequest | undefined) => void;
@@ -190,6 +197,26 @@ export function registerTuiInputHandlers(options: InputRouterOptions): void {
     }
 
     if (options.handleQuestionKey(key)) {
+      return;
+    }
+
+    if (handlePlanReviewKey({
+      key,
+      request: options.activePlanReviewRequest(),
+      optionCount: options.planReviewOptionCount,
+      resolve: options.resolvePlanReviewRequest,
+      moveSelected(direction) {
+        options.setActivePlanReviewRequest((current) => current === undefined
+          ? current
+          : {
+              ...current,
+              selectedIndex: moveBuiltinCommandSelectionIndex(current.selectedIndex, options.planReviewOptionCount, direction)
+            });
+      },
+      decisionAt(index) {
+        return options.planReviewDecisionAt(index);
+      }
+    })) {
       return;
     }
 

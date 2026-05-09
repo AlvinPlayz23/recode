@@ -42,6 +42,7 @@ export interface TranscriptObserver {
 export interface AgentRunOptions {
   readonly systemPrompt: string;
   readonly initialUserPrompt: string;
+  readonly initialModelUserPrompt?: string;
   readonly previousMessages?: readonly ConversationMessage[];
   readonly languageModel: AiModel;
   readonly toolRegistry: ToolRegistry;
@@ -74,14 +75,16 @@ export async function runAgentLoop(options: AgentRunOptions): Promise<AgentRunRe
     throw new OperationAbortedError("Request aborted");
   }
 
+  const previousMessageCount = options.previousMessages?.length ?? 0;
+  const modelInitialUserPrompt = options.initialModelUserPrompt ?? options.initialUserPrompt;
   const messages: ConversationMessage[] = [
     ...(options.previousMessages ?? []),
     {
       role: "user",
-      content: options.initialUserPrompt
+      content: modelInitialUserPrompt
     }
   ];
-  publishTranscriptUpdate(options.onTranscriptUpdate, messages);
+  publishTranscriptUpdate(options.onTranscriptUpdate, toPublicTranscript(messages, previousMessageCount, options.initialUserPrompt));
 
   let iterations = 0;
   const steps: StepStats[] = [];
@@ -100,7 +103,7 @@ export async function runAgentLoop(options: AgentRunOptions): Promise<AgentRunRe
     }, messages);
 
     messages.push(step.assistantMessage);
-    publishTranscriptUpdate(options.onTranscriptUpdate, messages);
+    publishTranscriptUpdate(options.onTranscriptUpdate, toPublicTranscript(messages, previousMessageCount, options.initialUserPrompt));
     steps.push(step.stepStats);
     options.onStepComplete?.(step.stepStats);
 
@@ -109,7 +112,7 @@ export async function runAgentLoop(options: AgentRunOptions): Promise<AgentRunRe
     if (step.toolCalls.length === 0) {
       return {
         finalText: step.accumulatedText,
-        transcript: [...messages],
+        transcript: toPublicTranscript(messages, previousMessageCount, options.initialUserPrompt),
         iterations,
         steps
       };
@@ -123,12 +126,29 @@ export async function runAgentLoop(options: AgentRunOptions): Promise<AgentRunRe
       ...(options.onToolResult === undefined ? {} : { onToolResult: options.onToolResult })
     });
     messages.push(...toolMessages);
-    publishTranscriptUpdate(options.onTranscriptUpdate, messages);
+    publishTranscriptUpdate(options.onTranscriptUpdate, toPublicTranscript(messages, previousMessageCount, options.initialUserPrompt));
 
     if (options.abortSignal?.aborted ?? false) {
       throw new OperationAbortedError("Request aborted");
     }
   }
+}
+
+function toPublicTranscript(
+  messages: readonly ConversationMessage[],
+  currentUserMessageIndex: number,
+  publicUserPrompt: string
+): readonly ConversationMessage[] {
+  const currentUserMessage = messages[currentUserMessageIndex];
+  if (currentUserMessage?.role !== "user" || currentUserMessage.content === publicUserPrompt) {
+    return [...messages];
+  }
+
+  return messages.map((message, index) =>
+    index === currentUserMessageIndex
+      ? { role: "user", content: publicUserPrompt }
+      : message
+  );
 }
 
 function publishTranscriptUpdate(

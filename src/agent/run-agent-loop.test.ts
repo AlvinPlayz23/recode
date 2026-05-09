@@ -127,6 +127,42 @@ describe("runAgentLoop", () => {
     ]);
   });
 
+  it("can send a synthetic model prompt while publishing the public user prompt", async () => {
+    const capturedRequests: Array<{ messages: unknown[] }> = [];
+    const updates: ConversationMessage[][] = [];
+
+    fakeStreamAssistantResponse.mockImplementationOnce((options) => {
+      capturedRequests.push({ messages: JSON.parse(JSON.stringify(options.messages as unknown[])) as unknown[] });
+      return makeStreamResult([
+        textPart("planned"),
+        ...finishParts()
+      ]);
+    });
+
+    const result = await runAgentLoop({
+      systemPrompt: "test-system-prompt",
+      initialUserPrompt: "create a page",
+      initialModelUserPrompt: "<system-reminder>plan mode</system-reminder>\n\ncreate a page",
+      languageModel: {} as never,
+      toolRegistry: new ToolRegistry([createEchoTool()]),
+      toolContext: { workspaceRoot: "/tmp/recode", approvalMode: "yolo" },
+      onTranscriptUpdate(transcript) {
+        updates.push([...transcript]);
+      }
+    });
+
+    expect(capturedRequests[0]?.messages).toEqual([
+      { role: "user", content: "<system-reminder>plan mode</system-reminder>\n\ncreate a page" }
+    ]);
+    expect(updates[0]).toEqual([
+      { role: "user", content: "create a page" }
+    ]);
+    expect(result.transcript[0]).toEqual({
+      role: "user",
+      content: "create a page"
+    });
+  });
+
   it("emits tool call notifications during stream consumption", async () => {
     fakeStreamAssistantResponse
       .mockImplementationOnce(() => makeStreamResult([
