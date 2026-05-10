@@ -287,6 +287,48 @@ describe("recode history schema", () => {
     ]);
   });
 
+  it("parses compaction session snapshots", () => {
+    const record = parseConversationRecord({
+      ...baseConversationMeta(),
+      transcript: [{ role: "summary", kind: "continuation", content: "Current summary." }],
+      sessionSnapshots: [
+        {
+          kind: "compaction",
+          id: "snapshot-1",
+          createdAt: "2026-01-01T00:00:01.000Z",
+          reason: "manual",
+          compactedMessageCount: 2,
+          summary: "Earlier context.",
+          beforeTranscript: [
+            { role: "user", content: "Start" },
+            { role: "assistant", content: "Done", toolCalls: [] }
+          ],
+          afterTranscript: [
+            { role: "summary", kind: "continuation", content: "Earlier context." }
+          ]
+        }
+      ]
+    });
+
+    expect(record?.sessionSnapshots).toEqual([
+      {
+        kind: "compaction",
+        id: "snapshot-1",
+        createdAt: "2026-01-01T00:00:01.000Z",
+        reason: "manual",
+        compactedMessageCount: 2,
+        summary: "Earlier context.",
+        beforeTranscript: [
+          { role: "user", content: "Start" },
+          { role: "assistant", content: "Done", toolCalls: [] }
+        ],
+        afterTranscript: [
+          { role: "summary", kind: "continuation", content: "Earlier context." }
+        ]
+      }
+    ]);
+  });
+
   it("converts conversation records to index metadata", () => {
     const record: SavedConversationRecord = {
       ...baseConversationMeta(),

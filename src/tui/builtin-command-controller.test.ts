@@ -315,6 +315,7 @@ function createRuntimeConfig(configPath: string): RuntimeConfig {
     ],
     approvalMode: "approval",
     approvalAllowlist: [],
+    permissionRules: [],
     apiKey: "test",
     baseUrl: "https://example.com/v1"
   };

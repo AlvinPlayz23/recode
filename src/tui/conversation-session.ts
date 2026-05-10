@@ -12,6 +12,7 @@ import {
   saveConversation,
   type SavedConversationRecord
 } from "../history/recode-history.ts";
+import type { SessionSnapshot } from "../history/recode-history-types.ts";
 import type { ConversationMessage } from "../transcript/message.ts";
 import {
   selectRuntimeProviderModel,
@@ -39,9 +40,11 @@ export function persistConversationSession(
   transcript: readonly ConversationMessage[],
   currentConversation: SavedConversationRecord | undefined,
   mode: SessionMode,
-  subagentTasks?: readonly SubagentTaskRecord[]
+  subagentTasks?: readonly SubagentTaskRecord[],
+  sessionSnapshots?: readonly SessionSnapshot[]
 ): SavedConversationRecord {
   const embeddedTasks = subagentTasks ?? currentConversation?.subagentTasks ?? [];
+  const embeddedSnapshots = sessionSnapshots ?? currentConversation?.sessionSnapshots ?? [];
   const conversation = createConversationRecord(
     runtimeConfig,
     transcript,
@@ -49,7 +52,8 @@ export function persistConversationSession(
     currentConversation === undefined
       ? undefined
       : { id: currentConversation.id, createdAt: currentConversation.createdAt },
-    embeddedTasks
+    embeddedTasks,
+    embeddedSnapshots
   );
 
   if (transcript.length > 0) {
@@ -67,9 +71,10 @@ export function forkConversationSession(
   runtimeConfig: RuntimeConfig,
   transcript: readonly ConversationMessage[],
   mode: SessionMode,
-  subagentTasks?: readonly SubagentTaskRecord[]
+  subagentTasks?: readonly SubagentTaskRecord[],
+  sessionSnapshots?: readonly SessionSnapshot[]
 ): SavedConversationRecord {
-  const conversation = createConversationRecord(runtimeConfig, transcript, mode, undefined, subagentTasks);
+  const conversation = createConversationRecord(runtimeConfig, transcript, mode, undefined, subagentTasks, sessionSnapshots);
 
   if (transcript.length > 0) {
     saveConversation(historyRoot, conversation, true);

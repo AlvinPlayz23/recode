@@ -23,9 +23,11 @@ import type {
   ToolResultMetadata
 } from "../tools/tool.ts";
 import type {
+  CompactionSessionSnapshot,
   RecodeHistoryIndex,
   SavedConversationMeta,
-  SavedConversationRecord
+  SavedConversationRecord,
+  SessionSnapshot
 } from "./recode-history-types.ts";
 
 export const HISTORY_VERSION = 1;
@@ -101,11 +103,16 @@ export function parseConversationRecord(value: unknown): SavedConversationRecord
   const subagentTasks = Array.isArray(subagentTasksValue)
     ? subagentTasksValue.map(parseSubagentTaskRecord).filter((item) => item !== undefined)
     : [];
+  const sessionSnapshotsValue = value["sessionSnapshots"];
+  const sessionSnapshots = Array.isArray(sessionSnapshotsValue)
+    ? sessionSnapshotsValue.map(parseSessionSnapshot).filter((item) => item !== undefined)
+    : [];
 
   return {
     ...meta,
     transcript,
-    ...(subagentTasks.length === 0 ? {} : { subagentTasks })
+    ...(subagentTasks.length === 0 ? {} : { subagentTasks }),
+    ...(sessionSnapshots.length === 0 ? {} : { sessionSnapshots })
   };
 }
 
@@ -359,6 +366,60 @@ function parseSubagentTaskRecord(value: unknown): SubagentTaskRecord | undefined
     providerName,
     model,
     status: "completed"
+  };
+}
+
+function parseSessionSnapshot(value: unknown): SessionSnapshot | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  switch (value["kind"]) {
+    case "compaction":
+      return parseCompactionSessionSnapshot(value);
+    default:
+      return undefined;
+  }
+}
+
+function parseCompactionSessionSnapshot(value: Record<string, unknown>): CompactionSessionSnapshot | undefined {
+  const id = readOptionalString(value, "id");
+  const createdAt = readOptionalString(value, "createdAt");
+  const reason = value["reason"];
+  const compactedMessageCount = typeof value["compactedMessageCount"] === "number" && Number.isFinite(value["compactedMessageCount"])
+    ? Math.max(0, Math.trunc(value["compactedMessageCount"]))
+    : undefined;
+  const summary = readOptionalString(value, "summary");
+  const beforeTranscriptValue = value["beforeTranscript"];
+  const afterTranscriptValue = value["afterTranscript"];
+  const beforeTranscript = Array.isArray(beforeTranscriptValue)
+    ? beforeTranscriptValue.map(parseConversationMessage).filter((item) => item !== undefined)
+    : undefined;
+  const afterTranscript = Array.isArray(afterTranscriptValue)
+    ? afterTranscriptValue.map(parseConversationMessage).filter((item) => item !== undefined)
+    : undefined;
+
+  if (
+    id === undefined
+    || createdAt === undefined
+    || (reason !== "manual" && reason !== "auto")
+    || compactedMessageCount === undefined
+    || summary === undefined
+    || beforeTranscript === undefined
+    || afterTranscript === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    kind: "compaction",
+    id,
+    createdAt,
+    reason,
+    compactedMessageCount,
+    summary,
+    beforeTranscript,
+    afterTranscript
   };
 }
 

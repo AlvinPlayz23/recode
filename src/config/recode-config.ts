@@ -20,6 +20,11 @@ import {
   type ToolMarkerName
 } from "../tui/theme.ts";
 import type { ApprovalMode, ToolApprovalScope } from "../tools/tool.ts";
+import {
+  permissionRulesFromConfig,
+  type PermissionConfig
+} from "../tools/permission-rules.ts";
+import type { PermissionAction, PermissionRule } from "../tools/tool.ts";
 
 /**
  * One configured model entry.
@@ -70,6 +75,7 @@ export interface RecodeConfigFile {
   readonly toolMarkerName?: ToolMarkerName;
   readonly approvalMode?: ApprovalMode;
   readonly approvalAllowlist?: readonly ToolApprovalScope[];
+  readonly permissionRules?: readonly PermissionRule[];
   readonly layoutMode?: LayoutMode;
   readonly minimalMode?: boolean;
   readonly todoPanelEnabled?: boolean;
@@ -286,6 +292,16 @@ export function selectConfiguredApprovalAllowlist(
 }
 
 /**
+ * Update persistent permission rules.
+ */
+export function selectConfiguredPermissionRules(
+  config: RecodeConfigFile,
+  permissionRules: readonly PermissionRule[]
+): RecodeConfigFile {
+  return patchRecodeConfig(config, { permissionRules });
+}
+
+/**
  * Update the configured layout mode.
  */
 export function selectConfiguredLayoutMode(
@@ -325,6 +341,8 @@ function parseRecodeConfigFile(value: unknown): RecodeConfigFile {
   const toolMarkerName = readOptionalToolMarkerName(value, "toolMarkerName");
   const approvalMode = readOptionalApprovalMode(value, "approvalMode");
   const approvalAllowlist = readOptionalApprovalAllowlist(value, "approvalAllowlist");
+  const permissionRules = readOptionalPermissionRules(value, "permissionRules")
+    ?? readOptionalPermissionRules(value, "permissions");
   const layoutMode = readOptionalLayoutMode(value, "layoutMode");
   const minimalMode = readOptionalBoolean(value, "minimalMode");
   const todoPanelEnabled = readOptionalBoolean(value, "todoPanelEnabled");
@@ -341,6 +359,7 @@ function parseRecodeConfigFile(value: unknown): RecodeConfigFile {
     ...(toolMarkerName === undefined ? {} : { toolMarkerName }),
     ...(approvalMode === undefined ? {} : { approvalMode }),
     ...(approvalAllowlist === undefined ? {} : { approvalAllowlist }),
+    ...(permissionRules === undefined ? {} : { permissionRules }),
     ...(layoutMode === undefined ? {} : { layoutMode }),
     ...(minimalMode === undefined ? {} : { minimalMode }),
     ...(todoPanelEnabled === undefined ? {} : { todoPanelEnabled }),
@@ -550,6 +569,91 @@ function readOptionalApprovalAllowlist(
   return value.filter((item): item is ToolApprovalScope =>
     item === "read" || item === "edit" || item === "bash" || item === "web"
   );
+}
+
+function readOptionalPermissionRules(
+  record: Record<string, unknown>,
+  key: string
+): readonly PermissionRule[] | undefined {
+  const value = record[key];
+  if (Array.isArray(value)) {
+    const rules = value.map(parsePermissionRule).filter((item) => item !== undefined);
+    return rules.length === 0 ? undefined : rules;
+  }
+
+  const config = parsePermissionConfig(value);
+  if (config === undefined) {
+    return undefined;
+  }
+
+  const rules = permissionRulesFromConfig(config);
+  return rules.length === 0 ? undefined : rules;
+}
+
+function parsePermissionRule(value: unknown): PermissionRule | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const permission = readOptionalNonEmptyString(value, "permission");
+  const pattern = readOptionalNonEmptyString(value, "pattern");
+  const action = parsePermissionAction(value["action"]);
+
+  if (permission === undefined || pattern === undefined || action === undefined) {
+    return undefined;
+  }
+
+  return {
+    permission,
+    pattern,
+    action
+  };
+}
+
+function parsePermissionConfig(value: unknown): PermissionConfig | undefined {
+  const action = parsePermissionAction(value);
+  if (action !== undefined) {
+    return action;
+  }
+
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const config: Record<string, PermissionAction | Record<string, PermissionAction>> = {};
+  for (const [permission, ruleValue] of Object.entries(value)) {
+    if (permission.trim() === "") {
+      continue;
+    }
+
+    const ruleAction = parsePermissionAction(ruleValue);
+    if (ruleAction !== undefined) {
+      config[permission] = ruleAction;
+      continue;
+    }
+
+    if (!isRecord(ruleValue)) {
+      continue;
+    }
+
+    const patterns: Record<string, PermissionAction> = {};
+    for (const [pattern, patternActionValue] of Object.entries(ruleValue)) {
+      const patternAction = parsePermissionAction(patternActionValue);
+      if (pattern.trim() !== "" && patternAction !== undefined) {
+        patterns[pattern] = patternAction;
+      }
+    }
+
+    if (Object.keys(patterns).length > 0) {
+      config[permission] = patterns;
+    }
+  }
+
+  return Object.keys(config).length === 0 ? undefined : config;
+}
+
+function parsePermissionAction(value: unknown): PermissionAction | undefined {
+  return value === "allow" || value === "deny" || value === "ask" ? value : undefined;
 }
 
 function readOptionalLayoutMode(record: Record<string, unknown>, key: string): LayoutMode | undefined {

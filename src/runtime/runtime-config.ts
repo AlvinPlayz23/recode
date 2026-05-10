@@ -17,7 +17,7 @@ import {
   type ProviderKind
 } from "../providers/provider-kind.ts";
 import { isJsonObject, type JsonObject } from "../shared/json-value.ts";
-import type { ApprovalMode, ToolApprovalScope } from "../tools/tool.ts";
+import type { ApprovalMode, PermissionRule, ToolApprovalScope } from "../tools/tool.ts";
 import {
   buildRuntimeProviders,
   type RuntimeProviderConfig
@@ -38,6 +38,7 @@ export interface RuntimeConfig {
   readonly providers: readonly RuntimeProviderConfig[];
   readonly approvalMode: ApprovalMode;
   readonly approvalAllowlist: readonly ToolApprovalScope[];
+  readonly permissionRules: readonly PermissionRule[];
   readonly agents?: Readonly<Record<string, ConfiguredAgent>>;
   readonly apiKey?: string;
   readonly providerHeaders?: Readonly<Record<string, string>>;
@@ -87,6 +88,7 @@ export function selectRuntimeProviderModel(
     providers,
     approvalMode: runtimeConfig.approvalMode,
     approvalAllowlist: runtimeConfig.approvalAllowlist,
+    permissionRules: runtimeConfig.permissionRules,
     ...(runtimeConfig.agents === undefined ? {} : { agents: runtimeConfig.agents }),
     workspaceRoot: runtimeConfig.workspaceRoot,
     configPath: runtimeConfig.configPath,
@@ -222,6 +224,7 @@ export function loadRuntimeConfig(workspaceRoot: string): RuntimeConfig {
     providers,
     approvalMode: config.approvalMode ?? "approval",
     approvalAllowlist: config.approvalAllowlist ?? [],
+    permissionRules: config.permissionRules ?? [],
     ...(config.agents === undefined ? {} : { agents: config.agents }),
     ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
     ...(temperature === undefined ? {} : { temperature }),

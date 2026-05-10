@@ -68,6 +68,16 @@ export type ApprovalMode = "approval" | "auto-edits" | "yolo";
 /** Tool approval scope bucket. */
 export type ToolApprovalScope = "read" | "edit" | "bash" | "web";
 
+/** Persistent permission-rule action. */
+export type PermissionAction = "allow" | "deny" | "ask";
+
+/** One OpenCode-style permission rule. Later rules take precedence. */
+export interface PermissionRule {
+  readonly permission: ToolApprovalScope | string;
+  readonly pattern: string;
+  readonly action: PermissionAction;
+}
+
 /** User decision for a tool approval prompt. */
 export type ToolApprovalDecision = "allow-once" | "allow-always" | "deny";
 
@@ -75,6 +85,8 @@ export type ToolApprovalDecision = "allow-once" | "allow-always" | "deny";
 export interface ToolApprovalRequest {
   readonly toolName: string;
   readonly scope: ToolApprovalScope;
+  readonly permission: string;
+  readonly pattern: string;
   readonly arguments: ToolArguments;
 }
 
@@ -140,6 +152,7 @@ export interface ToolExecutionContext {
   readonly workspaceRoot: string;
   readonly approvalMode?: ApprovalMode;
   readonly approvalAllowlist?: readonly ToolApprovalScope[];
+  readonly permissionRules?: readonly PermissionRule[];
   readonly abortSignal?: AbortSignal;
   readonly updateToolMetadata?: ToolMetadataUpdateHandler;
   readonly requestToolApproval?: ToolApprovalHandler;

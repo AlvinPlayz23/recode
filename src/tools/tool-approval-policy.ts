@@ -2,6 +2,11 @@
  * Tool approval policy helpers.
  */
 
+import {
+  evaluatePermissionRules,
+  getToolPermissionKey,
+  getToolPermissionPattern
+} from "./permission-rules.ts";
 import type { ToolArguments, ToolApprovalRequest, ToolApprovalScope, ToolExecutionContext } from "./tool.ts";
 
 /**
@@ -14,6 +19,18 @@ export async function checkToolApproval(
 ): Promise<string | undefined> {
   const approvalMode = context.approvalMode ?? "approval";
   const scope = getToolApprovalScope(toolName);
+  const permission = getToolPermissionKey(toolName, scope);
+  const pattern = getToolPermissionPattern(toolName, arguments_);
+  const rule = evaluatePermissionRules(permission, pattern, context.permissionRules ?? []);
+
+  if (rule.action === "deny") {
+    return `Tool execution denied by permission rule (${permission}:${pattern}).`;
+  }
+
+  if (rule.action === "allow") {
+    return undefined;
+  }
+
   if (!requiresApproval(approvalMode, scope, context.approvalAllowlist ?? [])) {
     return undefined;
   }
@@ -25,6 +42,8 @@ export async function checkToolApproval(
   const request: ToolApprovalRequest = {
     toolName,
     scope,
+    permission,
+    pattern,
     arguments: arguments_
   };
 

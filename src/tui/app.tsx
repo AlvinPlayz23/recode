@@ -34,6 +34,7 @@ import {
   DEFAULT_FALLBACK_CONTEXT_WINDOW_TOKENS,
   assertConversationFitsContextWindow,
   compactConversation,
+  createCompactionSessionSnapshot,
   estimateConversationContextTokens,
   evaluateAutoCompaction,
   type ContextTokenEstimate
@@ -47,10 +48,16 @@ import {
 import {
   loadRecodeConfigFile,
   saveRecodeConfigFile,
+  selectConfiguredPermissionRules,
   setConfiguredModelContextWindow
 } from "../config/recode-config.ts";
 import { OperationAbortedError } from "../errors/recode-error.ts";
 import type { SessionEvent } from "../session/session-event.ts";
+import {
+  applySessionEvent,
+  createEmptySessionState,
+  type SessionState
+} from "../session/session-state.ts";
 import {
   resolveHistoryRoot,
   type SavedConversationRecord
@@ -67,6 +74,7 @@ import {
 } from "../runtime/runtime-config.ts";
 import type {
   ApprovalMode,
+  PermissionRule,
   QuestionToolDecision,
   QuestionToolRequest,
   ToolApprovalDecision,
@@ -75,6 +83,7 @@ import type {
   ToolExecutionContext,
   TodoItem
 } from "../tools/tool.ts";
+import { createPermissionRule } from "../tools/permission-rules.ts";
 import { ToolRegistry } from "../tools/tool-registry.ts";
 import {
   findBuiltinCommands,
@@ -222,7 +231,6 @@ import {
   createActiveQuestionRequest,
   formatApprovalRequestDescription,
   formatApprovalRequestTitle,
-  getNextApprovalAllowlist,
   isContextWindowQuestionRequest,
   moveQuestionIndex,
   moveQuestionOptionIndex,
@@ -231,9 +239,7 @@ import {
   updateQuestionCustomText
 } from "./interactive-prompts.ts";
 import {
-  appendToolCallEntryAndCreateAssistantPlaceholder,
   buildPromptTranscriptSnapshot,
-  finalizeAssistantStreamEntry,
   persistPromptTranscript
 } from "./submission-session.ts";
 import {
@@ -255,14 +261,11 @@ import {
 import {
   appendEntry,
   createEntry,
-  createToolResultUiEntry,
   extractLatestTodosFromTranscript,
-  markToolCallEntryFinished,
   rehydrateEntriesFromTranscript,
-  replaceTaskToolCallEntryWithResult,
   renderVisibleEntries,
   updateEntryBody,
-  updateToolCallEntryMetadata,
+  uiEntriesFromSessionState,
   type UiEntry
 } from "./transcript-entry-state.ts";
 import type {
@@ -350,6 +353,7 @@ export function TuiApp(props: TuiAppProps) {
   const [customizePickerSelectedRow, setCustomizePickerSelectedRow] = createSignal(0);
   const [approvalMode, setApprovalMode] = createSignal<ApprovalMode>(props.runtimeConfig.approvalMode);
   const [approvalAllowlist, setApprovalAllowlist] = createSignal<readonly ToolApprovalScope[]>(props.runtimeConfig.approvalAllowlist);
+  const [permissionRules, setPermissionRules] = createSignal<readonly PermissionRule[]>(props.runtimeConfig.permissionRules);
   const [approvalModePickerOpen, setApprovalModePickerOpen] = createSignal(false);
   const [approvalModePickerSelectedIndex, setApprovalModePickerSelectedIndex] = createSignal(0);
   const [approvalModePickerWindowStart, setApprovalModePickerWindowStart] = createSignal(0);
@@ -466,6 +470,7 @@ export function TuiApp(props: TuiAppProps) {
           ...props.toolContext,
           approvalMode: approvalMode(),
           approvalAllowlist: approvalAllowlist(),
+          permissionRules: permissionRules(),
           requestToolApproval,
           requestQuestionAnswers,
           ...(request.abortSignal === undefined ? {} : { abortSignal: request.abortSignal })
@@ -504,6 +509,7 @@ export function TuiApp(props: TuiAppProps) {
     ...props.toolContext,
     approvalMode: approvalMode(),
     approvalAllowlist: approvalAllowlist(),
+    permissionRules: permissionRules(),
     requestToolApproval,
     requestQuestionAnswers,
     runSubagentTask: runTuiSubagentTask
@@ -812,7 +818,16 @@ export function TuiApp(props: TuiAppProps) {
     setSessionRuntimeConfig((current) => ({
       ...current,
       approvalMode: nextApprovalMode,
-      approvalAllowlist: nextApprovalAllowlist
+      approvalAllowlist: nextApprovalAllowlist,
+      permissionRules: permissionRules()
+    }));
+  };
+
+  const updatePermissionRules = (nextPermissionRules: readonly PermissionRule[]) => {
+    setPermissionRules(nextPermissionRules);
+    setSessionRuntimeConfig((current) => ({
+      ...current,
+      permissionRules: nextPermissionRules
     }));
   };
 
@@ -967,13 +982,16 @@ export function TuiApp(props: TuiAppProps) {
     }
 
     setTranscriptMessages(compacted.transcript);
+    const snapshot = createCompactionSessionSnapshot(previousMessages(), compacted, "auto");
+    const nextSnapshots = [...(currentConversation()?.sessionSnapshots ?? []), snapshot];
     const persistedConversation = persistConversationSession(
       historyRoot(),
       sessionRuntimeConfig(),
       compacted.transcript,
       currentConversation(),
       sessionMode(),
-      subagentTasks()
+      subagentTasks(),
+      nextSnapshots
     );
     setCurrentConversation(persistedConversation);
     appendEntry(
@@ -1507,20 +1525,23 @@ export function TuiApp(props: TuiAppProps) {
     }
 
     if (decision === "allow-always") {
-      const nextAllowlist = getNextApprovalAllowlist(decision, request.scope, approvalAllowlist());
+      const nextRules = [
+        ...permissionRules(),
+        createPermissionRule(request.permission, request.pattern, "allow")
+      ];
 
-      if (nextAllowlist !== approvalAllowlist()) {
-        try {
-          persistSelectedApprovalAllowlist(sessionRuntimeConfig().configPath, nextAllowlist);
-          updateApprovalSettings(approvalMode(), nextAllowlist);
-          appendEntry(
-            setEntries,
-            createEntry("status", "status", `Always allowing ${request.scope} tools from now on`)
-          );
-        } catch (error) {
-          appendEntry(setEntries, createEntry("error", "error", toErrorMessage(error)));
-          decision = "deny";
-        }
+      try {
+        const config = loadRecodeConfigFile(sessionRuntimeConfig().configPath);
+        const nextConfig = selectConfiguredPermissionRules(config, nextRules);
+        saveRecodeConfigFile(sessionRuntimeConfig().configPath, nextConfig);
+        updatePermissionRules(nextRules);
+        appendEntry(
+          setEntries,
+          createEntry("status", "status", `Always allowing ${request.permission}:${request.pattern}`)
+        );
+      } catch (error) {
+        appendEntry(setEntries, createEntry("error", "error", toErrorMessage(error)));
+        decision = "deny";
       }
     }
 
@@ -1768,85 +1789,58 @@ export function TuiApp(props: TuiAppProps) {
 
     const abortController = new AbortController();
     activeAbortController = abortController;
-    let currentStreamingId: string | undefined;
     let latestTranscript: readonly ConversationMessage[] | undefined;
-    let deferredAssistantTextAfterToolCall = "";
-    let shouldDeferAssistantTextUntilToolResult = false;
-    let toolResultSeenForDeferredText = false;
+    const baseEntries = entries();
+    let turnSessionState: SessionState = createEmptySessionState();
 
-    const flushDeferredAssistantTextAfterToolCall = () => {
-      const body = deferredAssistantTextAfterToolCall;
-      deferredAssistantTextAfterToolCall = "";
-      shouldDeferAssistantTextUntilToolResult = false;
-      toolResultSeenForDeferredText = false;
-      if (body.trim() !== "") {
-        appendEntry(setEntries, createEntry("assistant", "Recode", body));
+    const syncTurnSessionEntries = () => {
+      setEntries([...baseEntries, ...uiEntriesFromSessionState(turnSessionState)]);
+    };
+
+    const latestProjectedAssistantText = () => {
+      for (let index = turnSessionState.entries.length - 1; index >= 0; index -= 1) {
+        const entry = turnSessionState.entries[index];
+        if (entry?.kind === "assistant" && entry.content !== "") {
+          return entry.content;
+        }
       }
+      return "";
     };
 
     const handleSessionEvent = (event: SessionEvent) => {
+      turnSessionState = applySessionEvent(turnSessionState, event);
+      syncTurnSessionEntries();
+
       switch (event.type) {
+        case "assistant.text.delta":
+          if (busyPhase() === "retrying") {
+            setBusyPhase("thinking");
+          }
+          setProviderStatusText(undefined);
+          break;
         case "tool.started":
           setBusyPhase("tool");
           setProviderStatusText(undefined);
-          flushAndResetPendingStreamText();
-          if (shouldDeferAssistantTextUntilToolResult && toolResultSeenForDeferredText) {
-            flushDeferredAssistantTextAfterToolCall();
-          }
-          shouldDeferAssistantTextUntilToolResult = true;
-          toolResultSeenForDeferredText = false;
-          appendToolCallEntryAndCreateAssistantPlaceholder({
-            currentStreamingId,
-            currentStreamingBody: streamingBody(),
-            toolCall: event.toolCall,
-            appendAssistantPlaceholder: false,
-            setEntries
-          });
-          currentStreamingId = undefined;
-          setStreamingBody("");
-          setStreamingEntryId(undefined);
-          break;
-        case "tool.metadata.updated":
-          setEntries((previous) => updateToolCallEntryMetadata(previous, event.toolCallId, event.update));
           break;
         case "tool.completed":
         case "tool.errored": {
           const toolResult = event.toolResult;
           setBusyPhase("thinking");
           setProviderStatusText(undefined);
-          toolResultSeenForDeferredText = true;
           invalidateWorkspaceFileSuggestionCache(sessionRuntimeConfig().workspaceRoot);
           setFileSuggestionVersion((value) => value + 1);
-          setEntries((previous) => markToolCallEntryFinished(previous, toolResult.toolCallId, toolResult.isError));
-          const toolResultEntry = createToolResultUiEntry(
-            toolResult.toolName,
-            toolResult.content,
-            toolResult.isError,
-            toolResult.metadata,
-            toolResult.toolCallId
-          );
           if (!toolResult.isError && toolResult.metadata?.kind === "todo-list") {
             setTodos(toolResult.metadata.todos);
             if (toolResult.metadata.todos.length === 0) {
               setTodoDropupOpen(false);
             }
           }
-          if (toolResult.toolName === "Task") {
-            let replaced = false;
-            setEntries((previous) => {
-              const replacement = replaceTaskToolCallEntryWithResult(previous, toolResult);
-              replaced = replacement.replaced;
-              return replacement.entries;
-            });
-            if (replaced) {
-              break;
-            }
-          }
-          if (toolResultEntry !== undefined) {
-            appendEntry(setEntries, toolResultEntry);
-          }
           break;
         }
+        case "provider.retry":
+          setBusyPhase("retrying");
+          setProviderStatusText(`retry ${event.status.attempt}/${event.status.maxAttempts}`);
+          break;
         default:
           break;
       }
@@ -1854,13 +1848,8 @@ export function TuiApp(props: TuiAppProps) {
 
     try {
       const preparedTranscript = await prepareTranscriptForPendingPrompt(modelPrompt, abortController.signal);
-      appendEntry(setEntries, createEntry("user", "You", prompt));
-
-      const streamingEntry = createEntry("assistant", "Recode", "");
-      currentStreamingId = streamingEntry.id;
       setStreamingBody("");
-      setStreamingEntryId(currentStreamingId);
-      appendEntry(setEntries, streamingEntry);
+      setStreamingEntryId(undefined);
       const requestAffinityKey = currentConversation()?.id;
 
       const result = await runSingleTurn({
@@ -1880,46 +1869,11 @@ export function TuiApp(props: TuiAppProps) {
             return;
           }
 
-          const retryText = `retry ${event.attempt}/${event.maxAttempts}`;
           setBusyPhase("retrying");
-          setProviderStatusText(retryText);
-          const retryEntry = createEntry("status", "status", `Retrying provider request (${event.attempt}/${event.maxAttempts})`);
-          setEntries((previous) => {
-            const streamingIndex = currentStreamingId === undefined
-              ? -1
-              : previous.findIndex((entry) => entry.id === currentStreamingId);
-            if (streamingIndex === -1) {
-              return [...previous, retryEntry];
-            }
-            return [
-              ...previous.slice(0, streamingIndex),
-              retryEntry,
-              ...previous.slice(streamingIndex)
-            ];
-          });
+          setProviderStatusText(`retry ${event.attempt}/${event.maxAttempts}`);
         },
         onToolCall() {},
-        onTextDelta(delta) {
-          if (busyPhase() === "retrying") {
-            setBusyPhase("thinking");
-          }
-          setProviderStatusText(undefined);
-          if (shouldDeferAssistantTextUntilToolResult) {
-            if (!toolResultSeenForDeferredText) {
-              deferredAssistantTextAfterToolCall += delta;
-              return;
-            }
-            flushDeferredAssistantTextAfterToolCall();
-            const nextEntry = createEntry("assistant", "Recode", "");
-            currentStreamingId = nextEntry.id;
-            setStreamingBody("");
-            setStreamingEntryId(currentStreamingId);
-            appendEntry(setEntries, nextEntry);
-          }
-          if (currentStreamingId !== undefined) {
-            schedulePendingStreamTextFlush(currentStreamingId, delta);
-          }
-        },
+        onTextDelta() {},
         onToolResult() {},
         onTranscriptUpdate(transcript) {
           latestTranscript = transcript;
@@ -1927,13 +1881,6 @@ export function TuiApp(props: TuiAppProps) {
           setLastContextEstimate(estimateConversationContextTokens(transcript));
         }
       });
-
-      // Finalize the last streaming entry by writing finalText or removing the empty placeholder.
-      flushAndResetPendingStreamText();
-      flushDeferredAssistantTextAfterToolCall();
-      const lastId = currentStreamingId;
-      const finalBody = result.finalText !== "" ? result.finalText : streamingBody();
-      finalizeAssistantStreamEntry(setEntries, lastId, finalBody);
 
       setBusyPhase("saving-history");
       persistPromptTranscript({
@@ -1968,12 +1915,7 @@ export function TuiApp(props: TuiAppProps) {
         });
       }
     } catch (error) {
-      flushAndResetPendingStreamText();
-      const currentId = currentStreamingId;
-      const partialBody = streamingBody();
-      if (currentId !== undefined && partialBody !== "") {
-        updateEntryBody(setEntries, currentId, () => partialBody);
-      }
+      const partialBody = latestProjectedAssistantText();
       const transcriptSnapshot = buildPromptTranscriptSnapshot(latestTranscript, partialBody);
       if (transcriptSnapshot.length > 0) {
         setBusyPhase("saving-history");

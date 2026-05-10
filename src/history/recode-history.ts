@@ -31,7 +31,8 @@ import {
 import type {
   RecodeHistoryIndex,
   SavedConversationMeta,
-  SavedConversationRecord
+  SavedConversationRecord,
+  SessionSnapshot
 } from "./recode-history-types.ts";
 
 export { resolveHistoryRoot } from "./recode-history-storage.ts";
@@ -68,7 +69,8 @@ export function createConversationRecord(
   transcript: readonly ConversationMessage[],
   mode: SessionMode,
   seed?: Partial<Pick<SavedConversationRecord, "id" | "createdAt">>,
-  subagentTasks?: readonly SubagentTaskRecord[]
+  subagentTasks?: readonly SubagentTaskRecord[],
+  sessionSnapshots?: readonly SessionSnapshot[]
 ): SavedConversationRecord {
   const now = new Date().toISOString();
   const createdAt = seed?.createdAt ?? now;
@@ -77,7 +79,8 @@ export function createConversationRecord(
   return {
     ...buildConversationMeta(runtimeConfig, transcript, mode, createdAt, now, id),
     transcript,
-    ...(subagentTasks === undefined || subagentTasks.length === 0 ? {} : { subagentTasks })
+    ...(subagentTasks === undefined || subagentTasks.length === 0 ? {} : { subagentTasks }),
+    ...(sessionSnapshots === undefined || sessionSnapshots.length === 0 ? {} : { sessionSnapshots })
   };
 }
 

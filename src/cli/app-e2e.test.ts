@@ -129,7 +129,8 @@ describe("app end-to-end smoke path", () => {
       toolContext: {
         workspaceRoot: runtimeConfig.workspaceRoot,
         approvalMode: "yolo",
-        approvalAllowlist: []
+        approvalAllowlist: [],
+        permissionRules: []
       }
     });
 

@@ -66,6 +66,15 @@ interface ToolPreviewRendererProps {
 
 type ToolPreviewRenderer = (props: ToolPreviewRendererProps) => JSX.Element | undefined;
 
+type EditPreviewLineKind = "added" | "removed" | "omitted";
+
+interface EditPreviewLine {
+  readonly kind: EditPreviewLineKind;
+  readonly text: string;
+}
+
+const EDIT_PREVIEW_MAX_LINES = 24;
+
 const TOOL_PREVIEW_RENDERERS: Readonly<Partial<Record<ToolResultMetadata["kind"], ToolPreviewRenderer>>> = {
   "bash-output": BashToolBlock,
   "edit-preview": EditPreviewToolBlock,
@@ -219,6 +228,7 @@ export function renderEntry(
       const summary = counts !== undefined
         ? `+${counts.added} −${counts.removed}`
         : undefined;
+      const showHeaderSummary = metadata?.kind !== "edit-preview";
 
       return (
         <box flexDirection="column" paddingLeft={4} marginTop={compact() ? 0 : 1} marginBottom={0}>
@@ -232,7 +242,7 @@ export function renderEntry(
                 <text fg={t().hintText} attributes={TextAttributes.DIM}>{previewDetail}</text>
               </box>
             </Show>
-            <Show when={summary !== undefined}>
+            <Show when={summary !== undefined && showHeaderSummary}>
               <box flexShrink={0} paddingLeft={2}>
                 <text fg={t().diffAdded} attributes={TextAttributes.BOLD}>{`+${counts?.added ?? 0}`}</text>
                 <text fg={t().hintText} attributes={TextAttributes.DIM}> </text>
@@ -274,22 +284,130 @@ function EditPreviewToolBlock(props: ToolPreviewRendererProps): JSX.Element | un
     return undefined;
   }
 
+  const metadata = props.metadata;
+  const counts = countDiffLines(metadata.oldText ?? "", metadata.newText ?? "");
+  const title = metadata.replacementCount === undefined || metadata.replacementCount === 1
+    ? "Edit preview"
+    : `Edit preview (${metadata.replacementCount} replacements)`;
+  const previewLines = createMemo(() => buildEditPreviewLines(metadata));
+
   return (
-    <box paddingLeft={2} paddingTop={1} paddingRight={1}>
-      <diff
-        oldCode={props.metadata.oldText ?? ""}
-        newCode={props.metadata.newText ?? ""}
-        language={resolveDiffLanguage(props.metadata.path ?? "")}
-        mode="unified"
-        showLineNumbers={true}
-        context={2}
-        addedLineColor={props.theme().diffAdded}
-        removedLineColor={props.theme().diffRemoved}
-        unchangedLineColor="transparent"
-        width="100%"
-      />
+    <box
+      flexDirection="column"
+      marginTop={1}
+      marginLeft={2}
+      marginRight={2}
+      paddingLeft={1}
+      paddingRight={1}
+      border
+      borderStyle="single"
+      borderColor={props.theme().divider}
+      backgroundColor={props.theme().bashMessageBackgroundColor}
+      title={title}
+      titleAlignment="left"
+      flexGrow={1}
+      flexShrink={1}
+      minWidth={0}
+    >
+      <box flexDirection="row" flexGrow={1} flexShrink={1} minWidth={0}>
+        <box flexGrow={1} flexShrink={1} minWidth={0}>
+          <text fg={props.theme().tool} attributes={TextAttributes.BOLD}>{metadata.path}</text>
+        </box>
+        <box flexShrink={0} paddingLeft={2}>
+          <text fg={props.theme().success} attributes={TextAttributes.BOLD}>{`+${counts.added}`}</text>
+          <text fg={props.theme().hintText} attributes={TextAttributes.DIM}> </text>
+          <text fg={props.theme().error} attributes={TextAttributes.BOLD}>{`-${counts.removed}`}</text>
+        </box>
+      </box>
+      <box flexDirection="column" marginTop={1} flexGrow={1} flexShrink={1} minWidth={0}>
+        <For each={previewLines()}>
+          {(line) => <EditPreviewLineRow line={line} theme={props.theme} />}
+        </For>
+      </box>
     </box>
   );
+}
+
+function EditPreviewLineRow(props: {
+  readonly line: EditPreviewLine;
+  readonly theme: () => ReturnType<typeof getTheme>;
+}): JSX.Element {
+  const isAdded = () => props.line.kind === "added";
+  const isRemoved = () => props.line.kind === "removed";
+  const marker = () => isAdded() ? "+" : isRemoved() ? "-" : " ";
+  const foreground = () => {
+    if (isAdded()) {
+      return props.theme().success;
+    }
+    if (isRemoved()) {
+      return props.theme().error;
+    }
+    return props.theme().hintText;
+  };
+  const background = () => {
+    if (isAdded()) {
+      return props.theme().diffAdded;
+    }
+    if (isRemoved()) {
+      return props.theme().diffRemoved;
+    }
+    return "transparent";
+  };
+
+  return (
+    <box
+      flexDirection="row"
+      backgroundColor={background()}
+      flexGrow={1}
+      flexShrink={1}
+      minWidth={0}
+    >
+      <box width={3} flexShrink={0}>
+        <text fg={foreground()} attributes={TextAttributes.BOLD}>{marker()}</text>
+      </box>
+      <box flexGrow={1} flexShrink={1} minWidth={0}>
+        <text fg={props.line.kind === "omitted" ? props.theme().hintText : props.theme().assistantBody}>
+          {props.line.text === "" ? " " : props.line.text}
+        </text>
+      </box>
+    </box>
+  );
+}
+
+function buildEditPreviewLines(metadata: EditToolResultMetadata): readonly EditPreviewLine[] {
+  const removedLines = splitDiffLines(metadata.oldText).map((line): EditPreviewLine => ({
+    kind: "removed",
+    text: line
+  }));
+  const addedLines = splitDiffLines(metadata.newText).map((line): EditPreviewLine => ({
+    kind: "added",
+    text: line
+  }));
+  const lines = [...removedLines, ...addedLines];
+
+  if (lines.length <= EDIT_PREVIEW_MAX_LINES) {
+    return lines;
+  }
+
+  const omittedCount = lines.length - EDIT_PREVIEW_MAX_LINES;
+  return [
+    ...lines.slice(0, EDIT_PREVIEW_MAX_LINES),
+    {
+      kind: "omitted",
+      text: `... ${omittedCount} more changed line${omittedCount === 1 ? "" : "s"}`
+    }
+  ];
+}
+
+function splitDiffLines(value: string): readonly string[] {
+  const normalized = value.replace(/\r\n/g, "\n");
+  const lines = normalized.split("\n");
+
+  if (lines.length > 1 && lines.at(-1) === "") {
+    return lines.slice(0, -1);
+  }
+
+  return lines;
 }
 
 function BashToolBlock(props: ToolPreviewRendererProps): JSX.Element | undefined {
@@ -455,34 +573,4 @@ function TodoLine(props: { todo: TodoItem; t: () => ReturnType<typeof getTheme> 
       </box>
     </box>
   );
-}
-
-function resolveDiffLanguage(path: string): string {
-  const normalized = path.trim().toLowerCase();
-
-  if (normalized.endsWith(".tsx") || normalized.endsWith(".ts") || normalized.endsWith(".jsx") || normalized.endsWith(".js")) {
-    return "typescript";
-  }
-
-  if (normalized.endsWith(".json")) {
-    return "json";
-  }
-
-  if (normalized.endsWith(".md")) {
-    return "markdown";
-  }
-
-  if (normalized.endsWith(".css")) {
-    return "css";
-  }
-
-  if (normalized.endsWith(".html")) {
-    return "html";
-  }
-
-  if (normalized.endsWith(".sh")) {
-    return "bash";
-  }
-
-  return "text";
 }

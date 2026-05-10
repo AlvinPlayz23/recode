@@ -157,6 +157,52 @@ describe("executeToolCall approval handling", () => {
     expect(result.content).toBe("read");
   });
 
+  it("allows matching permission rules before prompting", async () => {
+    const result = await executeToolCall(
+      {
+        ...createToolCall("Bash"),
+        argumentsJson: "{\"command\":\"git status --short\"}"
+      },
+      new ToolRegistry([{ ...EDIT_TOOL, name: "Bash" }]),
+      {
+        workspaceRoot: "/workspace",
+        approvalMode: "approval",
+        permissionRules: [
+          { permission: "bash", pattern: "git status*", action: "allow" }
+        ]
+      }
+    );
+
+    expect(result.isError).toBe(false);
+    expect(result.content).toBe("edited");
+  });
+
+  it("denies matching permission rules without asking", async () => {
+    let asked = false;
+    const result = await executeToolCall(
+      {
+        ...createToolCall("Bash"),
+        argumentsJson: "{\"command\":\"rm -rf dist\"}"
+      },
+      new ToolRegistry([{ ...EDIT_TOOL, name: "Bash" }]),
+      {
+        workspaceRoot: "/workspace",
+        approvalMode: "yolo",
+        permissionRules: [
+          { permission: "bash", pattern: "rm *", action: "deny" }
+        ],
+        requestToolApproval: async () => {
+          asked = true;
+          return "allow-once";
+        }
+      }
+    );
+
+    expect(asked).toBe(false);
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("denied by permission rule");
+  });
+
   it("treats web tools as a separate approval scope", async () => {
     const blocked = await executeToolCall(
       createToolCall("WebSearch"),

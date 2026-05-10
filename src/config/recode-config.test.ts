@@ -17,6 +17,7 @@ import {
   selectConfiguredApprovalMode,
   selectConfiguredLayoutMode,
   selectConfiguredMinimalMode,
+  selectConfiguredPermissionRules,
   selectConfiguredTodoPanelEnabled,
   setConfiguredModelContextWindow,
   selectConfiguredProviderModel,
@@ -203,9 +204,40 @@ describe("recode config", () => {
   it("updates approval settings", () => {
     const modeConfig = selectConfiguredApprovalMode(createEmptyConfig(), "yolo");
     const allowlistConfig = selectConfiguredApprovalAllowlist(modeConfig, ["bash", "web"]);
+    const rulesConfig = selectConfiguredPermissionRules(allowlistConfig, [
+      { permission: "bash", pattern: "git status*", action: "allow" }
+    ]);
 
-    expect(allowlistConfig.approvalMode).toBe("yolo");
-    expect(allowlistConfig.approvalAllowlist).toEqual(["bash", "web"]);
+    expect(rulesConfig.approvalMode).toBe("yolo");
+    expect(rulesConfig.approvalAllowlist).toEqual(["bash", "web"]);
+    expect(rulesConfig.permissionRules).toEqual([
+      { permission: "bash", pattern: "git status*", action: "allow" }
+    ]);
+  });
+
+  it("loads OpenCode-style permission config objects", () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "recode-config-"));
+    const configPath = resolveConfigPath(workspaceRoot, ".recode/config.json");
+    const rawConfig = {
+      version: 1,
+      providers: [],
+      permissions: {
+        bash: {
+          "git status*": "allow",
+          "rm *": "deny"
+        },
+        edit: "ask"
+      }
+    };
+
+    mkdirSync(dirname(configPath), { recursive: true });
+    writeFileSync(configPath, `${JSON.stringify(rawConfig, null, 2)}\n`, "utf8");
+
+    expect(loadRecodeConfigFile(configPath).permissionRules).toEqual([
+      { permission: "bash", pattern: "git status*", action: "allow" },
+      { permission: "bash", pattern: "rm *", action: "deny" },
+      { permission: "edit", pattern: "*", action: "ask" }
+    ]);
   });
 
   it("preserves valid web approval scope and drops invalid scopes while loading config", () => {

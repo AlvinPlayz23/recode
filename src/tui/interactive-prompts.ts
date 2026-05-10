@@ -32,8 +32,8 @@ export const APPROVAL_DECISIONS: readonly ApprovalDecisionOption[] = [
   },
   {
     decision: "allow-always",
-    label: "Always allow this scope",
-    description: "Persist this tool scope in the config allowlist."
+    label: "Always allow this target",
+    description: "Persist an allow rule for this permission and target pattern."
   },
   {
     decision: "deny",
@@ -108,7 +108,7 @@ export function getNextApprovalAllowlist(
  * Format the title for a tool approval prompt.
  */
 export function formatApprovalRequestTitle(request: ToolApprovalRequest): string {
-  return `${request.toolName} wants ${request.scope} access.`;
+  return `${request.toolName} wants ${request.permission} access.`;
 }
 
 /**
@@ -116,9 +116,10 @@ export function formatApprovalRequestTitle(request: ToolApprovalRequest): string
  */
 export function formatApprovalRequestDescription(request: ToolApprovalRequest): string {
   const summary = summarizeToolArguments(request.toolName, JSON.stringify(request.arguments));
+  const ruleTarget = `${request.permission}:${request.pattern}`;
   return summary === ""
-    ? "Choose how Recode should handle this tool call."
-    : `Details: ${summary}`;
+    ? `Rule target: ${ruleTarget}`
+    : `Rule target: ${ruleTarget} · Details: ${summary}`;
 }
 
 /**

@@ -65,7 +65,8 @@ Options:
       toolContext: {
         workspaceRoot: runtimeConfig.workspaceRoot,
         approvalMode: runtimeConfig.approvalMode,
-        approvalAllowlist: runtimeConfig.approvalAllowlist
+        approvalAllowlist: runtimeConfig.approvalAllowlist,
+        permissionRules: runtimeConfig.permissionRules
       }
     });
   } else {
@@ -103,6 +104,7 @@ Options:
           workspaceRoot: runtimeConfig.workspaceRoot,
           approvalMode: runtimeConfig.approvalMode,
           approvalAllowlist: runtimeConfig.approvalAllowlist,
+          permissionRules: runtimeConfig.permissionRules,
           runSubagentTask: async (request) => await runSubagentTask({
             request,
             parentRuntimeConfig: runtimeConfig,
@@ -112,6 +114,7 @@ Options:
               workspaceRoot: runtimeConfig.workspaceRoot,
               approvalMode: runtimeConfig.approvalMode,
               approvalAllowlist: runtimeConfig.approvalAllowlist,
+              permissionRules: runtimeConfig.permissionRules,
               ...(request.abortSignal === undefined ? {} : { abortSignal: request.abortSignal })
             },
             findTask(taskId) {

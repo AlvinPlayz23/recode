@@ -17,6 +17,7 @@ import type {
   ContinuationSummaryMessage,
   ConversationMessage
 } from "../transcript/message.ts";
+import type { CompactionSessionSnapshot } from "../history/recode-history-types.ts";
 import type { StepTokenUsage } from "./step-stats.ts";
 
 const DEFAULT_SUMMARY_CONTEXT_WINDOW_TOKENS = 200_000;
@@ -96,6 +97,26 @@ export interface CompactConversationOptions {
   readonly transcript: readonly ConversationMessage[];
   readonly languageModel: AiModel;
   readonly abortSignal?: AbortSignal;
+}
+
+/**
+ * Build a durable snapshot for a completed compaction.
+ */
+export function createCompactionSessionSnapshot(
+  beforeTranscript: readonly ConversationMessage[],
+  result: Extract<CompactConversationResult, { readonly kind: "compacted" }>,
+  reason: CompactionSessionSnapshot["reason"]
+): CompactionSessionSnapshot {
+  return {
+    kind: "compaction",
+    id: crypto.randomUUID(),
+    createdAt: new Date().toISOString(),
+    reason,
+    compactedMessageCount: result.compactedMessageCount,
+    summary: result.summaryMessage.content,
+    beforeTranscript,
+    afterTranscript: result.transcript
+  };
 }
 
 /**

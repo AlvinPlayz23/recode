@@ -165,6 +165,7 @@ function createRuntimeConfig(
     providers,
     approvalMode: "approval",
     approvalAllowlist: [],
+    permissionRules: [],
     baseUrl: "https://api.openai.com/v1",
     ...overrides
   };

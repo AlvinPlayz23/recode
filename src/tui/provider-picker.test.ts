@@ -82,6 +82,7 @@ function createRuntimeConfig(): RuntimeConfig {
     ],
     approvalMode: "approval",
     approvalAllowlist: [],
+    permissionRules: [],
     baseUrl: "https://primary.example/v1"
   };
 }

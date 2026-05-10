@@ -6,6 +6,7 @@ import type { AiModel } from "../ai/types.ts";
 import type { SubagentTaskRecord } from "../agent/subagent.ts";
 import {
   compactConversation,
+  createCompactionSessionSnapshot,
   estimateConversationContextTokens,
   type ContextTokenEstimate
 } from "../agent/compact-conversation.ts";
@@ -281,7 +282,8 @@ function forkCurrentConversation(options: BuiltinCommandDispatchOptions): void {
     options.runtimeConfig,
     options.transcript,
     options.sessionMode,
-    options.subagentTasks
+    options.subagentTasks,
+    options.currentConversation?.sessionSnapshots
   );
 
   options.setConversation(forkedConversation);
@@ -316,13 +318,16 @@ async function compactCurrentConversation(options: BuiltinCommandDispatchOptions
 
     options.setPreviousMessages(compacted.transcript);
     options.setLastContextEstimate(estimateConversationContextTokens(compacted.transcript));
+    const snapshot = createCompactionSessionSnapshot(options.transcript, compacted, "manual");
+    const nextSnapshots = [...(options.currentConversation?.sessionSnapshots ?? []), snapshot];
     const persistedConversation = persistConversationSession(
       options.historyRoot,
       options.runtimeConfig,
       compacted.transcript,
       options.currentConversation,
       options.sessionMode,
-      options.subagentTasks
+      options.subagentTasks,
+      nextSnapshots
     );
     options.setConversation(persistedConversation);
     options.appendEntry(

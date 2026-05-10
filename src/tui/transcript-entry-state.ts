@@ -3,6 +3,7 @@
  */
 
 import type { TodoItem, ToolResultMetadata } from "../tools/tool.ts";
+import type { SessionEntry, SessionState, ToolSessionEntry } from "../session/session-state.ts";
 import { parseTaskToolInput } from "../tools/task-tool.ts";
 import { parseTodoWriteInput } from "../tools/todo-write-tool.ts";
 import {
@@ -30,6 +31,117 @@ export interface UiEntry {
  */
 export interface SetUiEntries {
   (setter: (previous: readonly UiEntry[]) => readonly UiEntry[]): void;
+}
+
+/**
+ * Convert projected session entries into visible TUI transcript entries.
+ */
+export function uiEntriesFromSessionEntries(sessionEntries: readonly SessionEntry[]): readonly UiEntry[] {
+  const entries: UiEntry[] = [];
+
+  for (const sessionEntry of sessionEntries) {
+    switch (sessionEntry.kind) {
+      case "user":
+        entries.push({
+          id: sessionEntry.id,
+          kind: "user",
+          title: "You",
+          body: sessionEntry.content
+        });
+        break;
+      case "assistant":
+        if (sessionEntry.content.trim() !== "") {
+          entries.push({
+            id: sessionEntry.id,
+            kind: "assistant",
+            title: "Recode",
+            body: sessionEntry.content
+          });
+        }
+        break;
+      case "status":
+        entries.push({
+          id: sessionEntry.id,
+          kind: "status",
+          title: "status",
+          body: sessionEntry.content
+        });
+        break;
+      case "tool":
+        entries.push(...uiEntriesFromToolSessionEntry(sessionEntry));
+        break;
+    }
+  }
+
+  return entries;
+}
+
+/**
+ * Convert a projected session state into visible TUI transcript entries.
+ */
+export function uiEntriesFromSessionState(sessionState: SessionState): readonly UiEntry[] {
+  return uiEntriesFromSessionEntries(sessionState.entries);
+}
+
+function uiEntriesFromToolSessionEntry(sessionEntry: ToolSessionEntry): readonly UiEntry[] {
+  if (sessionEntry.status !== "running" && sessionEntry.metadata?.kind === "task-result") {
+    return asDeterministicResultEntries(sessionEntry, `session:${sessionEntry.id}:result`);
+  }
+
+  const callEntry = createToolCallUiEntry(sessionEntry.toolCall);
+  const resultEntries = sessionEntry.status === "running"
+    ? []
+    : asDeterministicResultEntries(sessionEntry, `session:${sessionEntry.id}:result`);
+
+  if (callEntry === undefined) {
+    return resultEntries;
+  }
+
+  if (
+    sessionEntry.status !== "error"
+    && sessionEntry.toolCall.name === "TodoWrite"
+    && sessionEntry.metadata?.kind === "todo-list"
+    && callEntry.kind === "tool"
+  ) {
+    return [];
+  }
+
+  const callEntryId = `session:${sessionEntry.id}:call`;
+  const [metadataEntry] = sessionEntry.metadata === undefined
+    ? [callEntry]
+    : updateToolCallEntryMetadata([callEntry], sessionEntry.toolCall.id, {
+        metadata: sessionEntry.metadata,
+        ...(sessionEntry.content === undefined ? {} : { content: sessionEntry.content })
+      });
+  const [finishedEntry] = markToolCallEntryFinished(
+    [{ ...metadataEntry!, id: callEntryId }],
+    sessionEntry.toolCall.id,
+    sessionEntry.status === "error"
+  );
+
+  if (sessionEntry.status === "running") {
+    return finishedEntry === undefined ? [] : [finishedEntry];
+  }
+
+  return finishedEntry === undefined
+    ? resultEntries
+    : [finishedEntry, ...resultEntries];
+}
+
+function asDeterministicResultEntries(sessionEntry: ToolSessionEntry, id: string): readonly UiEntry[] {
+  const resultEntry = createToolResultUiEntry(
+    sessionEntry.toolCall.name,
+    sessionEntry.content ?? "",
+    sessionEntry.status === "error",
+    sessionEntry.metadata,
+    sessionEntry.toolCall.id
+  );
+
+  if (resultEntry === undefined) {
+    return [];
+  }
+
+  return [{ ...resultEntry, id }];
 }
 
 /**
@@ -136,70 +248,110 @@ export function summarizeToolArguments(toolName: string, argumentsJson: string):
  * Convert saved transcript messages into visible UI entries.
  */
 export function rehydrateEntriesFromTranscript(transcript: readonly ConversationMessage[]): readonly UiEntry[] {
-  const entries: UiEntry[] = [];
-  const completedTaskCallIds = findCompletedTaskToolCallIds(transcript);
-
-  for (const message of transcript) {
-    switch (message.role) {
-      case "user":
-        entries.push(createEntry("user", "You", message.content));
-        break;
-      case "assistant":
-        if (message.content.trim() !== "") {
-          entries.push(createEntry("assistant", "Recode", message.content));
-        }
-        for (const toolCall of message.toolCalls) {
-          if (completedTaskCallIds.has(toolCall.id)) {
-            continue;
-          }
-          const toolCallEntry = createToolCallUiEntry(toolCall);
-          if (toolCallEntry !== undefined) {
-            entries.push(toolCallEntry);
-          }
-        }
-        break;
-      case "summary":
-        entries.push(createEntry("status", "status", "Earlier conversation history was compacted into a continuation summary."));
-        entries.push(createEntry("assistant", "Recode", formatContinuationSummaryForDisplay(message.content)));
-        break;
-      case "tool":
-        {
-          const metadataEntries = message.metadata === undefined
-            ? entries
-            : updateToolCallEntryMetadata(entries, message.toolCallId, {
-                metadata: message.metadata,
-                content: message.content
-              });
-          const updatedEntries = markToolCallEntryFinished(metadataEntries, message.toolCallId, message.isError);
-          entries.length = 0;
-          entries.push(...updatedEntries);
-          const toolResultEntry = createToolResultUiEntry(
-            message.toolName,
-            message.content,
-            message.isError,
-            message.metadata,
-            message.toolCallId
-          );
-          if (toolResultEntry !== undefined) {
-            entries.push(toolResultEntry);
-          }
-        }
-        break;
-    }
-  }
-
-  return entries;
+  return uiEntriesFromSessionState(sessionStateFromTranscript(transcript));
 }
 
-function findCompletedTaskToolCallIds(transcript: readonly ConversationMessage[]): ReadonlySet<string> {
-  const taskCallIds = new Set<string>();
-  for (const message of transcript) {
-    if (message.role === "tool" && message.toolName === "Task" && message.metadata?.kind === "task-result") {
-      taskCallIds.add(message.toolCallId);
+/**
+ * Convert a saved transcript into projected session state for restored sessions.
+ */
+export function sessionStateFromTranscript(transcript: readonly ConversationMessage[]): SessionState {
+  const entries: SessionEntry[] = [];
+  const toolStepIds = new Map<string, string>();
+  let assistantIndex = 0;
+
+  for (let index = 0; index < transcript.length; index += 1) {
+    const message = transcript[index]!;
+    switch (message.role) {
+      case "user":
+        entries.push({
+          id: `history:user:${index}`,
+          kind: "user",
+          timestamp: index,
+          content: message.content,
+          modelContent: message.content
+        });
+        break;
+      case "assistant": {
+        const stepId = `history:step:${assistantIndex}`;
+        assistantIndex += 1;
+        entries.push({
+          id: `history:assistant:${stepId}`,
+          kind: "assistant",
+          timestamp: index,
+          stepId,
+          content: message.content,
+          completed: true,
+          ...(message.stepStats === undefined ? {} : { stepStats: message.stepStats })
+        });
+        for (const toolCall of message.toolCalls) {
+          toolStepIds.set(toolCall.id, stepId);
+          entries.push({
+            id: `history:tool:${toolCall.id}`,
+            kind: "tool",
+            timestamp: index,
+            stepId,
+            toolCall,
+            status: "running"
+          });
+        }
+        break;
+      }
+      case "summary":
+        entries.push({
+          id: `history:status:${index}`,
+          kind: "status",
+          timestamp: index,
+          content: "Earlier conversation history was compacted into a continuation summary."
+        });
+        entries.push({
+          id: `history:assistant:summary:${index}`,
+          kind: "assistant",
+          timestamp: index,
+          stepId: `history:summary:${index}`,
+          content: formatContinuationSummaryForDisplay(message.content),
+          completed: true
+        });
+        break;
+      case "tool":
+        updateOrAppendToolSessionEntry(entries, {
+          id: `history:tool:${message.toolCallId}`,
+          kind: "tool",
+          timestamp: index,
+          stepId: toolStepIds.get(message.toolCallId) ?? `history:tool-result:${index}`,
+          toolCall: {
+            id: message.toolCallId,
+            name: message.toolName,
+            argumentsJson: "{}"
+          },
+          status: message.isError ? "error" : "completed",
+          content: message.content,
+          ...(message.metadata === undefined ? {} : { metadata: message.metadata }),
+          completedAt: index
+        });
+        break;
     }
   }
 
-  return taskCallIds;
+  return { entries };
+}
+
+function updateOrAppendToolSessionEntry(entries: SessionEntry[], resultEntry: ToolSessionEntry): void {
+  const index = entries.findIndex((entry) =>
+    entry.kind === "tool" && entry.toolCall.id === resultEntry.toolCall.id
+  );
+  if (index === -1) {
+    entries.push(resultEntry);
+    return;
+  }
+
+  const existingEntry = entries[index] as ToolSessionEntry;
+  entries[index] = {
+    ...existingEntry,
+    status: resultEntry.status,
+    ...(resultEntry.content === undefined ? {} : { content: resultEntry.content }),
+    ...(resultEntry.metadata === undefined ? {} : { metadata: resultEntry.metadata }),
+    ...(resultEntry.completedAt === undefined ? {} : { completedAt: resultEntry.completedAt })
+  };
 }
 
 /**

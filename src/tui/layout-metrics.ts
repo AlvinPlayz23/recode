@@ -5,6 +5,8 @@
 import { toVisibleDraft } from "./prompt-draft.ts";
 import type { UiEntry } from "./transcript-entry-state.ts";
 
+const EDIT_PREVIEW_MAX_LINES = 24;
+
 /**
  * Minimal selector panel shape needed for composer height estimates.
  */
@@ -64,15 +66,24 @@ export function estimateEntryHeight(entry: UiEntry, width: number): number {
     case "status":
       return estimateWrappedTextHeight(entry.body, contentWidth) + 1;
     case "tool-preview": {
-      if (entry.metadata?.kind !== "bash-output") {
-        return estimateWrappedTextHeight(entry.body, contentWidth) + 1;
+      const headerHeight = estimateWrappedTextHeight(entry.body, contentWidth) + 1;
+      if (entry.metadata?.kind === "bash-output") {
+        const visibleOutputLines = Math.min(
+          10,
+          entry.metadata.output.trimEnd() === "" ? 0 : entry.metadata.output.trimEnd().split("\n").length
+        );
+        return headerHeight + visibleOutputLines + 4;
       }
 
-      const visibleOutputLines = Math.min(
-        10,
-        entry.metadata.output.trimEnd() === "" ? 0 : entry.metadata.output.trimEnd().split("\n").length
-      );
-      return estimateWrappedTextHeight(entry.body, contentWidth) + visibleOutputLines + 5;
+      if (entry.metadata?.kind === "edit-preview") {
+        const removedLines = countPreviewLines(entry.metadata.oldText);
+        const addedLines = countPreviewLines(entry.metadata.newText);
+        const visibleChangedLines = Math.min(EDIT_PREVIEW_MAX_LINES, removedLines + addedLines);
+        const omittedLine = removedLines + addedLines > EDIT_PREVIEW_MAX_LINES ? 1 : 0;
+        return headerHeight + visibleChangedLines + omittedLine + 5;
+      }
+
+      return headerHeight;
     }
     case "error":
       return estimateWrappedTextHeight(entry.body, contentWidth) + 2;
@@ -124,4 +135,15 @@ export function estimateWrappedTextHeight(value: string, width: number): number 
   }
 
   return Math.max(1, total);
+}
+
+function countPreviewLines(value: string): number {
+  const normalized = value.replace(/\r\n/g, "\n");
+  const lines = normalized.split("\n");
+
+  if (lines.length > 1 && lines.at(-1) === "") {
+    return lines.length - 1;
+  }
+
+  return lines.length;
 }

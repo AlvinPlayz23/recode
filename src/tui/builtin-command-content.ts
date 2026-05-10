@@ -76,6 +76,7 @@ export function buildBuiltinStatusBody(
     `- Tool marker: ${getToolMarkerDefinition(toolMarkerName).label} (\`${getToolMarkerDefinition(toolMarkerName).symbol}\`)`,
     `- Approval mode: \`${runtimeConfig.approvalMode}\``,
     `- Always-allowed scopes: ${runtimeConfig.approvalAllowlist.length === 0 ? "none" : runtimeConfig.approvalAllowlist.map((scope) => `\`${scope}\``).join(", ")}`,
+    `- Permission rules: ${runtimeConfig.permissionRules.length === 0 ? "none" : runtimeConfig.permissionRules.length}`,
     `- Config path: \`${runtimeConfig.configPath}\``,
     `- Context window: ${contextWindowStatus.contextWindowTokens.toLocaleString()} tokens (${contextWindowStatus.source})`,
     `- Reserved compaction buffer: ${contextWindowStatus.reservedTokens.toLocaleString()} tokens`,
@@ -136,6 +137,7 @@ export function buildBuiltinConfigBody(
     `- Base URL: \`${runtimeConfig.baseUrl}\``,
     `- Approval mode: \`${runtimeConfig.approvalMode}\``,
     `- Always-allowed scopes: ${runtimeConfig.approvalAllowlist.length === 0 ? "none" : runtimeConfig.approvalAllowlist.map((scope) => `\`${scope}\``).join(", ")}`,
+    `- Permission rules: ${runtimeConfig.permissionRules.length === 0 ? "none" : runtimeConfig.permissionRules.length}`,
     "",
     "## Providers",
     ""

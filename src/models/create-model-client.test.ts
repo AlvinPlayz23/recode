@@ -20,6 +20,7 @@ describe("createLanguageModel", () => {
       providers: [],
       approvalMode: "approval",
       approvalAllowlist: [],
+      permissionRules: [],
       apiKey: "sk-test",
       baseUrl: "https://api.openai.com/v1",
       providerHeaders: { "x-test": "yes" },
@@ -63,6 +64,7 @@ describe("createLanguageModel", () => {
         providers: [],
         approvalMode: "approval",
         approvalAllowlist: [],
+        permissionRules: [],
         baseUrl: "https://example.com/v1",
         apiKey: "sk-test"
       });
@@ -82,6 +84,7 @@ describe("createLanguageModel", () => {
       providers: [],
       approvalMode: "approval",
       approvalAllowlist: [],
+      permissionRules: [],
       baseUrl: "https://api.anthropic.com/v1",
       apiKey: "sk-ant-test"
     });

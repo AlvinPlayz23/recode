@@ -8,7 +8,7 @@ import type {
   RecodeConfigFile
 } from "./recode-config.ts";
 import type { LayoutMode, ThemeName, ToolMarkerName } from "../tui/theme.ts";
-import type { ApprovalMode, ToolApprovalScope } from "../tools/tool.ts";
+import type { ApprovalMode, PermissionRule, ToolApprovalScope } from "../tools/tool.ts";
 
 /**
  * Config fields that can be updated while preserving the rest of the file.
@@ -19,6 +19,7 @@ export interface RecodeConfigPatch {
   readonly toolMarkerName?: ToolMarkerName;
   readonly approvalMode?: ApprovalMode;
   readonly approvalAllowlist?: readonly ToolApprovalScope[];
+  readonly permissionRules?: readonly PermissionRule[];
   readonly layoutMode?: LayoutMode;
   readonly minimalMode?: boolean;
   readonly todoPanelEnabled?: boolean;
@@ -38,6 +39,7 @@ export function patchRecodeConfig(
   const toolMarkerName = patch.toolMarkerName ?? config.toolMarkerName;
   const approvalMode = patch.approvalMode ?? config.approvalMode;
   const approvalAllowlist = patch.approvalAllowlist ?? config.approvalAllowlist;
+  const permissionRules = patch.permissionRules ?? config.permissionRules;
   const layoutMode = patch.layoutMode ?? config.layoutMode;
   const minimalMode = patch.minimalMode ?? config.minimalMode;
   const todoPanelEnabled = patch.todoPanelEnabled ?? config.todoPanelEnabled;
@@ -51,6 +53,7 @@ export function patchRecodeConfig(
     ...(toolMarkerName === undefined ? {} : { toolMarkerName }),
     ...(approvalMode === undefined ? {} : { approvalMode }),
     ...(approvalAllowlist === undefined ? {} : { approvalAllowlist }),
+    ...(permissionRules === undefined ? {} : { permissionRules }),
     ...(layoutMode === undefined ? {} : { layoutMode }),
     ...(minimalMode === undefined ? {} : { minimalMode }),
     ...(todoPanelEnabled === undefined ? {} : { todoPanelEnabled }),
