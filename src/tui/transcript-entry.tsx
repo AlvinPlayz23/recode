@@ -9,8 +9,9 @@ import {
   TextAttributes,
   type SyntaxStyle
 } from "@opentui/core";
-import { For, Show } from "solid-js";
-import type { BashToolResultMetadata, EditToolResultMetadata, TaskToolResultMetadata, TodoItem } from "../tools/tool.ts";
+import { For, Show, createMemo, createSignal } from "solid-js";
+import type { JSX } from "solid-js";
+import type { BashToolResultMetadata, EditToolResultMetadata, TaskToolResultMetadata, TodoItem, ToolResultMetadata } from "../tools/tool.ts";
 import { toDisplayLines } from "./message-format.ts";
 import {
   getTheme,
@@ -55,6 +56,25 @@ function getToolStatusColor(entry: UiEntry, t: () => ReturnType<typeof getTheme>
       return t().brandShimmer;
   }
   return t().brandShimmer;
+}
+
+interface ToolPreviewRendererProps {
+  readonly entry: UiEntry;
+  readonly metadata: ToolResultMetadata;
+  readonly theme: () => ReturnType<typeof getTheme>;
+}
+
+type ToolPreviewRenderer = (props: ToolPreviewRendererProps) => JSX.Element | undefined;
+
+const TOOL_PREVIEW_RENDERERS: Readonly<Partial<Record<ToolResultMetadata["kind"], ToolPreviewRenderer>>> = {
+  "bash-output": BashToolBlock,
+  "edit-preview": EditPreviewToolBlock,
+  "task-result": TaskPreviewBlock,
+  "todo-list": TodoPreviewBlock
+};
+
+function renderToolPreviewContent(props: ToolPreviewRendererProps): JSX.Element | undefined {
+  return TOOL_PREVIEW_RENDERERS[props.metadata.kind]?.(props);
 }
 
 /**
@@ -193,12 +213,6 @@ export function renderEntry(
       const editMetadata = metadata?.kind === "edit-preview"
         ? (metadata as EditToolResultMetadata)
         : undefined;
-      const taskMetadata = metadata?.kind === "task-result"
-        ? (metadata as TaskToolResultMetadata)
-        : undefined;
-      const bashMetadata = metadata?.kind === "bash-output"
-        ? (metadata as BashToolResultMetadata)
-        : undefined;
       const counts = editMetadata !== undefined
         ? countDiffLines(editMetadata.oldText ?? "", editMetadata.newText ?? "")
         : undefined;
@@ -226,64 +240,8 @@ export function renderEntry(
               </box>
             </Show>
           </box>
-          <Show when={editMetadata !== undefined}>
-            <box paddingLeft={2} paddingTop={1} paddingRight={1}>
-              <diff
-                oldCode={editMetadata?.oldText ?? ""}
-                newCode={editMetadata?.newText ?? ""}
-                language={resolveDiffLanguage(editMetadata?.path ?? "")}
-                mode="unified"
-                showLineNumbers={true}
-                context={2}
-                addedLineColor={t().diffAdded}
-                removedLineColor={t().diffRemoved}
-                unchangedLineColor="transparent"
-                width="100%"
-              />
-            </box>
-          </Show>
-          <Show when={bashMetadata !== undefined}>
-            <box
-              flexDirection="column"
-              marginTop={1}
-              marginLeft={2}
-              marginRight={2}
-              paddingLeft={1}
-              paddingRight={1}
-              border
-              borderStyle="single"
-              borderColor={t().bashBorder}
-              backgroundColor={t().bashMessageBackgroundColor}
-              title="Bash output"
-              titleAlignment="left"
-              flexGrow={1}
-              flexShrink={1}
-              minWidth={0}
-            >
-              <text fg={t().tool} attributes={TextAttributes.BOLD}>{`$ ${bashMetadata?.command ?? ""}`}</text>
-              <Show when={(bashMetadata?.output ?? "").trim() !== ""}>
-                <For each={limitOutputLines(bashMetadata?.output ?? "", 10)}>
-                  {(line) => <text fg={t().assistantBody}>{line}</text>}
-                </For>
-              </Show>
-            </box>
-          </Show>
-          <Show when={metadata?.kind === "todo-list"}>
-            <box flexDirection="column" paddingLeft={2} paddingTop={1} paddingRight={1}>
-              <For each={metadata?.kind === "todo-list" ? metadata.todos : []}>
-                {(todo) => <TodoLine todo={todo} t={t} />}
-              </For>
-            </box>
-          </Show>
-          <Show when={taskMetadata !== undefined && taskMetadata?.status === "completed"}>
-            <box flexDirection="column" paddingLeft={2} paddingTop={1} paddingRight={1}>
-              <Show when={taskMetadata?.taskId !== undefined}>
-                <text fg={t().hintText} attributes={TextAttributes.DIM}>{`task_id: ${taskMetadata?.taskId ?? ""}`}</text>
-              </Show>
-              <Show when={(taskMetadata?.summary ?? "") !== ""}>
-                <text fg={t().assistantBody}>{taskMetadata?.summary ?? ""}</text>
-              </Show>
-            </box>
+          <Show when={metadata !== undefined}>
+            {metadata === undefined ? undefined : renderToolPreviewContent({ entry, metadata, theme: t })}
           </Show>
         </box>
       );
@@ -299,12 +257,7 @@ export function renderEntry(
 
     case "error":
       return (
-        <box flexDirection="row" marginTop={compact() ? 0 : 1} paddingLeft={3} alignItems="center">
-          <text fg={t().error} attributes={TextAttributes.BOLD}>✗ </text>
-          <box flexGrow={1} flexShrink={1} minWidth={0}>
-            <text fg={t().error}>{entry.body}</text>
-          </box>
-        </box>
+        <ErrorBlock entry={entry} theme={t} compact={compact()} />
       );
 
     case "status":
@@ -314,6 +267,158 @@ export function renderEntry(
         </box>
       );
   }
+}
+
+function EditPreviewToolBlock(props: ToolPreviewRendererProps): JSX.Element | undefined {
+  if (props.metadata.kind !== "edit-preview") {
+    return undefined;
+  }
+
+  return (
+    <box paddingLeft={2} paddingTop={1} paddingRight={1}>
+      <diff
+        oldCode={props.metadata.oldText ?? ""}
+        newCode={props.metadata.newText ?? ""}
+        language={resolveDiffLanguage(props.metadata.path ?? "")}
+        mode="unified"
+        showLineNumbers={true}
+        context={2}
+        addedLineColor={props.theme().diffAdded}
+        removedLineColor={props.theme().diffRemoved}
+        unchangedLineColor="transparent"
+        width="100%"
+      />
+    </box>
+  );
+}
+
+function BashToolBlock(props: ToolPreviewRendererProps): JSX.Element | undefined {
+  if (props.metadata.kind !== "bash-output") {
+    return undefined;
+  }
+
+  return (
+    <ExpandableBashToolBlock
+      metadata={props.metadata}
+      error={props.entry.toolStatus === "error"}
+      theme={props.theme}
+    />
+  );
+}
+
+function ExpandableBashToolBlock(props: {
+  readonly metadata: BashToolResultMetadata;
+  readonly error: boolean;
+  readonly theme: () => ReturnType<typeof getTheme>;
+}): JSX.Element {
+  const [expanded, setExpanded] = createSignal(false);
+  const lines = createMemo(() => toDisplayLines(props.metadata.output.trimEnd()));
+  const overflowCount = createMemo(() => Math.max(0, lines().length - 10));
+  const visibleLines = createMemo(() => expanded() ? lines() : lines().slice(0, 10));
+  const canToggle = createMemo(() => overflowCount() > 0);
+
+  return (
+    <box
+      flexDirection="column"
+      marginTop={1}
+      marginLeft={2}
+      marginRight={2}
+      paddingLeft={1}
+      paddingRight={1}
+      border
+      borderStyle="single"
+      borderColor={props.error ? props.theme().error : props.theme().bashBorder}
+      backgroundColor={props.theme().bashMessageBackgroundColor}
+      title={props.error ? "Bash error" : "Bash output"}
+      titleAlignment="left"
+      flexGrow={1}
+      flexShrink={1}
+      minWidth={0}
+      onMouseUp={() => {
+        if (canToggle()) {
+          setExpanded((previous) => !previous);
+        }
+      }}
+    >
+      <text fg={props.error ? props.theme().error : props.theme().tool} attributes={TextAttributes.BOLD}>{`$ ${props.metadata.command}`}</text>
+      <Show when={props.metadata.output.trim() !== ""}>
+        <For each={visibleLines()}>
+          {(line) => <text fg={props.theme().assistantBody}>{line}</text>}
+        </For>
+      </Show>
+      <Show when={canToggle()}>
+        <text fg={props.theme().hintText} attributes={TextAttributes.DIM}>
+          {expanded() ? "show less" : `... ${overflowCount()} more line${overflowCount() === 1 ? "" : "s"} (click to expand)`}
+        </text>
+      </Show>
+    </box>
+  );
+}
+
+function TodoPreviewBlock(props: ToolPreviewRendererProps): JSX.Element | undefined {
+  if (props.metadata.kind !== "todo-list") {
+    return undefined;
+  }
+
+  return (
+    <box flexDirection="column" paddingLeft={2} paddingTop={1} paddingRight={1}>
+      <For each={props.metadata.todos}>
+        {(todo) => <TodoLine todo={todo} t={props.theme} />}
+      </For>
+    </box>
+  );
+}
+
+function TaskPreviewBlock(props: ToolPreviewRendererProps): JSX.Element | undefined {
+  if (props.metadata.kind !== "task-result" || props.metadata.status !== "completed") {
+    return undefined;
+  }
+
+  return (
+    <box flexDirection="column" paddingLeft={2} paddingTop={1} paddingRight={1}>
+      <Show when={props.metadata.taskId !== undefined}>
+        <text fg={props.theme().hintText} attributes={TextAttributes.DIM}>{`task_id: ${props.metadata.taskId ?? ""}`}</text>
+      </Show>
+      <Show when={props.metadata.summary !== ""}>
+        <text fg={props.theme().assistantBody}>{props.metadata.summary}</text>
+      </Show>
+    </box>
+  );
+}
+
+function ErrorBlock(props: {
+  readonly entry: UiEntry;
+  readonly theme: () => ReturnType<typeof getTheme>;
+  readonly compact: boolean;
+}): JSX.Element {
+  return (
+    <box
+      flexDirection="column"
+      marginTop={props.compact ? 0 : 1}
+      marginLeft={3}
+      marginRight={2}
+      paddingLeft={1}
+      paddingRight={1}
+      border
+      borderStyle="single"
+      borderColor={props.theme().error}
+      backgroundColor={props.theme().bashMessageBackgroundColor}
+      title="Tool error"
+      titleAlignment="left"
+      flexGrow={1}
+      flexShrink={1}
+      minWidth={0}
+    >
+      <box flexDirection="row" alignItems="center">
+        <text fg={props.theme().error} attributes={TextAttributes.BOLD}>✗ </text>
+        <box flexGrow={1} flexShrink={1} minWidth={0}>
+          <For each={toDisplayLines(props.entry.body)}>
+            {(line) => <text fg={props.theme().error}>{line}</text>}
+          </For>
+        </box>
+      </box>
+    </box>
+  );
 }
 
 function TodoLine(props: { todo: TodoItem; t: () => ReturnType<typeof getTheme> }) {
@@ -350,15 +455,6 @@ function TodoLine(props: { todo: TodoItem; t: () => ReturnType<typeof getTheme> 
       </box>
     </box>
   );
-}
-
-function limitOutputLines(value: string, maxLines: number): readonly string[] {
-  const lines = toDisplayLines(value.trimEnd());
-  if (lines.length <= maxLines) {
-    return lines;
-  }
-
-  return [...lines.slice(0, maxLines), "..."];
 }
 
 function resolveDiffLanguage(path: string): string {
