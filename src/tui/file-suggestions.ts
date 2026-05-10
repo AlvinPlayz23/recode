@@ -90,9 +90,12 @@ export async function loadWorkspaceFileSuggestions(
       continue;
     }
 
-    let entries: Awaited<ReturnType<typeof readdir>>;
+    let entries: { readonly name: string; readonly directory: boolean }[];
     try {
-      entries = await readdir(currentDirectory, { withFileTypes: true });
+      entries = (await readdir(currentDirectory, { withFileTypes: true })).map((entry) => ({
+        name: String(entry.name),
+        directory: entry.isDirectory()
+      }));
     } catch {
       continue;
     }
@@ -110,13 +113,12 @@ export async function loadWorkspaceFileSuggestions(
         continue;
       }
 
-      const directory = entry.isDirectory();
       results.push({
-        displayPath: directory ? `${relativePath}/` : relativePath,
-        directory
+        displayPath: entry.directory ? `${relativePath}/` : relativePath,
+        directory: entry.directory
       });
 
-      if (directory) {
+      if (entry.directory) {
         stack.push(absolutePath);
       }
     }

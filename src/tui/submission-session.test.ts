@@ -33,7 +33,7 @@ describe("submission session helpers", () => {
 
     expect(nextEntry?.kind).toBe("assistant");
     expect(entries.map((entry) => [entry.kind, entry.body])).toEqual([
-      ["tool", "Bash · ls -la"],
+      ["tool-preview", "Bash · ls -la"],
       ["assistant", ""]
     ]);
   });

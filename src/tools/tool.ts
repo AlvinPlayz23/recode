@@ -121,6 +121,18 @@ export interface QuestionRequestHandler {
   (request: QuestionToolRequest): Promise<QuestionToolDecision>;
 }
 
+/** Live metadata update emitted while a tool is still running. */
+export interface ToolMetadataUpdate {
+  readonly title?: string;
+  readonly content?: string;
+  readonly metadata?: ToolResultMetadata;
+}
+
+/** Hook tools can use to update their live UI row. */
+export interface ToolMetadataUpdateHandler {
+  (update: ToolMetadataUpdate): void | Promise<void>;
+}
+
 /**
  * Tool execution context.
  */
@@ -129,6 +141,7 @@ export interface ToolExecutionContext {
   readonly approvalMode?: ApprovalMode;
   readonly approvalAllowlist?: readonly ToolApprovalScope[];
   readonly abortSignal?: AbortSignal;
+  readonly updateToolMetadata?: ToolMetadataUpdateHandler;
   readonly requestToolApproval?: ToolApprovalHandler;
   readonly requestQuestionAnswers?: QuestionRequestHandler;
   readonly runSubagentTask?: SubagentTaskHandler;
@@ -141,6 +154,16 @@ export interface EditToolResultMetadata {
   readonly oldText: string;
   readonly newText: string;
   readonly replacementCount?: number;
+}
+
+/** Live or final Bash output preview metadata. */
+export interface BashToolResultMetadata {
+  readonly kind: "bash-output";
+  readonly command: string;
+  readonly output: string;
+  readonly exitCode?: number;
+  readonly timedOut?: boolean;
+  readonly aborted?: boolean;
 }
 
 /** One item in an assistant-managed session todo list. */
@@ -169,7 +192,11 @@ export interface TaskToolResultMetadata {
 }
 
 /** Structured metadata attached to a tool result. */
-export type ToolResultMetadata = EditToolResultMetadata | TodoToolResultMetadata | TaskToolResultMetadata;
+export type ToolResultMetadata =
+  | BashToolResultMetadata
+  | EditToolResultMetadata
+  | TodoToolResultMetadata
+  | TaskToolResultMetadata;
 
 /**
  * Tool execution result.

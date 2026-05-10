@@ -298,6 +298,44 @@ describe("runAgentLoop", () => {
     ]);
   });
 
+  it("emits normalized session events including live tool metadata", async () => {
+    fakeStreamAssistantResponse
+      .mockImplementationOnce(() => makeStreamResult([
+        toolCallPart("call_1", "metadata_tool", { text: "hello" }),
+        ...finishParts()
+      ]))
+      .mockImplementationOnce(() => makeStreamResult([
+        textPart("done"),
+        ...finishParts()
+      ]));
+
+    const events: string[] = [];
+    const registry = new ToolRegistry([createMetadataTool()]);
+
+    await runAgentLoop({
+      systemPrompt: "test-system-prompt",
+      initialUserPrompt: "Say hello",
+      languageModel: {} as never,
+      toolRegistry: registry,
+      toolContext: { workspaceRoot: "/tmp/recode", approvalMode: "yolo" },
+      onSessionEvent(event) {
+        events.push(event.type);
+      }
+    });
+
+    expect(events).toEqual([
+      "user.submitted",
+      "assistant.step.started",
+      "tool.started",
+      "assistant.step.finished",
+      "tool.metadata.updated",
+      "tool.completed",
+      "assistant.step.started",
+      "assistant.text.delta",
+      "assistant.step.finished"
+    ]);
+  });
+
   it("runs sibling Task calls with bounded concurrency while preserving result order", async () => {
     fakeStreamAssistantResponse
       .mockImplementationOnce(() => makeStreamResult([
@@ -549,6 +587,42 @@ function createFailingTool(): ToolDefinition {
     },
     async execute(_arguments_: ToolArguments, _context: ToolExecutionContext): Promise<ToolResult> {
       throw new Error("tool timed out");
+    }
+  };
+}
+
+function createMetadataTool(): ToolDefinition {
+  return {
+    name: "metadata_tool",
+    description: "Emit live metadata, then echo.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        text: { type: "string" }
+      },
+      required: ["text"],
+      additionalProperties: false
+    },
+    async execute(arguments_: ToolArguments, context: ToolExecutionContext): Promise<ToolResult> {
+      const text = arguments_["text"];
+
+      if (typeof text !== "string") {
+        throw new Error("metadata_tool requires a text string.");
+      }
+
+      await context.updateToolMetadata?.({
+        title: "metadata",
+        metadata: {
+          kind: "bash-output",
+          command: "metadata_tool",
+          output: text
+        }
+      });
+
+      return {
+        content: `metadata: ${text}`,
+        isError: false
+      };
     }
   };
 }

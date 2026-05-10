@@ -10,7 +10,7 @@ import {
   type SyntaxStyle
 } from "@opentui/core";
 import { For, Show } from "solid-js";
-import type { EditToolResultMetadata, TaskToolResultMetadata, TodoItem } from "../tools/tool.ts";
+import type { BashToolResultMetadata, EditToolResultMetadata, TaskToolResultMetadata, TodoItem } from "../tools/tool.ts";
 import { toDisplayLines } from "./message-format.ts";
 import {
   getTheme,
@@ -29,6 +29,32 @@ function parseToolBadge(body: string): { badge: string; detail: string | undefin
     return { badge: body, detail: undefined };
   }
   return { badge: body.slice(0, idx), detail: body.slice(idx + sep.length) };
+}
+
+function getToolStatusMarker(entry: UiEntry): string {
+  switch (entry.toolStatus) {
+    case "completed":
+      return "● ";
+    case "error":
+      return "✗ ";
+    case "running":
+    case undefined:
+      return "◇ ";
+  }
+  return "◇ ";
+}
+
+function getToolStatusColor(entry: UiEntry, t: () => ReturnType<typeof getTheme>): string {
+  switch (entry.toolStatus) {
+    case "completed":
+      return t().success;
+    case "error":
+      return t().error;
+    case "running":
+    case undefined:
+      return t().brandShimmer;
+  }
+  return t().brandShimmer;
 }
 
 /**
@@ -148,7 +174,7 @@ export function renderEntry(
       const { badge, detail } = parseToolBadge(entry.body);
       return (
         <box flexDirection="row" paddingLeft={4} marginTop={0} marginBottom={0} alignItems="center">
-          <text fg={t().success}>● </text>
+          <text fg={getToolStatusColor(entry, t)}>{getToolStatusMarker(entry)}</text>
           <box width={Math.max(6, badge.length + 2)} flexShrink={0}>
             <text fg={t().tool} attributes={TextAttributes.BOLD}>{badge}</text>
           </box>
@@ -170,6 +196,9 @@ export function renderEntry(
       const taskMetadata = metadata?.kind === "task-result"
         ? (metadata as TaskToolResultMetadata)
         : undefined;
+      const bashMetadata = metadata?.kind === "bash-output"
+        ? (metadata as BashToolResultMetadata)
+        : undefined;
       const counts = editMetadata !== undefined
         ? countDiffLines(editMetadata.oldText ?? "", editMetadata.newText ?? "")
         : undefined;
@@ -180,7 +209,7 @@ export function renderEntry(
       return (
         <box flexDirection="column" paddingLeft={4} marginTop={compact() ? 0 : 1} marginBottom={0}>
           <box flexDirection="row" alignItems="center">
-            <text fg={t().success}>● </text>
+            <text fg={getToolStatusColor(entry, t)}>{getToolStatusMarker(entry)}</text>
             <box width={Math.max(6, previewBadge.length + 2)} flexShrink={0}>
               <text fg={t().tool} attributes={TextAttributes.BOLD}>{previewBadge}</text>
             </box>
@@ -211,6 +240,32 @@ export function renderEntry(
                 unchangedLineColor="transparent"
                 width="100%"
               />
+            </box>
+          </Show>
+          <Show when={bashMetadata !== undefined}>
+            <box
+              flexDirection="column"
+              marginTop={1}
+              marginLeft={2}
+              marginRight={2}
+              paddingLeft={1}
+              paddingRight={1}
+              border
+              borderStyle="single"
+              borderColor={t().bashBorder}
+              backgroundColor={t().bashMessageBackgroundColor}
+              title="Bash output"
+              titleAlignment="left"
+              flexGrow={1}
+              flexShrink={1}
+              minWidth={0}
+            >
+              <text fg={t().tool} attributes={TextAttributes.BOLD}>{`$ ${bashMetadata?.command ?? ""}`}</text>
+              <Show when={(bashMetadata?.output ?? "").trim() !== ""}>
+                <For each={limitOutputLines(bashMetadata?.output ?? "", 10)}>
+                  {(line) => <text fg={t().assistantBody}>{line}</text>}
+                </For>
+              </Show>
             </box>
           </Show>
           <Show when={metadata?.kind === "todo-list"}>
@@ -295,6 +350,15 @@ function TodoLine(props: { todo: TodoItem; t: () => ReturnType<typeof getTheme> 
       </box>
     </box>
   );
+}
+
+function limitOutputLines(value: string, maxLines: number): readonly string[] {
+  const lines = toDisplayLines(value.trimEnd());
+  if (lines.length <= maxLines) {
+    return lines;
+  }
+
+  return [...lines.slice(0, maxLines), "..."];
 }
 
 function resolveDiffLanguage(path: string): string {

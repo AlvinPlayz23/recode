@@ -12,7 +12,7 @@
     "check": "tsc --noEmit",
     "build": "bun run scripts/build.ts --single",
     "build:all": "bun run scripts/build.ts",
-    "test": "bun test ./src/agent ./src/ai ./src/cli ./src/config ./src/history ./src/models ./src/providers ./src/runtime ./src/tools ./src/tui"
+    "test": "bun test ./src/agent ./src/ai ./src/cli ./src/config ./src/history ./src/models ./src/providers ./src/runtime ./src/session ./src/tools ./src/tui"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",

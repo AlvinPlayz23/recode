@@ -14,7 +14,14 @@ import type {
   ToolResultMessage,
   UserMessage
 } from "../transcript/message.ts";
-import type { EditToolResultMetadata, TaskToolResultMetadata, TodoItem, TodoToolResultMetadata, ToolResultMetadata } from "../tools/tool.ts";
+import type {
+  BashToolResultMetadata,
+  EditToolResultMetadata,
+  TaskToolResultMetadata,
+  TodoItem,
+  TodoToolResultMetadata,
+  ToolResultMetadata
+} from "../tools/tool.ts";
 import type {
   RecodeHistoryIndex,
   SavedConversationMeta,
@@ -269,6 +276,8 @@ function parseToolResultMetadata(value: unknown): ToolResultMetadata | undefined
   }
 
   switch (value["kind"]) {
+    case "bash-output":
+      return parseBashToolResultMetadata(value);
     case "edit-preview":
       return parseEditToolResultMetadata(value);
     case "todo-list":
@@ -278,6 +287,29 @@ function parseToolResultMetadata(value: unknown): ToolResultMetadata | undefined
     default:
       return undefined;
   }
+}
+
+function parseBashToolResultMetadata(value: Record<string, unknown>): BashToolResultMetadata | undefined {
+  const command = readOptionalString(value, "command");
+  const output = typeof value["output"] === "string" ? value["output"] : undefined;
+  const exitCode = typeof value["exitCode"] === "number" && Number.isFinite(value["exitCode"])
+    ? Math.trunc(value["exitCode"])
+    : undefined;
+  const timedOut = typeof value["timedOut"] === "boolean" ? value["timedOut"] : undefined;
+  const aborted = typeof value["aborted"] === "boolean" ? value["aborted"] : undefined;
+
+  if (command === undefined || output === undefined) {
+    return undefined;
+  }
+
+  return {
+    kind: "bash-output",
+    command,
+    output,
+    ...(exitCode === undefined ? {} : { exitCode }),
+    ...(timedOut === undefined ? {} : { timedOut }),
+    ...(aborted === undefined ? {} : { aborted })
+  };
 }
 
 function parseSubagentTaskRecord(value: unknown): SubagentTaskRecord | undefined {

@@ -2,9 +2,15 @@
  * Prompt submission helpers for the TUI.
  */
 
-import type { AgentRunResult, ProviderStatusObserver, TextDeltaObserver } from "../agent/run-agent-loop.ts";
+import type {
+  AgentRunResult,
+  ProviderStatusObserver,
+  TextDeltaObserver,
+  ToolMetadataObserver
+} from "../agent/run-agent-loop.ts";
 import { runAgentLoop } from "../agent/run-agent-loop.ts";
 import type { AiModel } from "../ai/types.ts";
+import type { SessionEventObserver } from "../session/session-event.ts";
 import type { ConversationMessage, ToolCall } from "../transcript/message.ts";
 import type { ToolExecutionContext } from "../tools/tool.ts";
 import type { ToolRegistry } from "../tools/tool-registry.ts";
@@ -30,8 +36,10 @@ export interface SingleTurnOptions {
   readonly toolContext: ToolExecutionContext;
   readonly abortSignal?: AbortSignal;
   readonly requestAffinityKey?: string;
+  readonly onSessionEvent?: SessionEventObserver;
   readonly onToolCall: (toolCall: ToolCall) => void;
   readonly onTextDelta: TextDeltaObserver;
+  readonly onToolMetadata?: ToolMetadataObserver;
   readonly onToolResult?: (toolResult: Extract<ConversationMessage, { role: "tool" }>) => void;
   readonly onProviderStatus?: ProviderStatusObserver;
   readonly onTranscriptUpdate?: (transcript: readonly ConversationMessage[]) => void;
@@ -51,11 +59,15 @@ export async function runSingleTurn(options: SingleTurnOptions): Promise<AgentRu
     toolContext: options.toolContext,
     ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
     ...(options.requestAffinityKey === undefined ? {} : { requestAffinityKey: options.requestAffinityKey }),
+    ...(options.onSessionEvent === undefined ? {} : { onSessionEvent: options.onSessionEvent }),
     onToolCall(toolCall) {
       options.onToolCall(toolCall);
     },
     onTextDelta(delta) {
       options.onTextDelta(delta);
+    },
+    onToolMetadata(update) {
+      options.onToolMetadata?.(update);
     },
     onToolResult(toolResult) {
       options.onToolResult?.(toolResult);

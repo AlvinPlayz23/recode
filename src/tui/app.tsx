@@ -25,8 +25,7 @@ import {
   InputRenderable,
   type ScrollBoxRenderable,
   type KeyBinding as TextareaKeyBinding,
-  type TextareaRenderable,
-  defaultTextareaKeyBindings
+  type TextareaRenderable
 } from "@opentui/core";
 import { useRenderer, useSelectionHandler, useTerminalDimensions } from "@opentui/solid";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
@@ -51,6 +50,7 @@ import {
   setConfiguredModelContextWindow
 } from "../config/recode-config.ts";
 import { OperationAbortedError } from "../errors/recode-error.ts";
+import type { SessionEvent } from "../session/session-event.ts";
 import {
   resolveHistoryRoot,
   type SavedConversationRecord
@@ -257,10 +257,12 @@ import {
   createEntry,
   createToolResultUiEntry,
   extractLatestTodosFromTranscript,
+  markToolCallEntryFinished,
   rehydrateEntriesFromTranscript,
   replaceTaskToolCallEntryWithResult,
   renderVisibleEntries,
   updateEntryBody,
+  updateToolCallEntryMetadata,
   type UiEntry
 } from "./transcript-entry-state.ts";
 import type {
@@ -283,14 +285,7 @@ type PromptRenderable = InputRenderable | TextareaRenderable;
 
 const PROMPT_TEXTAREA_KEY_BINDINGS: TextareaKeyBinding[] = [
   { name: "return", action: "submit" },
-  { name: "return", ctrl: true, action: "newline" },
-  ...defaultTextareaKeyBindings.filter((binding) =>
-    binding.name !== "return"
-    || binding.ctrl === true
-    || binding.meta === true
-    || binding.shift === true
-    || binding.super === true
-  )
+  { name: "return", ctrl: true, action: "newline" }
 ];
 
 export interface TuiAppProps {
@@ -1789,6 +1784,74 @@ export function TuiApp(props: TuiAppProps) {
       }
     };
 
+    const handleSessionEvent = (event: SessionEvent) => {
+      switch (event.type) {
+        case "tool.started":
+          setBusyPhase("tool");
+          setProviderStatusText(undefined);
+          flushAndResetPendingStreamText();
+          if (shouldDeferAssistantTextUntilToolResult && toolResultSeenForDeferredText) {
+            flushDeferredAssistantTextAfterToolCall();
+          }
+          shouldDeferAssistantTextUntilToolResult = true;
+          toolResultSeenForDeferredText = false;
+          appendToolCallEntryAndCreateAssistantPlaceholder({
+            currentStreamingId,
+            currentStreamingBody: streamingBody(),
+            toolCall: event.toolCall,
+            appendAssistantPlaceholder: false,
+            setEntries
+          });
+          currentStreamingId = undefined;
+          setStreamingBody("");
+          setStreamingEntryId(undefined);
+          break;
+        case "tool.metadata.updated":
+          setEntries((previous) => updateToolCallEntryMetadata(previous, event.toolCallId, event.update));
+          break;
+        case "tool.completed":
+        case "tool.errored": {
+          const toolResult = event.toolResult;
+          setBusyPhase("thinking");
+          setProviderStatusText(undefined);
+          toolResultSeenForDeferredText = true;
+          invalidateWorkspaceFileSuggestionCache(sessionRuntimeConfig().workspaceRoot);
+          setFileSuggestionVersion((value) => value + 1);
+          setEntries((previous) => markToolCallEntryFinished(previous, toolResult.toolCallId, toolResult.isError));
+          const toolResultEntry = createToolResultUiEntry(
+            toolResult.toolName,
+            toolResult.content,
+            toolResult.isError,
+            toolResult.metadata,
+            toolResult.toolCallId
+          );
+          if (!toolResult.isError && toolResult.metadata?.kind === "todo-list") {
+            setTodos(toolResult.metadata.todos);
+            if (toolResult.metadata.todos.length === 0) {
+              setTodoDropupOpen(false);
+            }
+          }
+          if (toolResult.toolName === "Task") {
+            let replaced = false;
+            setEntries((previous) => {
+              const replacement = replaceTaskToolCallEntryWithResult(previous, toolResult);
+              replaced = replacement.replaced;
+              return replacement.entries;
+            });
+            if (replaced) {
+              break;
+            }
+          }
+          if (toolResultEntry !== undefined) {
+            appendEntry(setEntries, toolResultEntry);
+          }
+          break;
+        }
+        default:
+          break;
+      }
+    };
+
     try {
       const preparedTranscript = await prepareTranscriptForPendingPrompt(modelPrompt, abortController.signal);
       appendEntry(setEntries, createEntry("user", "You", prompt));
@@ -1810,6 +1873,7 @@ export function TuiApp(props: TuiAppProps) {
         toolContext: sessionToolContext(),
         abortSignal: abortController.signal,
         ...(requestAffinityKey === undefined ? {} : { requestAffinityKey }),
+        onSessionEvent: handleSessionEvent,
         onProviderStatus(event) {
           if (event.type === "request-start") {
             setProviderStatusText(undefined);
@@ -1834,26 +1898,7 @@ export function TuiApp(props: TuiAppProps) {
             ];
           });
         },
-        onToolCall(toolCall) {
-          setBusyPhase("tool");
-          setProviderStatusText(undefined);
-          flushAndResetPendingStreamText();
-          if (shouldDeferAssistantTextUntilToolResult && toolResultSeenForDeferredText) {
-            flushDeferredAssistantTextAfterToolCall();
-          }
-          shouldDeferAssistantTextUntilToolResult = true;
-          toolResultSeenForDeferredText = false;
-          appendToolCallEntryAndCreateAssistantPlaceholder({
-            currentStreamingId: currentStreamingId,
-            currentStreamingBody: streamingBody(),
-            toolCall,
-            appendAssistantPlaceholder: false,
-            setEntries
-          });
-          currentStreamingId = undefined;
-          setStreamingBody("");
-          setStreamingEntryId(undefined);
-        },
+        onToolCall() {},
         onTextDelta(delta) {
           if (busyPhase() === "retrying") {
             setBusyPhase("thinking");
@@ -1875,39 +1920,7 @@ export function TuiApp(props: TuiAppProps) {
             schedulePendingStreamTextFlush(currentStreamingId, delta);
           }
         },
-        onToolResult(toolResult) {
-          setBusyPhase("thinking");
-          setProviderStatusText(undefined);
-          toolResultSeenForDeferredText = true;
-          invalidateWorkspaceFileSuggestionCache(sessionRuntimeConfig().workspaceRoot);
-          setFileSuggestionVersion((value) => value + 1);
-          const toolResultEntry = createToolResultUiEntry(
-            toolResult.toolName,
-            toolResult.content,
-            toolResult.isError,
-            toolResult.metadata
-          );
-          if (!toolResult.isError && toolResult.metadata?.kind === "todo-list") {
-            setTodos(toolResult.metadata.todos);
-            if (toolResult.metadata.todos.length === 0) {
-              setTodoDropupOpen(false);
-            }
-          }
-          if (toolResult.toolName === "Task") {
-            let replaced = false;
-            setEntries((previous) => {
-              const replacement = replaceTaskToolCallEntryWithResult(previous, toolResult);
-              replaced = replacement.replaced;
-              return replacement.entries;
-            });
-            if (replaced) {
-              return;
-            }
-          }
-          if (toolResultEntry !== undefined) {
-            appendEntry(setEntries, toolResultEntry);
-          }
-        },
+        onToolResult() {},
         onTranscriptUpdate(transcript) {
           latestTranscript = transcript;
           setTranscriptMessages(transcript);

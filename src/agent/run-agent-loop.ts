@@ -6,6 +6,7 @@
 
 import type { AiModel } from "../ai/types.ts";
 import { OperationAbortedError } from "../errors/recode-error.ts";
+import type { SessionEventObserver } from "../session/session-event.ts";
 import type { ConversationMessage } from "../transcript/message.ts";
 import type { ToolExecutionContext } from "../tools/tool.ts";
 import { ToolRegistry } from "../tools/tool-registry.ts";
@@ -18,6 +19,7 @@ import {
   type StepObserver,
   type TextDeltaObserver,
   type ToolCallObserver,
+  type ToolMetadataObserver,
   type ToolResultObserver
 } from "./session-processor.ts";
 
@@ -25,6 +27,7 @@ export type {
   StepObserver,
   TextDeltaObserver,
   ToolCallObserver,
+  ToolMetadataObserver,
   ToolResultObserver,
   ProviderStatusObserver
 } from "./session-processor.ts";
@@ -49,8 +52,10 @@ export interface AgentRunOptions {
   readonly toolContext: ToolExecutionContext;
   readonly abortSignal?: AbortSignal;
   readonly requestAffinityKey?: string;
+  readonly onSessionEvent?: SessionEventObserver;
   readonly onToolCall?: ToolCallObserver;
   readonly onTextDelta?: TextDeltaObserver;
+  readonly onToolMetadata?: ToolMetadataObserver;
   readonly onToolResult?: ToolResultObserver;
   readonly onProviderStatus?: ProviderStatusObserver;
   readonly onStepComplete?: StepObserver;
@@ -84,6 +89,12 @@ export async function runAgentLoop(options: AgentRunOptions): Promise<AgentRunRe
       content: modelInitialUserPrompt
     }
   ];
+  options.onSessionEvent?.({
+    type: "user.submitted",
+    timestamp: Date.now(),
+    content: options.initialUserPrompt,
+    modelContent: modelInitialUserPrompt
+  });
   publishTranscriptUpdate(options.onTranscriptUpdate, toPublicTranscript(messages, previousMessageCount, options.initialUserPrompt));
 
   let iterations = 0;
@@ -91,15 +102,32 @@ export async function runAgentLoop(options: AgentRunOptions): Promise<AgentRunRe
   const doomLoopGuard = new DoomLoopGuard();
 
   while (true) {
+    const stepId = crypto.randomUUID();
+    options.onSessionEvent?.({
+      type: "assistant.step.started",
+      timestamp: Date.now(),
+      stepId
+    });
     const step = await processAgentSessionStep({
+      stepId,
       systemPrompt: options.systemPrompt,
       languageModel: options.languageModel,
       toolRegistry: options.toolRegistry,
       ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
       ...(options.requestAffinityKey === undefined ? {} : { requestAffinityKey: options.requestAffinityKey }),
+      ...(options.onSessionEvent === undefined ? {} : { onSessionEvent: options.onSessionEvent }),
       ...(options.onToolCall === undefined ? {} : { onToolCall: options.onToolCall }),
       ...(options.onTextDelta === undefined ? {} : { onTextDelta: options.onTextDelta }),
-      ...(options.onProviderStatus === undefined ? {} : { onProviderStatus: options.onProviderStatus })
+      onProviderStatus(event) {
+        if (event.type === "retry") {
+          options.onSessionEvent?.({
+            type: "provider.retry",
+            timestamp: Date.now(),
+            status: event
+          });
+        }
+        options.onProviderStatus?.(event);
+      }
     }, messages);
 
     messages.push(step.assistantMessage);
@@ -123,6 +151,8 @@ export async function runAgentLoop(options: AgentRunOptions): Promise<AgentRunRe
       toolRegistry: options.toolRegistry,
       toolContext: options.toolContext,
       ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
+      ...(options.onSessionEvent === undefined ? {} : { onSessionEvent: options.onSessionEvent }),
+      ...(options.onToolMetadata === undefined ? {} : { onToolMetadata: options.onToolMetadata }),
       ...(options.onToolResult === undefined ? {} : { onToolResult: options.onToolResult })
     });
     messages.push(...toolMessages);

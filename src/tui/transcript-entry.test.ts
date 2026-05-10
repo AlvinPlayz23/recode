@@ -9,9 +9,11 @@ import {
   createToolCallUiEntry,
   extractLatestTodosFromTranscript,
   formatToolCallEntry,
+  markToolCallEntryFinished,
   rehydrateEntriesFromTranscript,
   replaceTaskToolCallEntryWithResult,
-  renderVisibleEntries
+  renderVisibleEntries,
+  updateToolCallEntryMetadata
 } from "./transcript-entry-state.ts";
 
 describe("transcript entry helpers", () => {
@@ -51,9 +53,91 @@ describe("transcript entry helpers", () => {
     expect(entries.map((entry) => [entry.kind, entry.body])).toEqual([
       ["user", "what is this project"],
       ["assistant", "I will inspect it."],
-      ["tool", "Bash · ls -la"],
+      ["tool-preview", "Bash · ls -la"],
       ["error", "Bash failed: Tool execution failed: TimeoutError"]
     ]);
+    expect(entries[2]?.toolStatus).toBe("error");
+  });
+
+  it("updates Bash preview rows with live output and suppresses successful duplicate result rows", () => {
+    const runningEntry = createToolCallUiEntry({
+      id: "call_bash",
+      name: "Bash",
+      argumentsJson: "{\"command\":\"bun run check\"}"
+    });
+    const liveEntries = updateToolCallEntryMetadata(
+      runningEntry === undefined ? [] : [runningEntry],
+      "call_bash",
+      {
+        metadata: {
+          kind: "bash-output",
+          command: "bun run check",
+          output: "$ tsc --noEmit"
+        }
+      }
+    );
+
+    expect(liveEntries[0]?.kind).toBe("tool-preview");
+    expect(liveEntries[0]?.metadata).toEqual({
+      kind: "bash-output",
+      command: "bun run check",
+      output: "$ tsc --noEmit"
+    });
+
+    const entries = rehydrateEntriesFromTranscript([
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: "call_bash",
+            name: "Bash",
+            argumentsJson: "{\"command\":\"bun run check\"}"
+          }
+        ]
+      },
+      {
+        role: "tool",
+        toolCallId: "call_bash",
+        toolName: "Bash",
+        content: "exit_code: 0",
+        isError: false,
+        metadata: {
+          kind: "bash-output",
+          command: "bun run check",
+          output: "exit_code: 0"
+        }
+      }
+    ]);
+
+    expect(entries.map((entry) => [entry.kind, entry.body, entry.toolStatus])).toEqual([
+      ["tool-preview", "Bash · bun run check", "completed"]
+    ]);
+  });
+
+  it("marks live tool rows completed or errored by tool call id", () => {
+    const runningEntry = createToolCallUiEntry({
+      id: "call_1",
+      name: "Read",
+      argumentsJson: "{\"path\":\"README.md\"}"
+    });
+    const untouchedEntry = createToolCallUiEntry({
+      id: "call_2",
+      name: "Glob",
+      argumentsJson: "{\"pattern\":\"src/**/*\"}"
+    });
+
+    const completed = markToolCallEntryFinished(
+      [runningEntry, untouchedEntry].filter((entry): entry is NonNullable<typeof entry> => entry !== undefined),
+      "call_1",
+      false
+    );
+
+    expect(completed[0]?.toolStatus).toBe("completed");
+    expect(completed[1]?.toolStatus).toBe("running");
+
+    const failed = markToolCallEntryFinished(completed, "call_2", true);
+    expect(failed[1]?.toolStatus).toBe("error");
   });
 
   it("shows a status row for compacted continuation summaries", () => {

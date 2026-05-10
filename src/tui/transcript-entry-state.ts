@@ -21,6 +21,7 @@ export interface UiEntry {
   readonly title: string;
   readonly body: string;
   readonly toolCallId?: string;
+  readonly toolStatus?: "running" | "completed" | "error";
   readonly metadata?: ToolResultMetadata;
 }
 
@@ -163,6 +164,15 @@ export function rehydrateEntriesFromTranscript(transcript: readonly Conversation
         break;
       case "tool":
         {
+          const metadataEntries = message.metadata === undefined
+            ? entries
+            : updateToolCallEntryMetadata(entries, message.toolCallId, {
+                metadata: message.metadata,
+                content: message.content
+              });
+          const updatedEntries = markToolCallEntryFinished(metadataEntries, message.toolCallId, message.isError);
+          entries.length = 0;
+          entries.push(...updatedEntries);
           const toolResultEntry = createToolResultUiEntry(
             message.toolName,
             message.content,
@@ -196,6 +206,13 @@ function findCompletedTaskToolCallIds(transcript: readonly ConversationMessage[]
  * Create the visible UI entry for a tool call.
  */
 export function createToolCallUiEntry(toolCall: ToolCall): UiEntry | undefined {
+  if (toolCall.name === "Bash") {
+    const metadata = readBashToolCallMetadata(toolCall.argumentsJson);
+    if (metadata !== undefined) {
+      return createBashPreviewEntry(toolCall.name, metadata, toolCall.id);
+    }
+  }
+
   if (toolCall.name === "TodoWrite") {
     const metadata = readTodoToolCallMetadata(toolCall.argumentsJson);
     if (metadata !== undefined) {
@@ -212,8 +229,48 @@ export function createToolCallUiEntry(toolCall: ToolCall): UiEntry | undefined {
 
   return {
     ...createEntry("tool", "tool", formatToolCallEntry(toolCall)),
-    toolCallId: toolCall.id
+    toolCallId: toolCall.id,
+    toolStatus: "running"
   };
+}
+
+/**
+ * Update a visible tool-call row after its result arrives.
+ */
+export function markToolCallEntryFinished(
+  entries: readonly UiEntry[],
+  toolCallId: string,
+  isError: boolean
+): readonly UiEntry[] {
+  const nextStatus = isError ? "error" : "completed";
+  return entries.map((entry) =>
+    entry.toolCallId === toolCallId && (entry.kind === "tool" || entry.kind === "tool-preview")
+      ? { ...entry, toolStatus: nextStatus }
+      : entry
+  );
+}
+
+/**
+ * Update a visible tool-call row with live metadata emitted while a tool runs.
+ */
+export function updateToolCallEntryMetadata(
+  entries: readonly UiEntry[],
+  toolCallId: string,
+  update: { readonly title?: string; readonly content?: string; readonly metadata?: ToolResultMetadata }
+): readonly UiEntry[] {
+  return entries.map((entry) => {
+    if (entry.toolCallId !== toolCallId || (entry.kind !== "tool" && entry.kind !== "tool-preview")) {
+      return entry;
+    }
+
+    return {
+      ...entry,
+      body: update.metadata?.kind === "bash-output"
+        ? `${toToolDisplayName("Bash")} · ${truncateDisplay(update.metadata.command, 72)}`
+        : entry.body,
+      ...(update.metadata === undefined ? {} : { metadata: update.metadata })
+    };
+  });
 }
 
 /**
@@ -241,6 +298,10 @@ export function createToolResultEntry(
   metadata: ToolResultMetadata | undefined,
   toolCallId?: string
 ): UiEntry | undefined {
+  if (metadata?.kind === "bash-output") {
+    return undefined;
+  }
+
   if (metadata?.kind === "edit-preview") {
     const detail = metadata.replacementCount === undefined || metadata.replacementCount === 1
       ? metadata.path
@@ -263,6 +324,19 @@ export function createToolResultEntry(
   return undefined;
 }
 
+function createBashPreviewEntry(
+  toolName: string,
+  metadata: ToolResultMetadata & { readonly kind: "bash-output" },
+  toolCallId?: string
+): UiEntry {
+  return {
+    ...createEntry("tool-preview", "tool", `${toToolDisplayName(toolName)} · ${truncateDisplay(metadata.command, 72)}`),
+    ...(toolCallId === undefined ? {} : { toolCallId }),
+    toolStatus: "running",
+    metadata
+  };
+}
+
 function createTodoPreviewEntry(
   toolName: string,
   metadata: ToolResultMetadata & { readonly kind: "todo-list" },
@@ -277,6 +351,7 @@ function createTodoPreviewEntry(
   return {
     ...createEntry("tool-preview", "tool", `${toToolDisplayName(toolName)} · ${remaining} active, ${completed} completed`),
     ...(toolCallId === undefined ? {} : { toolCallId }),
+    toolStatus: "running",
     metadata
   };
 }
@@ -299,6 +374,7 @@ function createTaskPreviewEntry(
       `${toToolDisplayName(toolName)} · ${status} ${metadata.subagentType} · ${metadata.description}`
     ),
     ...(toolCallId === undefined ? {} : { toolCallId }),
+    toolStatus: metadata.status === "completed" ? "completed" : "running",
     metadata
   };
 }
@@ -323,6 +399,20 @@ function readTaskToolCallMetadata(argumentsJson: string): (ToolResultMetadata & 
   } catch {
     return undefined;
   }
+}
+
+function readBashToolCallMetadata(argumentsJson: string): (ToolResultMetadata & { readonly kind: "bash-output" }) | undefined {
+  const args = parseToolArguments(argumentsJson);
+  const command = readTrimmedString(args, "command", 10_000);
+  if (command === "") {
+    return undefined;
+  }
+
+  return {
+    kind: "bash-output",
+    command,
+    output: ""
+  };
 }
 
 function readTodoToolCallMetadata(argumentsJson: string): (ToolResultMetadata & { readonly kind: "todo-list" }) | undefined {
@@ -354,7 +444,8 @@ export function createToolResultUiEntry(
   if (isError) {
     return {
       ...createEntry("error", "error", `${toolName} failed: ${content}`),
-      ...(toolCallId === undefined ? {} : { toolCallId })
+      ...(toolCallId === undefined ? {} : { toolCallId }),
+      toolStatus: "error"
     };
   }
 
@@ -507,6 +598,15 @@ function readTrimmedString(
 
   const normalized = value.trim().replace(/\s+/g, " ");
 
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength - 1)}…`;
+}
+
+function truncateDisplay(value: string, maxLength: number): string {
+  const normalized = value.trim().replace(/\s+/g, " ");
   if (normalized.length <= maxLength) {
     return normalized;
   }

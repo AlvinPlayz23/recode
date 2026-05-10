@@ -60,10 +60,20 @@ export function estimateEntryHeight(entry: UiEntry, width: number): number {
     case "assistant":
       return estimateWrappedTextHeight(entry.body, contentWidth) + 1;
     case "tool":
-    case "tool-preview":
     case "tool-group":
     case "status":
       return estimateWrappedTextHeight(entry.body, contentWidth) + 1;
+    case "tool-preview": {
+      if (entry.metadata?.kind !== "bash-output") {
+        return estimateWrappedTextHeight(entry.body, contentWidth) + 1;
+      }
+
+      const visibleOutputLines = Math.min(
+        10,
+        entry.metadata.output.trimEnd() === "" ? 0 : entry.metadata.output.trimEnd().split("\n").length
+      );
+      return estimateWrappedTextHeight(entry.body, contentWidth) + visibleOutputLines + 5;
+    }
     case "error":
       return estimateWrappedTextHeight(entry.body, contentWidth) + 2;
   }

@@ -68,19 +68,50 @@ export function createBashTool(): ToolDefinition {
         killSignal: "SIGKILL" as const
       };
       const proc = executionPolicy.spawn(input.command, context.workspaceRoot, spawnOptions);
+      let liveOutput = "";
+      const publishOutput = async (chunk: string) => {
+        if (chunk === "") {
+          return;
+        }
+
+        liveOutput += chunk;
+        await context.updateToolMetadata?.({
+          title: input.command,
+          content: liveOutput,
+          metadata: {
+            kind: "bash-output",
+            command: input.command,
+            output: truncateText(liveOutput)
+          }
+        });
+      };
 
       try {
         const [stdout, stderr, exitCode] = await Promise.all([
-          streamToText(proc.stdout),
-          streamToText(proc.stderr),
+          streamToText(proc.stdout, publishOutput),
+          streamToText(proc.stderr, publishOutput),
           proc.exited
         ]);
 
         const content = truncateText(formatProcessResult(stdout, stderr, exitCode, timedOut, aborted));
+        const finalMetadata = {
+          kind: "bash-output" as const,
+          command: input.command,
+          output: content,
+          ...(exitCode === null ? {} : { exitCode }),
+          ...(timedOut ? { timedOut } : {}),
+          ...(aborted ? { aborted } : {})
+        };
+        await context.updateToolMetadata?.({
+          title: input.command,
+          content,
+          metadata: finalMetadata
+        });
 
         return {
           content,
-          isError: exitCode !== 0 || timedOut || aborted
+          isError: exitCode !== 0 || timedOut || aborted,
+          metadata: finalMetadata
         };
       } finally {
         clearTimeout(timeoutHandle);
@@ -103,12 +134,28 @@ function parseBashToolInput(arguments_: ToolArguments): BashToolInput {
   };
 }
 
-async function streamToText(stream: ReadableStream<Uint8Array> | number | null): Promise<string> {
+async function streamToText(
+  stream: ReadableStream<Uint8Array> | number | null,
+  onChunk?: (chunk: string) => Promise<void>
+): Promise<string> {
   if (stream === null || typeof stream === "number") {
     return "";
   }
 
-  return await new Response(stream).text();
+  const decoder = new TextDecoder();
+  let output = "";
+  const chunks = stream as ReadableStream<Uint8Array> & AsyncIterable<Uint8Array>;
+
+  for await (const value of chunks) {
+    const chunk = decoder.decode(value, { stream: true });
+    output += chunk;
+    await onChunk?.(chunk);
+  }
+
+  const tail = decoder.decode();
+  output += tail;
+  await onChunk?.(tail);
+  return output;
 }
 
 function formatProcessResult(

@@ -6,10 +6,11 @@ import { streamAssistantResponse } from "../ai/stream-assistant-response.ts";
 import { formatProviderError } from "../ai/provider-error.ts";
 import type { AiModel, ProviderStatusEvent } from "../ai/types.ts";
 import { DoomLoopDetectedError, ModelResponseError, OperationAbortedError } from "../errors/recode-error.ts";
+import type { SessionEventObserver } from "../session/session-event.ts";
 import type { ConversationMessage, ToolCall, ToolResultMessage } from "../transcript/message.ts";
 import { formatQuestionAnswerSummary, parseQuestionToolResult } from "../tools/ask-user-question-tool.ts";
 import { executeToolCall } from "../tools/execute-tool-call.ts";
-import type { ToolExecutionContext } from "../tools/tool.ts";
+import type { ToolExecutionContext, ToolMetadataUpdate } from "../tools/tool.ts";
 import { createToolErrorMessage } from "../tools/tool-result-format.ts";
 import { ToolRegistry } from "../tools/tool-registry.ts";
 import type { StepStats } from "./step-stats.ts";
@@ -39,6 +40,22 @@ export interface ToolResultObserver {
 }
 
 /**
+ * Live tool metadata update with the tool identity attached.
+ */
+export interface ToolMetadataUpdateNotification {
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly update: ToolMetadataUpdate;
+}
+
+/**
+ * Live tool metadata observer.
+ */
+export interface ToolMetadataObserver {
+  (update: ToolMetadataUpdateNotification): void;
+}
+
+/**
  * Step completion observer.
  */
 export interface StepObserver {
@@ -56,11 +73,13 @@ export interface ProviderStatusObserver {
  * Dependencies for processing one model step.
  */
 export interface AgentSessionStepOptions {
+  readonly stepId: string;
   readonly systemPrompt: string;
   readonly languageModel: AiModel;
   readonly toolRegistry: ToolRegistry;
   readonly abortSignal?: AbortSignal;
   readonly requestAffinityKey?: string;
+  readonly onSessionEvent?: SessionEventObserver;
   readonly onToolCall?: ToolCallObserver;
   readonly onTextDelta?: TextDeltaObserver;
   readonly onProviderStatus?: ProviderStatusObserver;
@@ -73,6 +92,8 @@ export interface AgentSessionToolOptions {
   readonly toolRegistry: ToolRegistry;
   readonly toolContext: ToolExecutionContext;
   readonly abortSignal?: AbortSignal;
+  readonly onSessionEvent?: SessionEventObserver;
+  readonly onToolMetadata?: ToolMetadataObserver;
   readonly onToolResult?: ToolResultObserver;
 }
 
@@ -141,6 +162,12 @@ export async function processAgentSessionStep(
     switch (part.type) {
       case "text-delta":
         accumulatedText += part.text;
+        options.onSessionEvent?.({
+          type: "assistant.text.delta",
+          timestamp: Date.now(),
+          stepId: options.stepId,
+          delta: part.text
+        });
         options.onTextDelta?.(part.text);
         break;
       case "error":
@@ -157,6 +184,12 @@ export async function processAgentSessionStep(
           ...(part.extraContent === undefined ? {} : { extraContent: part.extraContent })
         };
         toolCalls.push(toolCall);
+        options.onSessionEvent?.({
+          type: "tool.started",
+          timestamp: Date.now(),
+          stepId: options.stepId,
+          toolCall
+        });
         options.onToolCall?.(toolCall);
         break;
       }
@@ -179,6 +212,14 @@ export async function processAgentSessionStep(
     ...(costUsd === undefined ? {} : { costUsd }),
     ...(tokenUsage === undefined ? {} : { tokenUsage })
   };
+
+  options.onSessionEvent?.({
+    type: "assistant.step.finished",
+    timestamp: Date.now(),
+    stepId: options.stepId,
+    finalText: accumulatedText,
+    stepStats
+  });
 
   return {
     accumulatedText,
@@ -218,6 +259,7 @@ export async function executeAgentSessionToolCalls(
     if (options.abortSignal?.aborted ?? false) {
       const abortedResult = createToolErrorMessage(toolCall, "Request aborted");
       messages.push(abortedResult);
+      publishToolResultEvent(abortedResult, options);
       options.onToolResult?.(abortedResult);
       return messages;
     }
@@ -225,9 +267,10 @@ export async function executeAgentSessionToolCalls(
     const toolResult = await executeToolCall(
       toolCall,
       options.toolRegistry,
-      withAbortSignal(options.toolContext, options.abortSignal)
+      withToolRuntimeContext(options.toolContext, toolCall, options.abortSignal, options.onToolMetadata, options.onSessionEvent)
     );
     messages.push(toolResult);
+    publishToolResultEvent(toolResult, options);
     options.onToolResult?.(toolResult);
 
     if (options.abortSignal?.aborted ?? false) {
@@ -276,7 +319,7 @@ async function executeTaskToolBatch(
       return await executeToolCall(
         toolCall,
         options.toolRegistry,
-        withAbortSignal(options.toolContext, options.abortSignal)
+        withToolRuntimeContext(options.toolContext, toolCall, options.abortSignal, options.onToolMetadata, options.onSessionEvent)
       );
     }
   );
@@ -284,6 +327,7 @@ async function executeTaskToolBatch(
   const messages: ConversationMessage[] = [];
   for (const toolResult of results) {
     messages.push(toolResult);
+    publishToolResultEvent(toolResult, options);
     options.onToolResult?.(toolResult);
 
     const followUpUserMessage = buildSyntheticUserMessageFromToolResult(
@@ -320,18 +364,40 @@ async function runWithConcurrency<TInput, TOutput>(
   return results;
 }
 
-function withAbortSignal(
+function withToolRuntimeContext(
   context: ToolExecutionContext,
-  abortSignal: AbortSignal | undefined
+  toolCall: ToolCall,
+  abortSignal: AbortSignal | undefined,
+  onToolMetadata: ToolMetadataObserver | undefined,
+  onSessionEvent: SessionEventObserver | undefined
 ): ToolExecutionContext {
-  if (abortSignal === undefined) {
-    return context;
-  }
-
   return {
     ...context,
-    abortSignal
+    ...(abortSignal === undefined ? {} : { abortSignal }),
+    updateToolMetadata(update) {
+      onToolMetadata?.({
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        update
+      });
+      onSessionEvent?.({
+        type: "tool.metadata.updated",
+        timestamp: Date.now(),
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        update
+      });
+      return context.updateToolMetadata?.(update);
+    }
   };
+}
+
+function publishToolResultEvent(toolResult: ToolResultMessage, options: AgentSessionToolOptions): void {
+  options.onSessionEvent?.({
+    type: toolResult.isError ? "tool.errored" : "tool.completed",
+    timestamp: Date.now(),
+    toolResult
+  });
 }
 
 function throwIfAborted(abortSignal: AbortSignal | undefined): void {
