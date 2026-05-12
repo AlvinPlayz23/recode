@@ -5,6 +5,7 @@
 import type { ConversationMessage } from "../transcript/message.ts";
 import type { SubagentTaskRecord } from "../agent/subagent.ts";
 import type { SessionMode } from "../tui/session-mode.ts";
+import type { SessionEvent } from "../session/session-event.ts";
 
 /**
  * Durable snapshot captured when a session is compacted.
@@ -47,6 +48,7 @@ export interface SavedConversationMeta {
  */
 export interface SavedConversationRecord extends SavedConversationMeta {
   readonly transcript: readonly ConversationMessage[];
+  readonly sessionEvents?: readonly SessionEvent[];
   readonly subagentTasks?: readonly SubagentTaskRecord[];
   readonly sessionSnapshots?: readonly SessionSnapshot[];
 }

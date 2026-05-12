@@ -147,8 +147,8 @@ describe("history picker helpers", () => {
       setLastContextEstimate() {
         return;
       },
-      rehydrateEntries(transcript) {
-        return transcript.map((message) => `${message.role}:${message.content}`);
+      rehydrateEntries(conversation) {
+        return conversation.transcript.map((message) => `${message.role}:${message.content}`);
       },
       close() {
         closed = true;

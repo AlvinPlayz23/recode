@@ -329,6 +329,46 @@ describe("recode history schema", () => {
     ]);
   });
 
+  it("parses persisted session events", () => {
+    const record = parseConversationRecord({
+      ...baseConversationMeta(),
+      transcript: [{ role: "user", content: "Hello" }],
+      sessionEvents: [
+        {
+          type: "user.submitted",
+          timestamp: 1,
+          content: "Hello",
+          modelContent: "Hello"
+        },
+        {
+          type: "assistant.text.delta",
+          timestamp: 2,
+          stepId: "step-1",
+          delta: "Hi"
+        },
+        {
+          type: "unknown",
+          timestamp: 3
+        }
+      ]
+    });
+
+    expect(record?.sessionEvents).toEqual([
+      {
+        type: "user.submitted",
+        timestamp: 1,
+        content: "Hello",
+        modelContent: "Hello"
+      },
+      {
+        type: "assistant.text.delta",
+        timestamp: 2,
+        stepId: "step-1",
+        delta: "Hi"
+      }
+    ]);
+  });
+
   it("converts conversation records to index metadata", () => {
     const record: SavedConversationRecord = {
       ...baseConversationMeta(),

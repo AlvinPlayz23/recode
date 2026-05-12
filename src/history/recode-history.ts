@@ -6,6 +6,7 @@
 
 import { join, resolve } from "node:path";
 import type { SubagentTaskRecord } from "../agent/subagent.ts";
+import type { SessionEvent } from "../session/session-event.ts";
 import type { RuntimeConfig } from "../runtime/runtime-config.ts";
 import type {
   AssistantMessage,
@@ -70,7 +71,8 @@ export function createConversationRecord(
   mode: SessionMode,
   seed?: Partial<Pick<SavedConversationRecord, "id" | "createdAt">>,
   subagentTasks?: readonly SubagentTaskRecord[],
-  sessionSnapshots?: readonly SessionSnapshot[]
+  sessionSnapshots?: readonly SessionSnapshot[],
+  sessionEvents?: readonly SessionEvent[]
 ): SavedConversationRecord {
   const now = new Date().toISOString();
   const createdAt = seed?.createdAt ?? now;
@@ -79,6 +81,7 @@ export function createConversationRecord(
   return {
     ...buildConversationMeta(runtimeConfig, transcript, mode, createdAt, now, id),
     transcript,
+    ...(sessionEvents === undefined || sessionEvents.length === 0 ? {} : { sessionEvents }),
     ...(subagentTasks === undefined || subagentTasks.length === 0 ? {} : { subagentTasks }),
     ...(sessionSnapshots === undefined || sessionSnapshots.length === 0 ? {} : { sessionSnapshots })
   };

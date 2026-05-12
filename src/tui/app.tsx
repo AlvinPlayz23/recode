@@ -37,6 +37,7 @@ import {
   createCompactionSessionSnapshot,
   estimateConversationContextTokens,
   evaluateAutoCompaction,
+  microcompactToolResults,
   type ContextTokenEstimate
 } from "../agent/compact-conversation.ts";
 import {
@@ -263,6 +264,7 @@ import {
   createEntry,
   extractLatestTodosFromTranscript,
   rehydrateEntriesFromTranscript,
+  rehydrateEntriesFromSessionEvents,
   renderVisibleEntries,
   updateEntryBody,
   uiEntriesFromSessionState,
@@ -312,6 +314,7 @@ export function TuiApp(props: TuiAppProps) {
   const [draft, setDraft] = createSignal("");
   const [pendingPastes, setPendingPastes] = createSignal<readonly PendingPaste[]>([]);
   const [previousMessages, setPreviousMessages] = createSignal<readonly ConversationMessage[]>([]);
+  const [sessionEvents, setSessionEvents] = createSignal<readonly SessionEvent[]>([]);
   const [contextWindowFallbacks, setContextWindowFallbacks] = createSignal<Readonly<Record<string, number>>>({});
   const [lastContextEstimate, setLastContextEstimate] = createSignal<ContextTokenEstimate | undefined>(undefined);
   const [sessionMode, setSessionMode] = createSignal<SessionMode>("build");
@@ -956,7 +959,35 @@ export function TuiApp(props: TuiAppProps) {
     abortSignal: AbortSignal
   ): Promise<readonly ConversationMessage[]> => {
     const contextWindowStatus = await ensureActiveModelContextWindow();
-    const estimateBefore = estimateConversationContextTokens(previousMessages(), pendingPrompt);
+    const microcompacted = microcompactToolResults(previousMessages());
+    const effectiveTranscript = microcompacted.kind === "compacted"
+      ? microcompacted.transcript
+      : previousMessages();
+
+    if (microcompacted.kind === "compacted") {
+      setTranscriptMessages(microcompacted.transcript);
+      const persistedConversation = persistConversationSession(
+        historyRoot(),
+        sessionRuntimeConfig(),
+        microcompacted.transcript,
+        currentConversation(),
+        sessionMode(),
+        subagentTasks(),
+        undefined,
+        sessionEvents()
+      );
+      setCurrentConversation(persistedConversation);
+      appendEntry(
+        setEntries,
+        createEntry(
+          "status",
+          "status",
+          `Microcompacted ${microcompacted.compactedToolResultCount} old tool result${microcompacted.compactedToolResultCount === 1 ? "" : "s"}`
+        )
+      );
+    }
+
+    const estimateBefore = estimateConversationContextTokens(effectiveTranscript, pendingPrompt);
     setLastContextEstimate(estimateBefore);
 
     const compactionDecision = evaluateAutoCompaction(
@@ -966,11 +997,11 @@ export function TuiApp(props: TuiAppProps) {
     );
 
     if (!compactionDecision.shouldCompact) {
-      return previousMessages();
+      return effectiveTranscript;
     }
 
     const compacted = await compactConversation({
-      transcript: previousMessages(),
+      transcript: effectiveTranscript,
       languageModel: sessionLanguageModel(),
       abortSignal
     });
@@ -982,8 +1013,15 @@ export function TuiApp(props: TuiAppProps) {
     }
 
     setTranscriptMessages(compacted.transcript);
-    const snapshot = createCompactionSessionSnapshot(previousMessages(), compacted, "auto");
+    const snapshot = createCompactionSessionSnapshot(effectiveTranscript, compacted, "auto");
     const nextSnapshots = [...(currentConversation()?.sessionSnapshots ?? []), snapshot];
+    const compactedEvent: SessionEvent = {
+      type: "session.compacted",
+      timestamp: Date.now(),
+      content: compacted.summaryMessage.content
+    };
+    const nextSessionEvents = [...sessionEvents(), compactedEvent];
+    setSessionEvents(nextSessionEvents);
     const persistedConversation = persistConversationSession(
       historyRoot(),
       sessionRuntimeConfig(),
@@ -991,7 +1029,8 @@ export function TuiApp(props: TuiAppProps) {
       currentConversation(),
       sessionMode(),
       subagentTasks(),
-      nextSnapshots
+      nextSnapshots,
+      nextSessionEvents
     );
     setCurrentConversation(persistedConversation);
     appendEntry(
@@ -1020,6 +1059,7 @@ export function TuiApp(props: TuiAppProps) {
     restoreSubagentTaskState([]);
     setEntries([]);
     setTranscriptMessages([]);
+    setSessionEvents([]);
     setLastContextEstimate(undefined);
     setSessionMode("build");
   });
@@ -1362,9 +1402,14 @@ export function TuiApp(props: TuiAppProps) {
           setConversation: setCurrentConversation,
           setEntries,
           setPreviousMessages: setTranscriptMessages,
+          setSessionEvents,
           setSubagentTasks: restoreSubagentTaskState,
           setLastContextEstimate,
-          rehydrateEntries: rehydrateEntriesFromTranscript,
+          rehydrateEntries(conversation) {
+            return conversation.sessionEvents === undefined
+              ? rehydrateEntriesFromTranscript(conversation.transcript)
+              : rehydrateEntriesFromSessionEvents(conversation.sessionEvents);
+          },
           close() {
             closeHistoryPicker(
               setHistoryPickerOpen,
@@ -1754,6 +1799,7 @@ export function TuiApp(props: TuiAppProps) {
       setConversation: setCurrentConversation,
       setEntries,
       setPreviousMessages: setTranscriptMessages,
+      setSessionEvents,
       setSubagentTasks: restoreSubagentTaskState,
       setLastContextEstimate,
       setStreamingBody,
@@ -1791,6 +1837,8 @@ export function TuiApp(props: TuiAppProps) {
     activeAbortController = abortController;
     let latestTranscript: readonly ConversationMessage[] | undefined;
     const baseEntries = entries();
+    const baseSessionEvents = sessionEvents();
+    let turnSessionEvents: SessionEvent[] = [];
     let turnSessionState: SessionState = createEmptySessionState();
 
     const syncTurnSessionEntries = () => {
@@ -1808,6 +1856,8 @@ export function TuiApp(props: TuiAppProps) {
     };
 
     const handleSessionEvent = (event: SessionEvent) => {
+      turnSessionEvents = [...turnSessionEvents, event];
+      setSessionEvents([...baseSessionEvents, ...turnSessionEvents]);
       turnSessionState = applySessionEvent(turnSessionState, event);
       syncTurnSessionEntries();
 
@@ -1888,6 +1938,7 @@ export function TuiApp(props: TuiAppProps) {
         runtimeConfig: sessionRuntimeConfig(),
         transcript: result.transcript,
         subagentTasks: subagentTasks(),
+        sessionEvents: [...baseSessionEvents, ...turnSessionEvents],
         currentConversation: currentConversation(),
         sessionMode: sessionMode(),
         setPreviousMessages: setTranscriptMessages,
@@ -1924,6 +1975,7 @@ export function TuiApp(props: TuiAppProps) {
           runtimeConfig: sessionRuntimeConfig(),
           transcript: transcriptSnapshot,
           subagentTasks: subagentTasks(),
+          sessionEvents: [...baseSessionEvents, ...turnSessionEvents],
           currentConversation: currentConversation(),
           sessionMode: sessionMode(),
           setPreviousMessages: setTranscriptMessages,

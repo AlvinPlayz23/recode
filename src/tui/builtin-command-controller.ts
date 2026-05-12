@@ -17,6 +17,7 @@ import {
 } from "../config/recode-config.ts";
 import { exportConversationToHtml } from "../history/export-html.ts";
 import type { SavedConversationRecord } from "../history/recode-history.ts";
+import type { SessionEvent } from "../session/session-event.ts";
 import type { RuntimeConfig } from "../runtime/runtime-config.ts";
 import type { ConversationMessage } from "../transcript/message.ts";
 import {
@@ -92,6 +93,7 @@ export interface BuiltinCommandDispatchOptions {
   readonly setConversation: (value: SavedConversationRecord) => void;
   readonly setEntries: (value: readonly UiEntry[]) => void;
   readonly setPreviousMessages: (value: readonly ConversationMessage[]) => void;
+  readonly setSessionEvents?: (value: readonly SessionEvent[]) => void;
   readonly setSubagentTasks: (value: readonly SubagentTaskRecord[]) => void;
   readonly setLastContextEstimate: (value: ContextTokenEstimate | undefined) => void;
   readonly setStreamingBody: (value: string) => void;
@@ -265,6 +267,7 @@ function startNewConversation(options: BuiltinCommandDispatchOptions): void {
   options.setConversation(conversation);
   options.setEntries([createEntry("status", "status", "Started a new conversation")]);
   options.setPreviousMessages([]);
+  options.setSessionEvents?.([]);
   options.setSubagentTasks([]);
   options.setLastContextEstimate(undefined);
   options.setStreamingBody("");
@@ -283,7 +286,8 @@ function forkCurrentConversation(options: BuiltinCommandDispatchOptions): void {
     options.transcript,
     options.sessionMode,
     options.subagentTasks,
-    options.currentConversation?.sessionSnapshots
+    options.currentConversation?.sessionSnapshots,
+    options.currentConversation?.sessionEvents
   );
 
   options.setConversation(forkedConversation);
@@ -320,6 +324,15 @@ async function compactCurrentConversation(options: BuiltinCommandDispatchOptions
     options.setLastContextEstimate(estimateConversationContextTokens(compacted.transcript));
     const snapshot = createCompactionSessionSnapshot(options.transcript, compacted, "manual");
     const nextSnapshots = [...(options.currentConversation?.sessionSnapshots ?? []), snapshot];
+    const nextSessionEvents = [
+      ...(options.currentConversation?.sessionEvents ?? []),
+      {
+        type: "session.compacted" as const,
+        timestamp: Date.now(),
+        content: compacted.summaryMessage.content
+      }
+    ];
+    options.setSessionEvents?.(nextSessionEvents);
     const persistedConversation = persistConversationSession(
       options.historyRoot,
       options.runtimeConfig,
@@ -327,7 +340,8 @@ async function compactCurrentConversation(options: BuiltinCommandDispatchOptions
       options.currentConversation,
       options.sessionMode,
       options.subagentTasks,
-      nextSnapshots
+      nextSnapshots,
+      nextSessionEvents
     );
     options.setConversation(persistedConversation);
     options.appendEntry(

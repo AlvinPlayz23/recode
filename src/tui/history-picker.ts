@@ -16,6 +16,7 @@ import {
   type SavedConversationRecord
 } from "../history/recode-history.ts";
 import type { ConversationMessage } from "../transcript/message.ts";
+import type { SessionEvent } from "../session/session-event.ts";
 import type { RuntimeConfig } from "../runtime/runtime-config.ts";
 import { restoreSavedConversationRuntime } from "./conversation-session.ts";
 
@@ -106,9 +107,10 @@ export interface SubmitHistoryPickerSelectionOptions<TEntry> {
   readonly setConversation: (value: SavedConversationRecord) => void;
   readonly setEntries: (value: readonly TEntry[]) => void;
   readonly setPreviousMessages: (value: readonly ConversationMessage[]) => void;
+  readonly setSessionEvents?: (value: readonly SessionEvent[]) => void;
   readonly setSubagentTasks?: (value: readonly SubagentTaskRecord[]) => void;
   readonly setLastContextEstimate: (value: ContextTokenEstimate | undefined) => void;
-  readonly rehydrateEntries: (transcript: readonly ConversationMessage[]) => readonly TEntry[];
+  readonly rehydrateEntries: (conversation: SavedConversationRecord) => readonly TEntry[];
   readonly close: () => void;
 }
 
@@ -134,8 +136,9 @@ export async function submitSelectedHistoryPickerItem<TEntry>(
     markConversationAsCurrent(options.historyRoot, conversation.id);
     options.setRuntimeConfig(restoreSavedConversationRuntime(options.runtimeConfig, conversation));
     options.setConversation(conversation);
-    options.setEntries(options.rehydrateEntries(conversation.transcript));
+    options.setEntries(options.rehydrateEntries(conversation));
     options.setPreviousMessages(conversation.transcript);
+    options.setSessionEvents?.(conversation.sessionEvents ?? []);
     options.setSubagentTasks?.(conversation.subagentTasks ?? []);
     options.setLastContextEstimate(estimateConversationContextTokens(conversation.transcript));
     options.close();

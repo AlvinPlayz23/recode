@@ -25,6 +25,8 @@ const MAX_RESERVED_CONTEXT_TOKENS = 20_000;
 const MESSAGE_OVERHEAD_TOKENS = 12;
 const TOOL_CALL_OVERHEAD_TOKENS = 8;
 const CHARACTERS_PER_TOKEN_ESTIMATE = 4;
+const MICROCOMPACT_TOOL_CONTENT_LIMIT = 4_000;
+const MICROCOMPACT_TOOL_EDGE_CHARS = 1_600;
 const COMPACTION_SYSTEM_PROMPT = [
   "You are compacting an ongoing Recode coding session.",
   "Write a concise continuation summary for the same assistant to keep working from.",
@@ -88,6 +90,17 @@ export type CompactConversationResult =
       readonly transcript: readonly ConversationMessage[];
       readonly summaryMessage: ContinuationSummaryMessage;
       readonly compactedMessageCount: number;
+    };
+
+/** Result of cheap deterministic tool-result microcompaction. */
+export type MicrocompactConversationResult =
+  | {
+      readonly kind: "noop";
+    }
+  | {
+      readonly kind: "compacted";
+      readonly transcript: readonly ConversationMessage[];
+      readonly compactedToolResultCount: number;
     };
 
 /**
@@ -188,6 +201,52 @@ export function splitTranscriptForCompaction(transcript: readonly ConversationMe
     existingSummaries,
     compactableMessages: nonSummaryMessages.slice(0, tailStartIndex),
     tailMessages: nonSummaryMessages.slice(tailStartIndex)
+  };
+}
+
+/**
+ * Deterministically trim old oversized tool results before full summarization.
+ */
+export function microcompactToolResults(transcript: readonly ConversationMessage[]): MicrocompactConversationResult {
+  const split = splitTranscriptForCompaction(transcript);
+  let compactedToolResultCount = 0;
+  const compactableMessages = split.compactableMessages.map((message) => {
+    if (message.role !== "tool") {
+      return message;
+    }
+
+    const compactedContent = microcompactText(message.content);
+    const compactedMetadata = message.metadata?.kind === "bash-output"
+      ? {
+          ...message.metadata,
+          output: microcompactText(message.metadata.output)
+        }
+      : message.metadata;
+
+    if (compactedContent === message.content && compactedMetadata === message.metadata) {
+      return message;
+    }
+
+    compactedToolResultCount += 1;
+    return {
+      ...message,
+      content: compactedContent,
+      ...(compactedMetadata === undefined ? {} : { metadata: compactedMetadata })
+    };
+  });
+
+  if (compactedToolResultCount === 0) {
+    return { kind: "noop" };
+  }
+
+  return {
+    kind: "compacted",
+    transcript: [
+      ...split.existingSummaries,
+      ...compactableMessages,
+      ...split.tailMessages
+    ],
+    compactedToolResultCount
   };
 }
 
@@ -303,6 +362,21 @@ function estimateTextTokens(value: string): number {
   }
 
   return Math.max(1, Math.ceil(normalized.length / CHARACTERS_PER_TOKEN_ESTIMATE));
+}
+
+function microcompactText(value: string): string {
+  if (value.length <= MICROCOMPACT_TOOL_CONTENT_LIMIT) {
+    return value;
+  }
+
+  const removed = value.length - (MICROCOMPACT_TOOL_EDGE_CHARS * 2);
+  return [
+    value.slice(0, MICROCOMPACT_TOOL_EDGE_CHARS).trimEnd(),
+    "",
+    `[microcompacted ${removed.toLocaleString()} middle characters from an old tool result]`,
+    "",
+    value.slice(-MICROCOMPACT_TOOL_EDGE_CHARS).trimStart()
+  ].join("\n");
 }
 
 function countContextWindowTokens(tokenUsage: StepTokenUsage | undefined): number | undefined {

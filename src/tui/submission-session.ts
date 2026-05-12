@@ -6,6 +6,7 @@ import { estimateConversationContextTokens, type ContextTokenEstimate } from "..
 import type { SubagentTaskRecord } from "../agent/subagent.ts";
 import type { RuntimeConfig } from "../runtime/runtime-config.ts";
 import type { SavedConversationRecord } from "../history/recode-history.ts";
+import type { SessionEvent } from "../session/session-event.ts";
 import type { ConversationMessage, ToolCall } from "../transcript/message.ts";
 import { persistConversationSession } from "./conversation-session.ts";
 import type { SessionMode } from "./session-mode.ts";
@@ -25,6 +26,7 @@ export interface PersistPromptTranscriptOptions {
   readonly runtimeConfig: RuntimeConfig;
   readonly transcript: readonly ConversationMessage[];
   readonly subagentTasks?: readonly SubagentTaskRecord[];
+  readonly sessionEvents?: readonly SessionEvent[];
   readonly currentConversation: SavedConversationRecord | undefined;
   readonly sessionMode: SessionMode;
   readonly setPreviousMessages: (value: readonly ConversationMessage[]) => void;
@@ -94,7 +96,9 @@ export function persistPromptTranscript(options: PersistPromptTranscriptOptions)
     options.transcript,
     options.currentConversation,
     options.sessionMode,
-    options.subagentTasks
+    options.subagentTasks,
+    undefined,
+    options.sessionEvents
   );
   options.setConversation(persistedConversation);
   return persistedConversation;

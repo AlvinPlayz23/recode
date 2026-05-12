@@ -29,6 +29,7 @@ const {
   compactConversation,
   estimateConversationContextTokens,
   evaluateAutoCompaction,
+  microcompactToolResults,
   splitTranscriptForCompaction
 } = await import("./compact-conversation.ts");
 
@@ -233,5 +234,44 @@ describe("compact conversation", () => {
     expect(split.existingSummaries).toHaveLength(1);
     expect(split.compactableMessages.map((message) => message.role)).toEqual(["user", "assistant"]);
     expect(split.tailMessages.map((message) => message.role)).toEqual(["user", "assistant", "user"]);
+  });
+
+  it("microcompacts old oversized tool results while preserving recent turns", () => {
+    const largeOutput = "a".repeat(10_000);
+    const result = microcompactToolResults([
+      { role: "user", content: "old" },
+      { role: "assistant", content: "", toolCalls: [{ id: "call-1", name: "Bash", argumentsJson: "{}" }] },
+      {
+        role: "tool",
+        toolCallId: "call-1",
+        toolName: "Bash",
+        content: largeOutput,
+        isError: false,
+        metadata: {
+          kind: "bash-output",
+          command: "yes",
+          output: largeOutput
+        }
+      },
+      { role: "user", content: "recent one" },
+      { role: "assistant", content: "ok", toolCalls: [] },
+      { role: "user", content: "recent two" },
+      { role: "assistant", content: "ok", toolCalls: [] }
+    ]);
+
+    expect(result.kind).toBe("compacted");
+    if (result.kind !== "compacted") {
+      return;
+    }
+
+    const toolMessage = result.transcript[2];
+    expect(toolMessage?.role).toBe("tool");
+    if (toolMessage?.role !== "tool") {
+      return;
+    }
+
+    expect(toolMessage.content).toContain("microcompacted");
+    expect(toolMessage.metadata?.kind === "bash-output" ? toolMessage.metadata.output : "").toContain("microcompacted");
+    expect(result.transcript.at(-2)).toEqual({ role: "user", content: "recent two" });
   });
 });

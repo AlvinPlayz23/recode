@@ -60,6 +60,11 @@ export function createEmptySessionState(): SessionState {
   };
 }
 
+/** Replay normalized lifecycle events into projected session state. */
+export function sessionStateFromEvents(events: readonly SessionEvent[]): SessionState {
+  return events.reduce((state, event) => applySessionEvent(state, event), createEmptySessionState());
+}
+
 /** Apply one normalized lifecycle event to a projected session state. */
 export function applySessionEvent(state: SessionState, event: SessionEvent): SessionState {
   switch (event.type) {

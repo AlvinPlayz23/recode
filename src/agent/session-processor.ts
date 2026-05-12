@@ -10,13 +10,24 @@ import type { SessionEventObserver } from "../session/session-event.ts";
 import type { ConversationMessage, ToolCall, ToolResultMessage } from "../transcript/message.ts";
 import { formatQuestionAnswerSummary, parseQuestionToolResult } from "../tools/ask-user-question-tool.ts";
 import { executeToolCall } from "../tools/execute-tool-call.ts";
+import { withFileMutationQueue } from "../tools/file-mutation-queue.ts";
 import type { ToolExecutionContext, ToolMetadataUpdate } from "../tools/tool.ts";
+import { parseToolArguments } from "../tools/tool-arguments.ts";
 import { createToolErrorMessage } from "../tools/tool-result-format.ts";
 import { ToolRegistry } from "../tools/tool-registry.ts";
 import type { StepStats } from "./step-stats.ts";
 import { SUBAGENT_TASK_CONCURRENCY_LIMIT } from "./subagent.ts";
 
 const DOOM_LOOP_TURN_LIMIT = 3;
+const DEFAULT_PARALLEL_TOOL_LIMIT = 6;
+
+type ToolScheduleMode = "parallel" | "sequential" | "mutation";
+
+interface ScheduledToolCall {
+  readonly toolCall: ToolCall;
+  readonly mode: ToolScheduleMode;
+  readonly mutationKey?: string;
+}
 
 /**
  * Tool call observer.
@@ -242,19 +253,22 @@ export async function executeAgentSessionToolCalls(
   options: AgentSessionToolOptions
 ): Promise<readonly ConversationMessage[]> {
   const messages: ConversationMessage[] = [];
+  const scheduledCalls = toolCalls.map((toolCall) => scheduleToolCall(toolCall));
 
-  for (let index = 0; index < toolCalls.length; index += 1) {
-    const toolCall = toolCalls[index]!;
-    if (toolCall.name === "Task") {
-      const taskBatch = collectContiguousTaskCalls(toolCalls, index);
-      const taskMessages = await executeTaskToolBatch(taskBatch, options);
-      messages.push(...taskMessages);
-      index += taskBatch.length - 1;
+  for (let index = 0; index < scheduledCalls.length; index += 1) {
+    const scheduledCall = scheduledCalls[index]!;
+    if (scheduledCall.mode !== "sequential") {
+      const batch = collectParallelToolBatch(scheduledCalls, index);
+      const batchMessages = await executeParallelToolBatch(batch, options);
+      messages.push(...batchMessages);
+      index += batch.length - 1;
       if (options.abortSignal?.aborted ?? false) {
         return messages;
       }
       continue;
     }
+
+    const toolCall = scheduledCall.toolCall;
 
     if (options.abortSignal?.aborted ?? false) {
       const abortedResult = createToolErrorMessage(toolCall, "Request aborted");
@@ -290,37 +304,46 @@ export async function executeAgentSessionToolCalls(
   return messages;
 }
 
-function collectContiguousTaskCalls(toolCalls: readonly ToolCall[], startIndex: number): readonly ToolCall[] {
-  const taskCalls: ToolCall[] = [];
+function collectParallelToolBatch(
+  scheduledCalls: readonly ScheduledToolCall[],
+  startIndex: number
+): readonly ScheduledToolCall[] {
+  const batch: ScheduledToolCall[] = [];
 
-  for (let index = startIndex; index < toolCalls.length; index += 1) {
-    const toolCall = toolCalls[index]!;
-    if (toolCall.name !== "Task") {
+  for (let index = startIndex; index < scheduledCalls.length; index += 1) {
+    const scheduledCall = scheduledCalls[index]!;
+    if (scheduledCall.mode === "sequential") {
       break;
     }
-    taskCalls.push(toolCall);
+    batch.push(scheduledCall);
   }
 
-  return taskCalls;
+  return batch;
 }
 
-async function executeTaskToolBatch(
-  toolCalls: readonly ToolCall[],
+async function executeParallelToolBatch(
+  scheduledCalls: readonly ScheduledToolCall[],
   options: AgentSessionToolOptions
 ): Promise<readonly ConversationMessage[]> {
   const results = await runWithConcurrency(
-    toolCalls,
-    SUBAGENT_TASK_CONCURRENCY_LIMIT,
-    async (toolCall) => {
+    scheduledCalls,
+    getParallelToolLimit(scheduledCalls),
+    async (scheduledCall) => {
+      const toolCall = scheduledCall.toolCall;
       if (options.abortSignal?.aborted ?? false) {
         return createToolErrorMessage(toolCall, "Request aborted");
       }
 
-      return await executeToolCall(
-        toolCall,
-        options.toolRegistry,
-        withToolRuntimeContext(options.toolContext, toolCall, options.abortSignal, options.onToolMetadata, options.onSessionEvent)
-      );
+      const execute = async () =>
+        await executeToolCall(
+          toolCall,
+          options.toolRegistry,
+          withToolRuntimeContext(options.toolContext, toolCall, options.abortSignal, options.onToolMetadata, options.onSessionEvent)
+        );
+
+      return scheduledCall.mode === "mutation"
+        ? await withFileMutationQueue(options.toolContext.workspaceRoot, scheduledCall.mutationKey ?? "*", execute)
+        : await execute();
     }
   );
 
@@ -341,6 +364,80 @@ async function executeTaskToolBatch(
   }
 
   return messages;
+}
+
+function scheduleToolCall(toolCall: ToolCall): ScheduledToolCall {
+  if (isSequentialTool(toolCall.name)) {
+    return { toolCall, mode: "sequential" };
+  }
+
+  if (isMutationTool(toolCall.name)) {
+    return {
+      toolCall,
+      mode: "mutation",
+      mutationKey: readMutationKey(toolCall)
+    };
+  }
+
+  return { toolCall, mode: "parallel" };
+}
+
+function isSequentialTool(toolName: string): boolean {
+  return toolName === "Bash" || toolName === "AskUserQuestion";
+}
+
+function isMutationTool(toolName: string): boolean {
+  return toolName === "Write" || toolName === "Edit" || toolName === "ApplyPatch";
+}
+
+function readMutationKey(toolCall: ToolCall): string {
+  if (toolCall.name === "ApplyPatch") {
+    return readApplyPatchMutationKey(toolCall.argumentsJson);
+  }
+
+  try {
+    const arguments_ = parseToolArguments(toolCall.argumentsJson);
+    const path = arguments_["path"];
+    return typeof path === "string" && path.trim() !== "" ? path : "*";
+  } catch {
+    return "*";
+  }
+}
+
+function readApplyPatchMutationKey(argumentsJson: string): string {
+  try {
+    const arguments_ = parseToolArguments(argumentsJson);
+    const patch = arguments_["patch"];
+    if (typeof patch !== "string") {
+      return "*";
+    }
+
+    const paths = Array.from(new Set(
+      patch
+        .split(/\r?\n/)
+        .map((line) => readApplyPatchHeaderPath(line))
+        .filter((path): path is string => path !== undefined)
+    ));
+    return paths.length === 1 ? paths[0]! : "*";
+  } catch {
+    return "*";
+  }
+}
+
+function readApplyPatchHeaderPath(line: string): string | undefined {
+  for (const prefix of ["*** Add File: ", "*** Delete File: ", "*** Update File: "]) {
+    if (line.startsWith(prefix)) {
+      const path = line.slice(prefix.length).trim();
+      return path === "" ? undefined : path;
+    }
+  }
+  return undefined;
+}
+
+function getParallelToolLimit(scheduledCalls: readonly ScheduledToolCall[]): number {
+  return scheduledCalls.some((scheduledCall) => scheduledCall.toolCall.name === "Task")
+    ? SUBAGENT_TASK_CONCURRENCY_LIMIT
+    : DEFAULT_PARALLEL_TOOL_LIMIT;
 }
 
 async function runWithConcurrency<TInput, TOutput>(

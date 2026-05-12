@@ -12,6 +12,7 @@ import {
   saveConversation,
   type SavedConversationRecord
 } from "../history/recode-history.ts";
+import type { SessionEvent } from "../session/session-event.ts";
 import type { SessionSnapshot } from "../history/recode-history-types.ts";
 import type { ConversationMessage } from "../transcript/message.ts";
 import {
@@ -41,10 +42,12 @@ export function persistConversationSession(
   currentConversation: SavedConversationRecord | undefined,
   mode: SessionMode,
   subagentTasks?: readonly SubagentTaskRecord[],
-  sessionSnapshots?: readonly SessionSnapshot[]
+  sessionSnapshots?: readonly SessionSnapshot[],
+  sessionEvents?: readonly SessionEvent[]
 ): SavedConversationRecord {
   const embeddedTasks = subagentTasks ?? currentConversation?.subagentTasks ?? [];
   const embeddedSnapshots = sessionSnapshots ?? currentConversation?.sessionSnapshots ?? [];
+  const embeddedEvents = sessionEvents ?? currentConversation?.sessionEvents ?? [];
   const conversation = createConversationRecord(
     runtimeConfig,
     transcript,
@@ -53,7 +56,8 @@ export function persistConversationSession(
       ? undefined
       : { id: currentConversation.id, createdAt: currentConversation.createdAt },
     embeddedTasks,
-    embeddedSnapshots
+    embeddedSnapshots,
+    embeddedEvents
   );
 
   if (transcript.length > 0) {
@@ -72,9 +76,10 @@ export function forkConversationSession(
   transcript: readonly ConversationMessage[],
   mode: SessionMode,
   subagentTasks?: readonly SubagentTaskRecord[],
-  sessionSnapshots?: readonly SessionSnapshot[]
+  sessionSnapshots?: readonly SessionSnapshot[],
+  sessionEvents?: readonly SessionEvent[]
 ): SavedConversationRecord {
-  const conversation = createConversationRecord(runtimeConfig, transcript, mode, undefined, subagentTasks, sessionSnapshots);
+  const conversation = createConversationRecord(runtimeConfig, transcript, mode, undefined, subagentTasks, sessionSnapshots, sessionEvents);
 
   if (transcript.length > 0) {
     saveConversation(historyRoot, conversation, true);

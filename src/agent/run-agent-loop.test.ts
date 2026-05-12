@@ -382,6 +382,131 @@ describe("runAgentLoop", () => {
     ]);
   });
 
+  it("runs read tool batches concurrently while preserving transcript order", async () => {
+    fakeStreamAssistantResponse
+      .mockImplementationOnce(() => makeStreamResult([
+        toolCallPart("call_1", "Read", { path: "slow.txt", delay: "20" }),
+        toolCallPart("call_2", "Read", { path: "fast.txt", delay: "1" }),
+        ...finishParts()
+      ]))
+      .mockImplementationOnce(() => makeStreamResult([
+        textPart("done"),
+        ...finishParts()
+      ]));
+
+    let activeCount = 0;
+    let maxActiveCount = 0;
+    const registry = new ToolRegistry([createDelayedReadTool(
+      () => {
+        activeCount += 1;
+        maxActiveCount = Math.max(maxActiveCount, activeCount);
+      },
+      () => {
+        activeCount -= 1;
+      }
+    )]);
+
+    const result = await runAgentLoop({
+      systemPrompt: "test",
+      initialUserPrompt: "read",
+      languageModel: {} as never,
+      toolRegistry: registry,
+      toolContext: { workspaceRoot: "/tmp/recode", approvalMode: "yolo" }
+    });
+
+    const toolResults = result.transcript.filter((message) => message.role === "tool");
+    expect(maxActiveCount).toBe(2);
+    expect(toolResults.map((message) => message.content)).toEqual([
+      "read slow.txt",
+      "read fast.txt"
+    ]);
+  });
+
+  it("keeps Bash as a sequential barrier between parallel tool batches", async () => {
+    fakeStreamAssistantResponse
+      .mockImplementationOnce(() => makeStreamResult([
+        toolCallPart("call_1", "Read", { path: "first.txt", delay: "5" }),
+        toolCallPart("call_2", "Read", { path: "second.txt", delay: "5" }),
+        toolCallPart("call_3", "Bash", { command: "echo barrier" }),
+        toolCallPart("call_4", "Read", { path: "third.txt", delay: "1" }),
+        ...finishParts()
+      ]))
+      .mockImplementationOnce(() => makeStreamResult([
+        textPart("done"),
+        ...finishParts()
+      ]));
+
+    const events: string[] = [];
+    const registry = new ToolRegistry([
+      createDelayedReadTool(
+        (path) => events.push(`start:${path}`),
+        (path) => events.push(`finish:${path}`)
+      ),
+      createRecordedBashTool(events)
+    ]);
+
+    await runAgentLoop({
+      systemPrompt: "test",
+      initialUserPrompt: "schedule",
+      languageModel: {} as never,
+      toolRegistry: registry,
+      toolContext: { workspaceRoot: "/tmp/recode", approvalMode: "yolo" }
+    });
+
+    const bashStartIndex = events.indexOf("start:bash");
+    const thirdReadStartIndex = events.indexOf("start:third.txt");
+    expect(events.slice(0, 2).sort()).toEqual(["start:first.txt", "start:second.txt"]);
+    expect(bashStartIndex).toBeGreaterThan(events.indexOf("finish:first.txt"));
+    expect(bashStartIndex).toBeGreaterThan(events.indexOf("finish:second.txt"));
+    expect(thirdReadStartIndex).toBeGreaterThan(events.indexOf("finish:bash"));
+  });
+
+  it("serializes same-file mutations while allowing different files to overlap", async () => {
+    fakeStreamAssistantResponse
+      .mockImplementationOnce(() => makeStreamResult([
+        toolCallPart("call_1", "Write", { path: "same.txt", delay: "5" }),
+        toolCallPart("call_2", "Write", { path: "same.txt", delay: "5" }),
+        toolCallPart("call_3", "Write", { path: "other.txt", delay: "5" }),
+        ...finishParts()
+      ]))
+      .mockImplementationOnce(() => makeStreamResult([
+        textPart("done"),
+        ...finishParts()
+      ]));
+
+    const activeByPath = new Map<string, number>();
+    const maxActiveByPath = new Map<string, number>();
+    let maxTotalActive = 0;
+    const registry = new ToolRegistry([createDelayedWriteTool(
+      (path) => {
+        const active = (activeByPath.get(path) ?? 0) + 1;
+        activeByPath.set(path, active);
+        maxActiveByPath.set(path, Math.max(maxActiveByPath.get(path) ?? 0, active));
+        maxTotalActive = Math.max(maxTotalActive, Array.from(activeByPath.values()).reduce((total, value) => total + value, 0));
+      },
+      (path) => {
+        activeByPath.set(path, (activeByPath.get(path) ?? 1) - 1);
+      }
+    )]);
+
+    const result = await runAgentLoop({
+      systemPrompt: "test",
+      initialUserPrompt: "write",
+      languageModel: {} as never,
+      toolRegistry: registry,
+      toolContext: { workspaceRoot: "/tmp/recode", approvalMode: "yolo" }
+    });
+
+    const toolResults = result.transcript.filter((message) => message.role === "tool");
+    expect(maxActiveByPath.get("same.txt")).toBe(1);
+    expect(maxTotalActive).toBeGreaterThan(1);
+    expect(toolResults.map((message) => message.content)).toEqual([
+      "wrote same.txt",
+      "wrote same.txt",
+      "wrote other.txt"
+    ]);
+  });
+
   it("publishes partial transcript updates before a later model error", async () => {
     fakeStreamAssistantResponse
       .mockImplementationOnce(() => makeStreamResult([
@@ -673,4 +798,88 @@ function createDelayedTaskTool(onStart: () => void, onFinish: () => void): ToolD
       };
     }
   };
+}
+
+function createDelayedReadTool(
+  onStart: (path: string) => void,
+  onFinish: (path: string) => void
+): ToolDefinition {
+  return {
+    name: "Read",
+    description: "Delayed read.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: true
+    },
+    async execute(arguments_: ToolArguments, _context: ToolExecutionContext): Promise<ToolResult> {
+      const path = readStringArgument(arguments_, "path");
+      const delay = Number(readStringArgument(arguments_, "delay"));
+      onStart(path);
+      await new Promise((resolve) => setTimeout(resolve, Number.isFinite(delay) ? delay : 1));
+      onFinish(path);
+      return {
+        content: `read ${path}`,
+        isError: false
+      };
+    }
+  };
+}
+
+function createRecordedBashTool(events: string[]): ToolDefinition {
+  return {
+    name: "Bash",
+    description: "Recorded bash.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: true
+    },
+    async execute(_arguments_: ToolArguments, _context: ToolExecutionContext): Promise<ToolResult> {
+      events.push("start:bash");
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      events.push("finish:bash");
+      return {
+        content: "bash",
+        isError: false
+      };
+    }
+  };
+}
+
+function createDelayedWriteTool(
+  onStart: (path: string) => void,
+  onFinish: (path: string) => void
+): ToolDefinition {
+  return {
+    name: "Write",
+    description: "Delayed write.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: true
+    },
+    async execute(arguments_: ToolArguments, _context: ToolExecutionContext): Promise<ToolResult> {
+      const path = readStringArgument(arguments_, "path");
+      const delay = Number(readStringArgument(arguments_, "delay"));
+      onStart(path);
+      await new Promise((resolve) => setTimeout(resolve, Number.isFinite(delay) ? delay : 1));
+      onFinish(path);
+      return {
+        content: `wrote ${path}`,
+        isError: false
+      };
+    }
+  };
+}
+
+function readStringArgument(arguments_: ToolArguments, key: string): string {
+  const value = arguments_[key];
+  if (typeof value !== "string") {
+    throw new Error(`missing ${key}`);
+  }
+  return value;
 }

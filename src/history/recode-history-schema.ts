@@ -6,6 +6,7 @@ import type { StepStats, StepTokenUsage } from "../agent/step-stats.ts";
 import { isSubagentType, type SubagentTaskRecord } from "../agent/subagent.ts";
 import { isRecord } from "../shared/is-record.ts";
 import { isJsonObject } from "../shared/json-value.ts";
+import type { SessionEvent } from "../session/session-event.ts";
 import type {
   AssistantMessage,
   ContinuationSummaryMessage,
@@ -103,6 +104,10 @@ export function parseConversationRecord(value: unknown): SavedConversationRecord
   const subagentTasks = Array.isArray(subagentTasksValue)
     ? subagentTasksValue.map(parseSubagentTaskRecord).filter((item) => item !== undefined)
     : [];
+  const sessionEventsValue = value["sessionEvents"];
+  const sessionEvents = Array.isArray(sessionEventsValue)
+    ? sessionEventsValue.map(parseSessionEvent).filter((item) => item !== undefined)
+    : [];
   const sessionSnapshotsValue = value["sessionSnapshots"];
   const sessionSnapshots = Array.isArray(sessionSnapshotsValue)
     ? sessionSnapshotsValue.map(parseSessionSnapshot).filter((item) => item !== undefined)
@@ -111,9 +116,61 @@ export function parseConversationRecord(value: unknown): SavedConversationRecord
   return {
     ...meta,
     transcript,
+    ...(sessionEvents.length === 0 ? {} : { sessionEvents }),
     ...(subagentTasks.length === 0 ? {} : { subagentTasks }),
     ...(sessionSnapshots.length === 0 ? {} : { sessionSnapshots })
   };
+}
+
+function parseSessionEvent(value: unknown): SessionEvent | undefined {
+  if (!isRecord(value) || typeof value["type"] !== "string" || !isFiniteTimestamp(value["timestamp"])) {
+    return undefined;
+  }
+
+  // Session events are produced by Recode itself. Keep parsing permissive so
+  // future event fields do not make older history unreadable.
+  switch (value["type"]) {
+    case "user.submitted":
+      return typeof value["content"] === "string" && typeof value["modelContent"] === "string"
+        ? value as unknown as SessionEvent
+        : undefined;
+    case "assistant.step.started":
+    case "assistant.text.delta":
+      return typeof value["stepId"] === "string"
+        ? value as unknown as SessionEvent
+        : undefined;
+    case "assistant.step.finished":
+      return typeof value["stepId"] === "string" && typeof value["finalText"] === "string"
+        ? value as unknown as SessionEvent
+        : undefined;
+    case "tool.started":
+      return isRecord(value["toolCall"])
+        ? value as unknown as SessionEvent
+        : undefined;
+    case "tool.metadata.updated":
+      return typeof value["toolCallId"] === "string" && typeof value["toolName"] === "string" && isRecord(value["update"])
+        ? value as unknown as SessionEvent
+        : undefined;
+    case "tool.completed":
+    case "tool.errored":
+      return isRecord(value["toolResult"])
+        ? value as unknown as SessionEvent
+        : undefined;
+    case "provider.retry":
+      return isRecord(value["status"])
+        ? value as unknown as SessionEvent
+        : undefined;
+    case "session.compacted":
+      return typeof value["content"] === "string"
+        ? value as unknown as SessionEvent
+        : undefined;
+    default:
+      return undefined;
+  }
+}
+
+function isFiniteTimestamp(value: unknown): boolean {
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 function parseConversationMeta(value: unknown): SavedConversationMeta | undefined {

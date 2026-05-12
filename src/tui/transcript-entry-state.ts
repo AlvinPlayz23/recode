@@ -4,6 +4,8 @@
 
 import type { TodoItem, ToolResultMetadata } from "../tools/tool.ts";
 import type { SessionEntry, SessionState, ToolSessionEntry } from "../session/session-state.ts";
+import { sessionStateFromEvents } from "../session/session-state.ts";
+import type { SessionEvent } from "../session/session-event.ts";
 import { parseTaskToolInput } from "../tools/task-tool.ts";
 import { parseTodoWriteInput } from "../tools/todo-write-tool.ts";
 import {
@@ -249,6 +251,13 @@ export function summarizeToolArguments(toolName: string, argumentsJson: string):
  */
 export function rehydrateEntriesFromTranscript(transcript: readonly ConversationMessage[]): readonly UiEntry[] {
   return uiEntriesFromSessionState(sessionStateFromTranscript(transcript));
+}
+
+/**
+ * Convert saved session events into visible UI entries.
+ */
+export function rehydrateEntriesFromSessionEvents(events: readonly SessionEvent[]): readonly UiEntry[] {
+  return uiEntriesFromSessionState(sessionStateFromEvents(events));
 }
 
 /**
