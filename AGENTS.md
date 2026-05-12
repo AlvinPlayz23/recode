@@ -194,7 +194,7 @@ Current TUI responsibilities:
 Important files:
 - `src/tui/app.tsx`
 - `src/tui/run-tui.tsx`
-- `src/tui/theme.ts`
+- `src/tui/appearance/theme.ts`
 - `src/tui/message-format.ts`
 
 ## Current TUI Behaviors To Preserve

@@ -14,12 +14,12 @@ import {
   moveBuiltinCommandSelectionIndex,
   normalizeBuiltinCommandSelectionIndex
 } from "./message-format.ts";
-import { summarizeToolArguments } from "./transcript-entry-state.ts";
+import { summarizeToolArguments } from "./transcript/transcript-entry-state.ts";
 import type {
   ActiveApprovalRequest,
   ActiveQuestionRequest
 } from "./tui-app-types.ts";
-import type { ApprovalDecisionOption } from "./tool-approval-overlay.tsx";
+import type { ApprovalDecisionOption } from "./overlays/tool-approval-overlay.tsx";
 
 /**
  * Fixed decisions shown in the tool approval overlay.

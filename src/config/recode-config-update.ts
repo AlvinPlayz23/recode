@@ -7,7 +7,7 @@ import type {
   ConfiguredProvider,
   RecodeConfigFile
 } from "./recode-config.ts";
-import type { LayoutMode, ThemeName, ToolMarkerName } from "../tui/theme.ts";
+import type { LayoutMode, ThemeName, ToolMarkerName } from "../tui/appearance/theme.ts";
 import type { ApprovalMode, PermissionRule, ToolApprovalScope } from "../tools/tool.ts";
 
 /**

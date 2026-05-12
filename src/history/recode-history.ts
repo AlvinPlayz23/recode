@@ -14,7 +14,7 @@ import type {
   ConversationMessage,
   UserMessage
 } from "../transcript/message.ts";
-import type { SessionMode } from "../tui/session-mode.ts";
+import type { SessionMode } from "../tui/session/session-mode.ts";
 import {
   conversationToMeta,
   createEmptyHistoryIndex as createEmptyHistoryIndexFromSchema,

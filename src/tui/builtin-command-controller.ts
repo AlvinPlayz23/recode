@@ -30,21 +30,21 @@ import {
   createDraftConversation,
   forkConversationSession,
   persistConversationSession
-} from "./conversation-session.ts";
+} from "./session/conversation-session.ts";
 import {
   parseBuiltinCommand,
   type BuiltinCommandName
 } from "./message-format.ts";
-import { getSessionModeLabel, type SessionMode } from "./session-mode.ts";
-import type { SpinnerPhase } from "./spinner.tsx";
+import { getSessionModeLabel, type SessionMode } from "./session/session-mode.ts";
+import type { SpinnerPhase } from "./appearance/spinner.tsx";
 import type {
   ThemeName,
   ToolMarkerName
-} from "./theme.ts";
+} from "./appearance/theme.ts";
 import {
   createEntry,
   type UiEntry
-} from "./transcript-entry-state.ts";
+} from "./transcript/transcript-entry-state.ts";
 
 /**
  * Result of slash-command dispatch.

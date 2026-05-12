@@ -4,7 +4,7 @@
 
 import type { ConversationMessage } from "../transcript/message.ts";
 import type { SubagentTaskRecord } from "../agent/subagent.ts";
-import type { SessionMode } from "../tui/session-mode.ts";
+import type { SessionMode } from "../tui/session/session-mode.ts";
 import type { SessionEvent } from "../session/session-event.ts";
 
 /**

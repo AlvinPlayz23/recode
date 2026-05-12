@@ -5,7 +5,7 @@
 import type { QuestionToolDecision, ToolApprovalDecision } from "../tools/tool.ts";
 import { applyFileSuggestionDraftValue, type FileSuggestionItem, type FileSuggestionPanelState } from "./file-suggestions.ts";
 import { moveBuiltinCommandSelectionIndex, normalizeBuiltinCommandSelectionIndex } from "./message-format.ts";
-import type { ActivePlanReviewRequest, PlanReviewDecision } from "./plan-review.ts";
+import type { ActivePlanReviewRequest, PlanReviewDecision } from "./session/plan-review.ts";
 import type { ActiveApprovalRequest, ActiveQuestionRequest, CustomizeRow } from "./tui-app-types.ts";
 
 /**

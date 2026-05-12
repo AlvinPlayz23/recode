@@ -5,7 +5,7 @@
 import { describe, expect, it } from "bun:test";
 import { applySessionEvent, createEmptySessionState } from "../session/session-state.ts";
 import type { SessionEvent } from "../session/session-event.ts";
-import { uiEntriesFromSessionState } from "./transcript-entry-state.ts";
+import { uiEntriesFromSessionState } from "./transcript/transcript-entry-state.ts";
 
 describe("session entry adapter", () => {
   it("projects a live Bash event stream into stable TUI rows", () => {

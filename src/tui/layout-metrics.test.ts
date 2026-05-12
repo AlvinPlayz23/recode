@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { createEntry } from "./transcript-entry-state.ts";
+import { createEntry } from "./transcript/transcript-entry-state.ts";
 import {
   estimateBadgeLineHeight,
   estimateComposerHeight,

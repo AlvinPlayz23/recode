@@ -21,8 +21,8 @@ import {
 } from "./keyboard-router.ts";
 import type { FileSuggestionPanelState } from "./file-suggestions.ts";
 import { moveBuiltinCommandSelectionIndex } from "./message-format.ts";
-import type { ActivePlanReviewRequest, PlanReviewDecision } from "./plan-review.ts";
-import { normalizeDraftInput, toVisibleDraft } from "./prompt-draft.ts";
+import type { ActivePlanReviewRequest, PlanReviewDecision } from "./session/plan-review.ts";
+import { normalizeDraftInput, toVisibleDraft } from "./composer/prompt-draft.ts";
 import type { ActiveApprovalRequest } from "./tui-app-types.ts";
 
 interface PromptInputForPaste {

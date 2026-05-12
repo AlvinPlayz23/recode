@@ -10,7 +10,7 @@ import type {
   ToolApprovalDecision,
   ToolApprovalRequest
 } from "../tools/tool.ts";
-import type { ThemeDefinition } from "./theme.ts";
+import type { ThemeDefinition } from "./appearance/theme.ts";
 
 /**
  * One selectable model-picker option.

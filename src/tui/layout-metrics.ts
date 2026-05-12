@@ -2,8 +2,8 @@
  * Pure layout measurement helpers for the TUI conversation shell.
  */
 
-import { toVisibleDraft } from "./prompt-draft.ts";
-import type { UiEntry } from "./transcript-entry-state.ts";
+import { toVisibleDraft } from "./composer/prompt-draft.ts";
+import type { UiEntry } from "./transcript/transcript-entry-state.ts";
 
 const EDIT_PREVIEW_MAX_LINES = 24;
 

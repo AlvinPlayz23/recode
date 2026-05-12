@@ -11,7 +11,7 @@ import {
   rehydrateEntriesFromTranscript,
   replaceTaskToolCallEntryWithResult,
   type UiEntry
-} from "./transcript-entry-state.ts";
+} from "./transcript/transcript-entry-state.ts";
 
 /** Active transcript view in the TUI. */
 export type ChatView =

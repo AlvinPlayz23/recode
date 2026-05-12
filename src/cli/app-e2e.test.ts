@@ -13,7 +13,7 @@ import { DEFAULT_SYSTEM_PROMPT } from "../prompt/system-prompt.ts";
 import { loadRuntimeConfig } from "../runtime/runtime-config.ts";
 import { createTools } from "../tools/create-tools.ts";
 import { ToolRegistry } from "../tools/tool-registry.ts";
-import { persistConversationSession } from "../tui/conversation-session.ts";
+import { persistConversationSession } from "../tui/session/conversation-session.ts";
 
 const fakeStreamAssistantResponse = mock<(options: Record<string, unknown>) => AiResponseStream>();
 

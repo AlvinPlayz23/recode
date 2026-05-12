@@ -8,7 +8,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { ConversationMessage } from "../transcript/message.ts";
 import type { EditToolResultMetadata, ToolResultMetadata } from "../tools/tool.ts";
-import { getTheme, type ThemeName } from "../tui/theme.ts";
+import { getTheme, type ThemeName } from "../tui/appearance/theme.ts";
 import type { SavedConversationRecord } from "./recode-history.ts";
 
 /**

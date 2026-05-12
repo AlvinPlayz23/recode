@@ -22,43 +22,23 @@
 
 import {
   type KeyEvent,
-  InputRenderable,
+  type InputRenderable,
   type ScrollBoxRenderable,
   type KeyBinding as TextareaKeyBinding,
-  type TextareaRenderable
+  TextareaRenderable
 } from "@opentui/core";
-import { useRenderer, useSelectionHandler, useTerminalDimensions } from "@opentui/solid";
+import { useRenderer, useTerminalDimensions } from "@opentui/solid";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type { AiModel } from "../ai/types.ts";
+import type { ContextTokenEstimate } from "../agent/compact-conversation.ts";
 import {
-  DEFAULT_FALLBACK_CONTEXT_WINDOW_TOKENS,
-  assertConversationFitsContextWindow,
-  compactConversation,
-  createCompactionSessionSnapshot,
-  estimateConversationContextTokens,
-  evaluateAutoCompaction,
-  microcompactToolResults,
-  type ContextTokenEstimate
-} from "../agent/compact-conversation.ts";
-import {
-  runSubagentTask,
-  resolveSubagentRuntimeConfig,
-  type SubagentTaskHandler,
   type SubagentTaskRecord
 } from "../agent/subagent.ts";
 import {
-  loadRecodeConfigFile,
-  saveRecodeConfigFile,
-  selectConfiguredPermissionRules,
-  setConfiguredModelContextWindow
+  loadRecodeConfigFile
 } from "../config/recode-config.ts";
 import { OperationAbortedError } from "../errors/recode-error.ts";
 import type { SessionEvent } from "../session/session-event.ts";
-import {
-  applySessionEvent,
-  createEmptySessionState,
-  type SessionState
-} from "../session/session-state.ts";
 import {
   resolveHistoryRoot,
   type SavedConversationRecord
@@ -69,10 +49,7 @@ import {
 import { createLanguageModel } from "../models/create-model-client.ts";
 import type { ListedModelGroup } from "../models/list-models.ts";
 import { PLAN_SYSTEM_PROMPT } from "../prompt/plan-system-prompt.ts";
-import {
-  setRuntimeModelContextWindow,
-  type RuntimeConfig
-} from "../runtime/runtime-config.ts";
+import type { RuntimeConfig } from "../runtime/runtime-config.ts";
 import type {
   ApprovalMode,
   PermissionRule,
@@ -84,7 +61,6 @@ import type {
   ToolExecutionContext,
   TodoItem
 } from "../tools/tool.ts";
-import { createPermissionRule } from "../tools/permission-rules.ts";
 import { ToolRegistry } from "../tools/tool-registry.ts";
 import {
   findBuiltinCommands,
@@ -92,33 +68,26 @@ import {
   normalizeBuiltinCommandSelectionIndex
 } from "./message-format.ts";
 import {
-  buildContextWindowFallbackKey,
   buildContextWindowStatusSnapshot,
   type ContextWindowStatusSnapshot
 } from "./builtin-command-content.ts";
-import {
-  createDraftConversation,
-  persistConversationSession
-} from "./conversation-session.ts";
 import {
   buildHistoryPickerItems,
   closeHistoryPicker,
   openHistoryPicker,
   submitSelectedHistoryPickerItem,
   type HistoryPickerItem
-} from "./history-picker.ts";
+} from "./pickers/history-picker.ts";
 import {
   buildFileSuggestionPanelState,
-  getFileSuggestionQuery,
   invalidateWorkspaceFileSuggestionCache,
-  loadWorkspaceFileSuggestions,
   type FileSuggestionItem
 } from "./file-suggestions.ts";
 import {
   Composer,
   getTodoDropupHeight,
   SubagentBreadcrumb
-} from "./composer.tsx";
+} from "./composer/composer.tsx";
 import {
   buildApprovalModePickerItems,
   buildCustomizeRows,
@@ -138,33 +107,29 @@ import {
   submitSelectedApprovalModePickerItem,
   submitSelectedLayoutPickerItem,
   submitSelectedThemePickerItem
-} from "./appearance-settings.ts";
-import { ApprovalModeOverlay } from "./approval-mode-overlay.tsx";
-import { Logo } from "./logo.tsx";
-import { CustomizeOverlay } from "./customize-overlay.tsx";
-import { HistoryPickerOverlay } from "./history-picker-overlay.tsx";
-import { LayoutPickerOverlay } from "./layout-picker-overlay.tsx";
-import { createMarkdownSyntaxStyle } from "./markdown-style.ts";
-import { ModelPickerOverlay } from "./model-picker-overlay.tsx";
+} from "./appearance/appearance-settings.ts";
+import { ApprovalModeOverlay } from "./overlays/approval-mode-overlay.tsx";
+import { Logo } from "./appearance/logo.tsx";
+import { CustomizeOverlay } from "./overlays/customize-overlay.tsx";
+import { HistoryPickerOverlay } from "./overlays/history-picker-overlay.tsx";
+import { LayoutPickerOverlay } from "./overlays/layout-picker-overlay.tsx";
+import { createMarkdownSyntaxStyle } from "./appearance/markdown-style.ts";
+import { ModelPickerOverlay } from "./overlays/model-picker-overlay.tsx";
 import {
-  buildPlanModeModelPrompt,
-  buildPlanImplementationPrompt,
   detectPlanReview,
   PLAN_REVIEW_OPTIONS,
   type ActivePlanReviewRequest,
   type PlanReviewDecision
-} from "./plan-review.ts";
-import { PlanReviewOverlay } from "./plan-review-overlay.tsx";
-import { ProviderPickerOverlay } from "./provider-picker-overlay.tsx";
-import { QuestionOverlay } from "./question-overlay.tsx";
+} from "./session/plan-review.ts";
+import { PlanReviewOverlay } from "./overlays/plan-review-overlay.tsx";
+import { ProviderPickerOverlay } from "./overlays/provider-picker-overlay.tsx";
+import { QuestionOverlay } from "./overlays/question-overlay.tsx";
 import {
   buildHistoryPickerRenderKey,
   getApprovalModePickerPopupRowBudget,
   getApprovalModePickerVisibleCount,
   getHistoryPickerPopupRowBudget,
-  getHistoryPickerScrollOffset,
   getHistoryPickerVisibleCount,
-  getIndexedPickerChildId,
   getLayoutPickerPopupRowBudget,
   getLayoutPickerVisibleCount,
   getModelPickerVisibleCount,
@@ -173,28 +138,17 @@ import {
   getThemePickerPopupRowBudget,
   getThemePickerVisibleCount,
   renderModelPickerLines,
-  syncScrollBoxSelection,
   updateLinearSelectorWindow,
-  updateModelPickerWindow,
-  type ModelPickerRenderedLine
-} from "./selector-navigation.ts";
-import { filterToolsForSessionMode, type SessionMode } from "./session-mode.ts";
+  updateModelPickerWindow
+} from "./pickers/selector-navigation.ts";
+import type { SessionMode } from "./session/session-mode.ts";
 import {
-  appendLiveSubagentTextDelta,
-  appendLiveSubagentToolCall,
-  appendLiveSubagentToolResult,
-  applyLiveSubagentTranscriptUpdate,
-  completeLiveSubagentTask,
-  createLiveSubagentTask,
-  createLiveSubagentTasksFromRecords,
   cycleChatView,
-  failLiveSubagentTask,
-  upsertLiveSubagentTask,
   type ChatView,
   type LiveSubagentTask
 } from "./subagent-view.ts";
 import { getFooterTip } from "./startup-quotes.ts";
-import type { SpinnerPhase } from "./spinner.tsx";
+import type { SpinnerPhase } from "./appearance/spinner.tsx";
 import {
   DEFAULT_LAYOUT_MODE,
   DEFAULT_TOOL_MARKER_NAME,
@@ -206,14 +160,13 @@ import {
   type LayoutMode,
   type ThemeColors,
   type ThemeName
-} from "./theme.ts";
-import { ThemePickerOverlay } from "./theme-picker-overlay.tsx";
-import { ToastOverlay } from "./toast-overlay.tsx";
-import { ToolApprovalOverlay } from "./tool-approval-overlay.tsx";
+} from "./appearance/theme.ts";
+import { ThemePickerOverlay } from "./overlays/theme-picker-overlay.tsx";
+import { ToastOverlay } from "./overlays/toast-overlay.tsx";
+import { ToolApprovalOverlay } from "./overlays/tool-approval-overlay.tsx";
 import {
   handleCustomizePickerKey,
-  handleQuestionRequestKey,
-  type CommandPanelState
+  handleQuestionRequestKey
 } from "./keyboard-router.ts";
 import {
   createPromptPasteHandler,
@@ -221,10 +174,9 @@ import {
   registerTuiInputHandlers
 } from "./input-router.ts";
 import {
-  expandDraftPastes,
   runSingleTurn,
   type PendingPaste
-} from "./prompt-submission-controller.ts";
+} from "./composer/prompt-submission-controller.ts";
 import {
   APPROVAL_DECISIONS,
   buildQuestionSubmission,
@@ -240,25 +192,26 @@ import {
   updateQuestionCustomText
 } from "./interactive-prompts.ts";
 import {
-  buildPromptTranscriptSnapshot,
   persistPromptTranscript
-} from "./submission-session.ts";
+} from "./session/submission-session.ts";
+import { createContextWindowFlow } from "./session/context-window-flow.ts";
+import { createTuiSubagentController } from "./session/tui-subagent-controller.ts";
 import {
   renderEntry
-} from "./transcript-entry.tsx";
+} from "./transcript/transcript-entry.tsx";
 import {
   buildProviderPickerItems,
   closeProviderPicker,
   openProviderPicker,
   submitSelectedProviderPickerItem,
   toggleSelectedProviderPickerItem
-} from "./provider-picker.ts";
+} from "./pickers/provider-picker.ts";
 import {
   buildModelPickerOptions,
   closeModelPicker,
   openModelPicker,
   submitSelectedModelPickerOption
-} from "./model-picker.ts";
+} from "./pickers/model-picker.ts";
 import {
   appendEntry,
   createEntry,
@@ -266,10 +219,8 @@ import {
   rehydrateEntriesFromTranscript,
   rehydrateEntriesFromSessionEvents,
   renderVisibleEntries,
-  updateEntryBody,
-  uiEntriesFromSessionState,
   type UiEntry
-} from "./transcript-entry-state.ts";
+} from "./transcript/transcript-entry-state.ts";
 import type {
   ActiveApprovalRequest,
   ActiveQuestionRequest,
@@ -284,9 +235,41 @@ import {
   isCommandDraft,
   normalizeDraftInput,
   toVisibleDraft
-} from "./prompt-draft.ts";
-
-type PromptRenderable = InputRenderable | TextareaRenderable;
+} from "./composer/prompt-draft.ts";
+import { buildCommandPanelState } from "./composer/command-panel.ts";
+import {
+  applyCommandDraft,
+  applyInputCursorStyle,
+  clearDraft,
+  getRenderableText,
+  moveRenderableCursorToEnd,
+  setRenderableText,
+  type PromptRenderable
+} from "./composer/prompt-renderable.ts";
+import { createToolRegistryForMode } from "./session/tool-registry-mode.ts";
+import { createPlainTextPasteFallback } from "./composer/plain-text-paste-fallback.ts";
+import { toErrorMessage } from "./error-message.ts";
+import { createPromptTurnSession } from "./session/prompt-turn-session.ts";
+import { buildPromptRunInput } from "./session/prompt-run-input.ts";
+import { registerSelectionCopyHandler } from "./selection-copy.ts";
+import { createToastController } from "./toast-controller.ts";
+import {
+  registerHeaderRefresh,
+  registerSplashDetailsTimer,
+  registerStatusTimers
+} from "./lifecycle/tui-lifecycle.ts";
+import { registerWorkspaceFileSuggestionLoader } from "./lifecycle/file-suggestion-loader.ts";
+import {
+  registerCursorStyleSync,
+  registerHistoryPickerScrollSync,
+  registerIndexedPickerSelectionSync,
+  registerModelPickerScrollSync
+} from "./lifecycle/picker-sync-effects.ts";
+import { initializeTuiSession } from "./session/tui-startup.ts";
+import { createApprovalRuntimeState } from "./session/approval-runtime-state.ts";
+import { createExitController } from "./exit-controller.ts";
+import { createApprovalRequestController } from "./session/approval-request-controller.ts";
+import { createPlanReviewController } from "./session/plan-review-controller.ts";
 
 const PROMPT_TEXTAREA_KEY_BINDINGS: TextareaKeyBinding[] = [
   { name: "return", action: "submit" },
@@ -390,18 +373,8 @@ export function TuiApp(props: TuiAppProps) {
   let themePickerInputRef: InputRenderable | undefined;
   let questionCustomInputRef: InputRenderable | undefined;
   let activeAbortController: AbortController | undefined;
-  let pendingStreamText = "";
-  let pendingStreamEntryId: string | undefined;
-  let streamFlushTimer: ReturnType<typeof setTimeout> | undefined;
   let syncingVisibleDraft = false;
   let promptPasteTokenCounter = 0;
-  let plainTextPasteFallbackStartDraft: string | undefined;
-  let plainTextPasteFallbackLastChunkAt = 0;
-  let plainTextPasteFallbackTimer: ReturnType<typeof setTimeout> | undefined;
-  let exitHintTimer: ReturnType<typeof setTimeout> | undefined;
-  let activeToastTimer: ReturnType<typeof setTimeout> | undefined;
-  let ctrlCArmed = false;
-  let headerRefreshScheduled = false;
   const t = createMemo<ThemeColors>(() => getTheme(themeName()));
   const markdownStyle = createMemo(() => createMarkdownSyntaxStyle(t()));
   const sessionLanguageModel = createMemo(() => createLanguageModel(sessionRuntimeConfig()));
@@ -433,80 +406,25 @@ export function TuiApp(props: TuiAppProps) {
   const visibleStreamingEntryId = createMemo(() => activeSubagentTask()?.streamingEntryId ?? streamingEntryId());
   const visibleStreamingBody = createMemo(() => activeSubagentTask()?.streamingBody ?? streamingBody());
   const activeChatIsSubagent = createMemo(() => activeSubagentTask() !== undefined);
-  const restoreSubagentTaskState = (records: readonly SubagentTaskRecord[]) => {
-    setSubagentTasks(records);
-    setLiveSubagentTasks(createLiveSubagentTasksFromRecords(records));
-    setActiveChatView({ kind: "parent" });
-  };
-  const runTuiSubagentTask: SubagentTaskHandler = async (request) => {
-    const currentConversationId = currentConversation()?.id;
-    const existingTask = request.taskId === undefined
-      ? undefined
-      : subagentTasks().find((task) => task.id === request.taskId);
-    const taskId = existingTask?.id ?? request.taskId ?? crypto.randomUUID();
-    const now = new Date().toISOString();
-    const subagentRuntimeConfig = resolveSubagentRuntimeConfig(sessionRuntimeConfig(), request.subagentType);
-    setLiveSubagentTasks((previous) => upsertLiveSubagentTask(previous, createLiveSubagentTask({
-      id: taskId,
-      subagentType: request.subagentType,
-      description: request.description,
-      prompt: request.prompt,
-      transcript: existingTask?.transcript ?? [],
-      createdAt: existingTask?.createdAt ?? now,
-      updatedAt: now,
-      providerId: subagentRuntimeConfig.providerId,
-      providerName: subagentRuntimeConfig.providerName,
-      model: subagentRuntimeConfig.model,
-      status: "running"
-    })));
-
-    try {
-      return await runSubagentTask({
-        request: {
-          ...request,
-          taskId
-        },
-        parentRuntimeConfig: sessionRuntimeConfig(),
-        parentSystemPrompt: props.systemPrompt,
-        parentToolRegistry: props.toolRegistry,
-        parentToolContext: {
-          ...props.toolContext,
-          approvalMode: approvalMode(),
-          approvalAllowlist: approvalAllowlist(),
-          permissionRules: permissionRules(),
-          requestToolApproval,
-          requestQuestionAnswers,
-          ...(request.abortSignal === undefined ? {} : { abortSignal: request.abortSignal })
-        },
-        findTask(taskId) {
-          return subagentTasks().find((task) => task.id === taskId);
-        },
-        saveTask(record) {
-          setSubagentTasks((previous) => [
-            ...previous.filter((task) => task.id !== record.id),
-            record
-          ]);
-          setLiveSubagentTasks((previous) => completeLiveSubagentTask(previous, record));
-        },
-        onTextDelta(delta) {
-          setLiveSubagentTasks((previous) => appendLiveSubagentTextDelta(previous, taskId, delta));
-        },
-        onToolCall(toolCall) {
-          setLiveSubagentTasks((previous) => appendLiveSubagentToolCall(previous, taskId, toolCall));
-        },
-        onToolResult(toolResult) {
-          setLiveSubagentTasks((previous) => appendLiveSubagentToolResult(previous, taskId, toolResult));
-        },
-        onTranscriptUpdate(transcript) {
-          setLiveSubagentTasks((previous) => applyLiveSubagentTranscriptUpdate(previous, taskId, transcript));
-        },
-        ...(currentConversationId === undefined ? {} : { requestAffinityKey: currentConversationId })
-      });
-    } catch (error) {
-      setLiveSubagentTasks((previous) => failLiveSubagentTask(previous, taskId, toErrorMessage(error)));
-      throw error;
-    }
-  };
+  const subagentController = createTuiSubagentController({
+    getCurrentConversation: currentConversation,
+    getSubagentTasks: subagentTasks,
+    setSubagentTasks,
+    setLiveSubagentTasks,
+    setActiveChatView,
+    getRuntimeConfig: sessionRuntimeConfig,
+    parentSystemPrompt: props.systemPrompt,
+    parentToolRegistry: props.toolRegistry,
+    parentToolContext: props.toolContext,
+    getApprovalMode: approvalMode,
+    getApprovalAllowlist: approvalAllowlist,
+    getPermissionRules: permissionRules,
+    requestToolApproval,
+    requestQuestionAnswers,
+    toErrorMessage
+  });
+  const restoreSubagentTaskState = subagentController.restoreSubagentTaskState;
+  const runTuiSubagentTask = subagentController.runTuiSubagentTask;
 
   const sessionToolContext = createMemo<ToolExecutionContext>(() => ({
     ...props.toolContext,
@@ -606,146 +524,31 @@ export function TuiApp(props: TuiAppProps) {
       ? "Type a built-in command..."
       : "Type a prompt, /command, or @file";
   });
-  let lastCopiedSelectionText = "";
+  registerStatusTimers({ setStatusTick, setFooterTipIndex });
+  registerSplashDetailsTimer({ showSplashLogo, setSplashDetailsVisible });
+  registerHeaderRefresh({
+    themeName,
+    showSplashLogo,
+    effectiveSplashDetailsVisible,
+    footerTipIndex,
+    setHeaderVisible
+  });
+  registerWorkspaceFileSuggestionLoader({
+    draft,
+    workspaceRoot: () => sessionRuntimeConfig().workspaceRoot,
+    fileSuggestionVersion,
+    setWorkspaceFiles,
+    setWorkspaceFilesLoading
+  });
 
-  const statusInterval = setInterval(() => {
-    setStatusTick((value) => value + 1);
-  }, 120);
-  const footerTipInterval = setInterval(() => {
-    setFooterTipIndex((value) => value + 1);
-  }, 30_000);
-  let splashDetailsTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => {
-    clearInterval(statusInterval);
-    clearInterval(footerTipInterval);
-    if (streamFlushTimer !== undefined) {
-      clearTimeout(streamFlushTimer);
-    }
-    if (exitHintTimer !== undefined) {
-      clearTimeout(exitHintTimer);
-    }
-    if (plainTextPasteFallbackTimer !== undefined) {
-      clearTimeout(plainTextPasteFallbackTimer);
-    }
-    if (activeToastTimer !== undefined) {
-      clearTimeout(activeToastTimer);
-    }
-    if (splashDetailsTimer !== undefined) {
-      clearTimeout(splashDetailsTimer);
-    }
+    plainTextPasteFallback.dispose();
+    toastController.dispose();
+    exitController.dispose();
   });
 
-  createEffect(() => {
-    if (!showSplashLogo()) {
-      setSplashDetailsVisible(true);
-      if (splashDetailsTimer !== undefined) {
-        clearTimeout(splashDetailsTimer);
-        splashDetailsTimer = undefined;
-      }
-      return;
-    }
-
-    setSplashDetailsVisible(true);
-    if (splashDetailsTimer !== undefined) {
-      clearTimeout(splashDetailsTimer);
-    }
-    splashDetailsTimer = setTimeout(() => {
-      setSplashDetailsVisible(false);
-      splashDetailsTimer = undefined;
-    }, 15_000);
-  });
-
-  createEffect(() => {
-    themeName();
-    showSplashLogo();
-    effectiveSplashDetailsVisible();
-    footerTipIndex();
-
-    if (headerRefreshScheduled) {
-      return;
-    }
-
-    headerRefreshScheduled = true;
-    setHeaderVisible(false);
-    queueMicrotask(() => {
-      headerRefreshScheduled = false;
-      setHeaderVisible(true);
-    });
-  });
-
-  createEffect(() => {
-    const query = getFileSuggestionQuery(draft());
-    const workspaceRoot = sessionRuntimeConfig().workspaceRoot;
-    fileSuggestionVersion();
-
-    if (query === undefined) {
-      setWorkspaceFilesLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    setWorkspaceFilesLoading(true);
-
-    void loadWorkspaceFileSuggestions(workspaceRoot)
-      .then((nextFiles) => {
-        if (!cancelled) {
-          setWorkspaceFiles(nextFiles);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setWorkspaceFilesLoading(false);
-        }
-      });
-
-    onCleanup(() => {
-      cancelled = true;
-    });
-  });
-
-  const flushPendingStreamText = () => {
-    if (pendingStreamEntryId === undefined || pendingStreamText === "") {
-      return;
-    }
-
-    const entryId = pendingStreamEntryId;
-    const bufferedText = pendingStreamText;
-    pendingStreamText = "";
-
-    if (entryId === streamingEntryId()) {
-      setStreamingBody((body) => body + bufferedText);
-      return;
-    }
-
-    updateEntryBody(setEntries, entryId, (body) => body + bufferedText);
-  };
-
-  const clearStreamFlushTimer = () => {
-    if (streamFlushTimer === undefined) {
-      return;
-    }
-
-    clearTimeout(streamFlushTimer);
-    streamFlushTimer = undefined;
-  };
-
-  const flushAndResetPendingStreamText = () => {
-    clearStreamFlushTimer();
-    flushPendingStreamText();
-    pendingStreamEntryId = undefined;
-  };
-
-  const showToast = (message: string) => {
-    setActiveToast({ message });
-    if (activeToastTimer !== undefined) {
-      clearTimeout(activeToastTimer);
-    }
-
-    activeToastTimer = setTimeout(() => {
-      activeToastTimer = undefined;
-      setActiveToast(undefined);
-    }, 1500);
-  };
+  const toastController = createToastController(setActiveToast);
+  const showToast = toastController.showToast;
 
   const setTranscriptMessages = (value: readonly ConversationMessage[]) => {
     setPreviousMessages(value);
@@ -771,24 +574,6 @@ export function TuiApp(props: TuiAppProps) {
     inputRef?.focus();
   };
 
-  const schedulePendingStreamTextFlush = (entryId: string, delta: string) => {
-    if (pendingStreamEntryId !== undefined && pendingStreamEntryId !== entryId) {
-      flushAndResetPendingStreamText();
-    }
-
-    pendingStreamEntryId = entryId;
-    pendingStreamText += delta;
-
-    if (streamFlushTimer !== undefined) {
-      return;
-    }
-
-    streamFlushTimer = setTimeout(() => {
-      streamFlushTimer = undefined;
-      flushPendingStreamText();
-    }, 33);
-  };
-
   const syncDraftValue = (nextDraft: string) => {
     setDraft(nextDraft);
     setPendingPastes((current) => current.filter((item) => nextDraft.includes(item.token)));
@@ -812,36 +597,79 @@ export function TuiApp(props: TuiAppProps) {
     });
   };
 
-  const updateApprovalSettings = (
-    nextApprovalMode: ApprovalMode,
-    nextApprovalAllowlist: readonly ToolApprovalScope[]
-  ) => {
-    setApprovalMode(nextApprovalMode);
-    setApprovalAllowlist(nextApprovalAllowlist);
-    setSessionRuntimeConfig((current) => ({
-      ...current,
-      approvalMode: nextApprovalMode,
-      approvalAllowlist: nextApprovalAllowlist,
-      permissionRules: permissionRules()
-    }));
-  };
+  const plainTextPasteFallback = createPlainTextPasteFallback({
+    getInput: () => inputRef instanceof TextareaRenderable ? inputRef : undefined,
+    getDraft: draft,
+    isBusy: busy,
+    isModalOpen: modalOpen,
+    isCommandDraft: () => isCommandDraft(draft()),
+    addPendingPaste(paste) {
+      setPendingPastes((current) => [...current, paste]);
+    },
+    createPasteToken: createPromptPasteToken,
+    syncDraftValue,
+    resetCommandSelection() {
+      setCommandSelectionIndex(0);
+    }
+  });
 
-  const updatePermissionRules = (nextPermissionRules: readonly PermissionRule[]) => {
-    setPermissionRules(nextPermissionRules);
-    setSessionRuntimeConfig((current) => ({
-      ...current,
-      permissionRules: nextPermissionRules
-    }));
-  };
+  const approvalRuntimeState = createApprovalRuntimeState({
+    getPermissionRules: permissionRules,
+    setApprovalMode,
+    setApprovalAllowlist,
+    setPermissionRules,
+    setRuntimeConfig: setSessionRuntimeConfig
+  });
+  const updateApprovalSettings = approvalRuntimeState.updateApprovalSettings;
+  const updatePermissionRules = approvalRuntimeState.updatePermissionRules;
 
   const abortActiveRun = () => {
     if (!busy()) {
       return;
     }
 
-    flushAndResetPendingStreamText();
     activeAbortController?.abort();
   };
+  const exitController = createExitController({
+    destroy() {
+      renderer.destroy();
+    },
+    isBusy: busy,
+    abortActiveRun,
+    setExitHintVisible
+  });
+  const approvalRequestController = createApprovalRequestController({
+    getActiveApprovalRequest: activeApprovalRequest,
+    setActiveApprovalRequest,
+    getPermissionRules: permissionRules,
+    getRuntimeConfig: sessionRuntimeConfig,
+    updatePermissionRules,
+    setEntries,
+    focusPrompt() {
+      inputRef?.focus();
+    },
+    toErrorMessage
+  });
+  const planReviewController = createPlanReviewController({
+    getActivePlanReviewRequest: activePlanReviewRequest,
+    setActivePlanReviewRequest,
+    setPendingPlanTagFormatReminder,
+    setPendingPlanRevisionReminder,
+    setSessionMode,
+    historyRoot,
+    getRuntimeConfig: sessionRuntimeConfig,
+    getTranscript: previousMessages,
+    getCurrentConversation: currentConversation,
+    setCurrentConversation,
+    getSubagentTasks: subagentTasks,
+    setEntries,
+    focusPrompt() {
+      inputRef?.focus();
+    },
+    submitPrompt(value) {
+      void submitPrompt(value);
+    }
+  });
 
   function requestToolApproval(request: ToolApprovalRequest): Promise<ToolApprovalDecision> {
     return new Promise((resolve) => {
@@ -860,293 +688,88 @@ export function TuiApp(props: TuiAppProps) {
     });
   }
 
-  const resolveCurrentContextWindowStatus = () => buildContextWindowStatusSnapshot(
-    sessionRuntimeConfig(),
-    contextWindowFallbacks(),
-    lastContextEstimate()
-  );
-
-  const persistModelContextWindow = (
-    providerId: string,
-    modelId: string,
-    contextWindowTokens: number
-  ): RuntimeConfig => {
-    const config = loadRecodeConfigFile(sessionRuntimeConfig().configPath);
-    const nextConfig = setConfiguredModelContextWindow(config, providerId, modelId, contextWindowTokens);
-    saveRecodeConfigFile(sessionRuntimeConfig().configPath, nextConfig);
-    const nextRuntimeConfig = setRuntimeModelContextWindow(sessionRuntimeConfig(), providerId, modelId, contextWindowTokens);
-    setSessionRuntimeConfig(nextRuntimeConfig);
-    return nextRuntimeConfig;
-  };
-
-  const requestActiveModelContextWindow = async (
-    mode: "automatic" | "manual"
-  ): Promise<ContextWindowStatusSnapshot> => {
-    const configuredStatus = resolveCurrentContextWindowStatus();
-    if (mode === "automatic" && configuredStatus.source === "configured") {
-      return configuredStatus;
-    }
-
-    const runtimeConfig = sessionRuntimeConfig();
-    const modelKey = buildContextWindowFallbackKey(runtimeConfig.providerId, runtimeConfig.model);
-    const existingFallback = contextWindowFallbacks()[modelKey];
-    if (mode === "automatic" && existingFallback !== undefined) {
-      return resolveCurrentContextWindowStatus();
-    }
-
-    const decision = await requestQuestionAnswers({
-      questions: [
-        {
-          id: mode === "manual" ? "context-window-config" : "context-window",
-          header: "Context Window",
-          question: mode === "manual"
-            ? `Set the context window for '${runtimeConfig.model}'. Current value: ${configuredStatus.contextWindowTokens.toLocaleString()} tokens (${configuredStatus.source}).`
-            : `Recode does not know the context window for '${runtimeConfig.model}'. Enter it if you know it, or save the conservative 200k fallback.`,
-          multiSelect: false,
-          allowCustomText: true,
-          options: [
-            {
-              label: "Save 200k fallback",
-              description: "Auto-compaction stays conservative until you replace this with the real model limit."
-            }
-          ]
-        }
-      ]
-    });
-
-    const saveContextWindow = (contextWindowTokens: number, message: string): ContextWindowStatusSnapshot => {
-      const nextRuntimeConfig = persistModelContextWindow(runtimeConfig.providerId, runtimeConfig.model, contextWindowTokens);
-      appendEntry(setEntries, createEntry("status", "status", message));
-      return buildContextWindowStatusSnapshot(nextRuntimeConfig, contextWindowFallbacks(), lastContextEstimate());
-    };
-
-    if (decision.dismissed) {
-      if (mode === "manual") {
-        appendEntry(setEntries, createEntry("status", "status", `Context window unchanged for ${runtimeConfig.model}.`));
-        return configuredStatus;
-      }
-
-      return saveContextWindow(
-        DEFAULT_FALLBACK_CONTEXT_WINDOW_TOKENS,
-        `Saved the conservative 200k context-window fallback for ${runtimeConfig.model}. Change it later with /context-window.`
-      );
-    }
-
-    const answer = decision.answers[0];
-    const customValue = answer?.customText.trim() ?? "";
-    const parsedValue = Number.parseInt(customValue, 10);
-    if (Number.isFinite(parsedValue) && parsedValue > 0) {
-      return saveContextWindow(
-        parsedValue,
-        `Saved a ${parsedValue.toLocaleString()} token context window for ${runtimeConfig.model}`
-      );
-    }
-
-    return saveContextWindow(
-      DEFAULT_FALLBACK_CONTEXT_WINDOW_TOKENS,
-      customValue === ""
-        ? `Saved the conservative 200k context-window fallback for ${runtimeConfig.model}.`
-        : `Could not parse '${customValue}' as a positive integer, so Recode saved the conservative 200k context-window fallback for ${runtimeConfig.model}.`
-    );
-  };
-
-  const ensureActiveModelContextWindow = async (): Promise<ContextWindowStatusSnapshot> => {
-    return requestActiveModelContextWindow("automatic");
-  };
-
-  const prepareTranscriptForPendingPrompt = async (
-    pendingPrompt: string,
-    abortSignal: AbortSignal
-  ): Promise<readonly ConversationMessage[]> => {
-    const contextWindowStatus = await ensureActiveModelContextWindow();
-    const microcompacted = microcompactToolResults(previousMessages());
-    const effectiveTranscript = microcompacted.kind === "compacted"
-      ? microcompacted.transcript
-      : previousMessages();
-
-    if (microcompacted.kind === "compacted") {
-      setTranscriptMessages(microcompacted.transcript);
-      const persistedConversation = persistConversationSession(
-        historyRoot(),
-        sessionRuntimeConfig(),
-        microcompacted.transcript,
-        currentConversation(),
-        sessionMode(),
-        subagentTasks(),
-        undefined,
-        sessionEvents()
-      );
-      setCurrentConversation(persistedConversation);
-      appendEntry(
-        setEntries,
-        createEntry(
-          "status",
-          "status",
-          `Microcompacted ${microcompacted.compactedToolResultCount} old tool result${microcompacted.compactedToolResultCount === 1 ? "" : "s"}`
-        )
-      );
-    }
-
-    const estimateBefore = estimateConversationContextTokens(effectiveTranscript, pendingPrompt);
-    setLastContextEstimate(estimateBefore);
-
-    const compactionDecision = evaluateAutoCompaction(
-      estimateBefore,
-      contextWindowStatus.contextWindowTokens,
-      sessionLanguageModel().maxOutputTokens
-    );
-
-    if (!compactionDecision.shouldCompact) {
-      return effectiveTranscript;
-    }
-
-    const compacted = await compactConversation({
-      transcript: effectiveTranscript,
-      languageModel: sessionLanguageModel(),
-      abortSignal
-    });
-
-    if (compacted.kind === "noop") {
-      throw new Error(
-        "This session is near the context limit, but there is not enough older history to compact yet. Try a shorter prompt, compact later, or configure a larger context window for this model."
-      );
-    }
-
-    setTranscriptMessages(compacted.transcript);
-    const snapshot = createCompactionSessionSnapshot(effectiveTranscript, compacted, "auto");
-    const nextSnapshots = [...(currentConversation()?.sessionSnapshots ?? []), snapshot];
-    const compactedEvent: SessionEvent = {
-      type: "session.compacted",
-      timestamp: Date.now(),
-      content: compacted.summaryMessage.content
-    };
-    const nextSessionEvents = [...sessionEvents(), compactedEvent];
-    setSessionEvents(nextSessionEvents);
-    const persistedConversation = persistConversationSession(
-      historyRoot(),
-      sessionRuntimeConfig(),
-      compacted.transcript,
-      currentConversation(),
-      sessionMode(),
-      subagentTasks(),
-      nextSnapshots,
-      nextSessionEvents
-    );
-    setCurrentConversation(persistedConversation);
-    appendEntry(
-      setEntries,
-      createEntry(
-        "status",
-        "status",
-        `Auto-compacted ${compacted.compactedMessageCount} older message${compacted.compactedMessageCount === 1 ? "" : "s"} into a continuation summary`
-      )
-    );
-
-    const estimateAfter = assertConversationFitsContextWindow(
-      compacted.transcript,
-      pendingPrompt,
-      contextWindowStatus.contextWindowTokens,
-      sessionLanguageModel().maxOutputTokens
-    );
-    setLastContextEstimate(estimateAfter);
-    return compacted.transcript;
-  };
+  const contextWindowFlow = createContextWindowFlow({
+    getRuntimeConfig: sessionRuntimeConfig,
+    setRuntimeConfig: setSessionRuntimeConfig,
+    getContextWindowFallbacks: contextWindowFallbacks,
+    getLastContextEstimate: lastContextEstimate,
+    setLastContextEstimate,
+    getPreviousMessages: previousMessages,
+    setTranscriptMessages,
+    getLanguageModel: sessionLanguageModel,
+    getHistoryRoot: historyRoot,
+    getCurrentConversation: currentConversation,
+    setCurrentConversation,
+    getSessionMode: sessionMode,
+    getSubagentTasks: subagentTasks,
+    getSessionEvents: sessionEvents,
+    setSessionEvents,
+    setEntries,
+    requestQuestionAnswers
+  });
+  const requestActiveModelContextWindow = contextWindowFlow.requestActiveModelContextWindow;
+  const prepareTranscriptForPendingPrompt = contextWindowFlow.prepareTranscriptForPendingPrompt;
 
   onMount(() => {
     inputRef?.focus();
     applyInputCursorStyle(inputRef, t().brandShimmer);
-    setCurrentConversation(createDraftConversation(sessionRuntimeConfig(), "build"));
-    restoreSubagentTaskState([]);
-    setEntries([]);
-    setTranscriptMessages([]);
-    setSessionEvents([]);
-    setLastContextEstimate(undefined);
-    setSessionMode("build");
+    initializeTuiSession({
+      runtimeConfig: sessionRuntimeConfig(),
+      setConversation: setCurrentConversation,
+      restoreSubagentTaskState,
+      setEntries,
+      setTranscriptMessages,
+      setSessionEvents,
+      setLastContextEstimate,
+      setSessionMode
+    });
   });
 
-  createEffect(() => {
-    const cursorColor = t().brandShimmer;
-    applyInputCursorStyle(inputRef, cursorColor);
-    applyInputCursorStyle(modelPickerInputRef, cursorColor);
-    applyInputCursorStyle(historyPickerInputRef, cursorColor);
-    applyInputCursorStyle(themePickerInputRef, cursorColor);
+  registerCursorStyleSync(() => t().brandShimmer, () => [
+    inputRef,
+    modelPickerInputRef,
+    historyPickerInputRef,
+    themePickerInputRef
+  ]);
+  registerModelPickerScrollSync({
+    open: modelPickerOpen,
+    scrollBox: modelPickerScrollBox,
+    renderedLines: modelPickerRenderedLines,
+    windowStart: modelPickerWindowStart
   });
-
-  createEffect(() => {
-    const scrollBox = modelPickerScrollBox();
-    const renderedLines = modelPickerRenderedLines();
-    const windowStart = modelPickerWindowStart();
-
-    if (!modelPickerOpen() || scrollBox === undefined || renderedLines.length <= 0) {
-      return;
-    }
-
-    scrollBox.scrollTo(windowStart);
+  registerHistoryPickerScrollSync({
+    open: historyPickerOpen,
+    query: historyPickerQuery,
+    scrollBox: historyPickerScrollBox,
+    windowStart: historyPickerWindowStart
   });
-
-  createEffect(() => {
-    const scrollBox = historyPickerScrollBox();
-    const windowStart = historyPickerWindowStart();
-
-    historyPickerQuery();
-
-    if (!historyPickerOpen() || scrollBox === undefined) {
-      return;
-    }
-
-    scrollBox.scrollTo(getHistoryPickerScrollOffset(windowStart));
+  registerIndexedPickerSelectionSync({
+    open: providerPickerOpen,
+    scrollBox: providerPickerScrollBox,
+    items: providerPickerItems,
+    selectedIndex: providerPickerSelectedIndex,
+    childIdPrefix: "provider-picker-item"
   });
-
-  createEffect(() => {
-    const items = providerPickerItems();
-    if (items.length <= 0) {
-      return;
-    }
-
-    syncScrollBoxSelection(
-      providerPickerOpen(),
-      providerPickerScrollBox(),
-      getIndexedPickerChildId("provider-picker-item", providerPickerSelectedIndex(), items.length)
-    );
+  registerIndexedPickerSelectionSync({
+    open: themePickerOpen,
+    scrollBox: themePickerScrollBox,
+    items: themePickerItems,
+    selectedIndex: themePickerSelectedIndex,
+    childIdPrefix: "theme-picker-item"
   });
-
-  createEffect(() => {
-    const items = themePickerItems();
-    if (items.length <= 0) {
-      return;
-    }
-
-    syncScrollBoxSelection(
-      themePickerOpen(),
-      themePickerScrollBox(),
-      getIndexedPickerChildId("theme-picker-item", themePickerSelectedIndex(), items.length)
-    );
+  registerIndexedPickerSelectionSync({
+    open: approvalModePickerOpen,
+    scrollBox: approvalModePickerScrollBox,
+    items: approvalModePickerItems,
+    selectedIndex: approvalModePickerSelectedIndex,
+    childIdPrefix: "approval-mode-picker-item"
   });
-
-  createEffect(() => {
-    const items = approvalModePickerItems();
-    if (items.length <= 0) {
-      return;
-    }
-
-    syncScrollBoxSelection(
-      approvalModePickerOpen(),
-      approvalModePickerScrollBox(),
-      getIndexedPickerChildId("approval-mode-picker-item", approvalModePickerSelectedIndex(), items.length)
-    );
-  });
-
-  createEffect(() => {
-    const items = layoutPickerItems();
-    if (items.length <= 0) {
-      return;
-    }
-
-    syncScrollBoxSelection(
-      layoutPickerOpen(),
-      layoutPickerScrollBox(),
-      getIndexedPickerChildId("layout-picker-item", layoutPickerSelectedIndex(), items.length)
-    );
+  registerIndexedPickerSelectionSync({
+    open: layoutPickerOpen,
+    scrollBox: layoutPickerScrollBox,
+    items: layoutPickerItems,
+    selectedIndex: layoutPickerSelectedIndex,
+    childIdPrefix: "layout-picker-item"
   });
 
   const handlePromptPaste = createPromptPasteHandler({
@@ -1167,31 +790,7 @@ export function TuiApp(props: TuiAppProps) {
 
   registerTuiInputHandlers({
     handlePromptPaste,
-    handleCtrlC(key) {
-      key.preventDefault();
-      key.stopPropagation();
-
-      if (ctrlCArmed) {
-        renderer.destroy();
-        return;
-      }
-
-      ctrlCArmed = true;
-      setExitHintVisible(true);
-      if (busy()) {
-        abortActiveRun();
-      }
-
-      if (exitHintTimer !== undefined) {
-        clearTimeout(exitHintTimer);
-      }
-
-      exitHintTimer = setTimeout(() => {
-        ctrlCArmed = false;
-        setExitHintVisible(false);
-        exitHintTimer = undefined;
-      }, 1800);
-    },
+    handleCtrlC: exitController.handleCtrlC,
     handleToggleTodos(key) {
       key.preventDefault();
       key.stopPropagation();
@@ -1542,57 +1141,10 @@ export function TuiApp(props: TuiAppProps) {
     }
   });
 
-  useSelectionHandler((selection) => {
-    if (selection.isDragging) {
-      return;
-    }
-
-    const selectedText = selection.getSelectedText();
-
-    if (selectedText === "") {
-      lastCopiedSelectionText = "";
-      return;
-    }
-
-    if (selectedText === lastCopiedSelectionText) {
-      return;
-    }
-
-    writeClipboardText(selectedText);
-    showToast("Copied text");
-    lastCopiedSelectionText = selectedText;
-  });
+  registerSelectionCopyHandler(showToast);
 
   function resolveApprovalRequest(decision: ToolApprovalDecision): void {
-    const request = activeApprovalRequest();
-    if (request === undefined) {
-      return;
-    }
-
-    if (decision === "allow-always") {
-      const nextRules = [
-        ...permissionRules(),
-        createPermissionRule(request.permission, request.pattern, "allow")
-      ];
-
-      try {
-        const config = loadRecodeConfigFile(sessionRuntimeConfig().configPath);
-        const nextConfig = selectConfiguredPermissionRules(config, nextRules);
-        saveRecodeConfigFile(sessionRuntimeConfig().configPath, nextConfig);
-        updatePermissionRules(nextRules);
-        appendEntry(
-          setEntries,
-          createEntry("status", "status", `Always allowing ${request.permission}:${request.pattern}`)
-        );
-      } catch (error) {
-        appendEntry(setEntries, createEntry("error", "error", toErrorMessage(error)));
-        decision = "deny";
-      }
-    }
-
-    setActiveApprovalRequest(undefined);
-    request.resolve(decision);
-    inputRef?.focus();
+    approvalRequestController.resolveApprovalRequest(decision);
   }
 
   function resolveQuestionRequest(decision: QuestionToolDecision): void {
@@ -1661,43 +1213,7 @@ export function TuiApp(props: TuiAppProps) {
   };
 
   function resolvePlanReviewRequest(decision: PlanReviewDecision): void {
-    const request = activePlanReviewRequest();
-    if (request === undefined) {
-      return;
-    }
-
-    setActivePlanReviewRequest(undefined);
-
-    if (decision === "revise") {
-      setPendingPlanRevisionReminder(true);
-      appendEntry(
-        setEntries,
-        createEntry("status", "status", "Still in PLAN mode — tell Recode what to adjust.")
-      );
-      inputRef?.focus();
-      return;
-    }
-
-    setPendingPlanTagFormatReminder(false);
-    setPendingPlanRevisionReminder(false);
-    setSessionMode("build");
-    const persistedConversation = persistConversationSession(
-      historyRoot(),
-      sessionRuntimeConfig(),
-      previousMessages(),
-      currentConversation(),
-      "build",
-      subagentTasks()
-    );
-    setCurrentConversation(persistedConversation);
-    appendEntry(
-      setEntries,
-      createEntry("status", "status", "Plan approved — switched to BUILD mode")
-    );
-
-    queueMicrotask(() => {
-      void submitPrompt(buildPlanImplementationPrompt());
-    });
+    planReviewController.resolvePlanReviewRequest(decision);
   }
 
   const submitPrompt = async (value: string) => {
@@ -1815,16 +1331,13 @@ export function TuiApp(props: TuiAppProps) {
       return;
     }
 
-    const prompt = commandResult.prompt;
-    const expandedPrompt = expandDraftPastes(prompt, pendingPastes());
-    const planTagFormatReminderActive = pendingPlanTagFormatReminder();
-    const planRevisionReminderActive = pendingPlanRevisionReminder();
-    const modelPrompt = sessionMode() === "plan"
-      ? buildPlanModeModelPrompt(expandedPrompt, {
-          remindAboutPlanTags: planTagFormatReminderActive,
-          remindAboutPlanRevision: planRevisionReminderActive
-        })
-      : expandedPrompt;
+    const { expandedPrompt, modelPrompt } = buildPromptRunInput({
+      prompt: commandResult.prompt,
+      pendingPastes: pendingPastes(),
+      sessionMode: sessionMode(),
+      remindAboutPlanTags: pendingPlanTagFormatReminder(),
+      remindAboutPlanRevision: pendingPlanRevisionReminder()
+    });
     setPendingPlanTagFormatReminder(false);
     setPendingPlanRevisionReminder(false);
     clearDraft(inputRef, setDraft);
@@ -1835,66 +1348,26 @@ export function TuiApp(props: TuiAppProps) {
 
     const abortController = new AbortController();
     activeAbortController = abortController;
-    let latestTranscript: readonly ConversationMessage[] | undefined;
-    const baseEntries = entries();
-    const baseSessionEvents = sessionEvents();
-    let turnSessionEvents: SessionEvent[] = [];
-    let turnSessionState: SessionState = createEmptySessionState();
-
-    const syncTurnSessionEntries = () => {
-      setEntries([...baseEntries, ...uiEntriesFromSessionState(turnSessionState)]);
-    };
-
-    const latestProjectedAssistantText = () => {
-      for (let index = turnSessionState.entries.length - 1; index >= 0; index -= 1) {
-        const entry = turnSessionState.entries[index];
-        if (entry?.kind === "assistant" && entry.content !== "") {
-          return entry.content;
-        }
-      }
-      return "";
-    };
-
-    const handleSessionEvent = (event: SessionEvent) => {
-      turnSessionEvents = [...turnSessionEvents, event];
-      setSessionEvents([...baseSessionEvents, ...turnSessionEvents]);
-      turnSessionState = applySessionEvent(turnSessionState, event);
-      syncTurnSessionEntries();
-
-      switch (event.type) {
-        case "assistant.text.delta":
-          if (busyPhase() === "retrying") {
-            setBusyPhase("thinking");
-          }
-          setProviderStatusText(undefined);
-          break;
-        case "tool.started":
-          setBusyPhase("tool");
-          setProviderStatusText(undefined);
-          break;
-        case "tool.completed":
-        case "tool.errored": {
-          const toolResult = event.toolResult;
-          setBusyPhase("thinking");
-          setProviderStatusText(undefined);
-          invalidateWorkspaceFileSuggestionCache(sessionRuntimeConfig().workspaceRoot);
-          setFileSuggestionVersion((value) => value + 1);
-          if (!toolResult.isError && toolResult.metadata?.kind === "todo-list") {
-            setTodos(toolResult.metadata.todos);
-            if (toolResult.metadata.todos.length === 0) {
-              setTodoDropupOpen(false);
-            }
-          }
-          break;
-        }
-        case "provider.retry":
-          setBusyPhase("retrying");
-          setProviderStatusText(`retry ${event.status.attempt}/${event.status.maxAttempts}`);
-          break;
-        default:
-          break;
-      }
-    };
+    const turnSession = createPromptTurnSession({
+      baseEntries: entries(),
+      baseSessionEvents: sessionEvents(),
+      workspaceRoot: sessionRuntimeConfig().workspaceRoot,
+      setEntries,
+      setSessionEvents,
+      setBusyPhase,
+      getBusyPhase: busyPhase,
+      setProviderStatusText,
+      invalidateWorkspaceFileSuggestions: invalidateWorkspaceFileSuggestionCache,
+      bumpFileSuggestionVersion() {
+        setFileSuggestionVersion((value) => value + 1);
+      },
+      setTodos,
+      closeTodoDropup() {
+        setTodoDropupOpen(false);
+      },
+      setTranscriptMessages,
+      setLastContextEstimate
+    });
 
     try {
       const preparedTranscript = await prepareTranscriptForPendingPrompt(modelPrompt, abortController.signal);
@@ -1912,7 +1385,7 @@ export function TuiApp(props: TuiAppProps) {
         toolContext: sessionToolContext(),
         abortSignal: abortController.signal,
         ...(requestAffinityKey === undefined ? {} : { requestAffinityKey }),
-        onSessionEvent: handleSessionEvent,
+        onSessionEvent: turnSession.handleSessionEvent,
         onProviderStatus(event) {
           if (event.type === "request-start") {
             setProviderStatusText(undefined);
@@ -1926,9 +1399,7 @@ export function TuiApp(props: TuiAppProps) {
         onTextDelta() {},
         onToolResult() {},
         onTranscriptUpdate(transcript) {
-          latestTranscript = transcript;
-          setTranscriptMessages(transcript);
-          setLastContextEstimate(estimateConversationContextTokens(transcript));
+          turnSession.handleTranscriptUpdate(transcript);
         }
       });
 
@@ -1938,7 +1409,7 @@ export function TuiApp(props: TuiAppProps) {
         runtimeConfig: sessionRuntimeConfig(),
         transcript: result.transcript,
         subagentTasks: subagentTasks(),
-        sessionEvents: [...baseSessionEvents, ...turnSessionEvents],
+        sessionEvents: turnSession.getAllSessionEvents(),
         currentConversation: currentConversation(),
         sessionMode: sessionMode(),
         setPreviousMessages: setTranscriptMessages,
@@ -1966,8 +1437,7 @@ export function TuiApp(props: TuiAppProps) {
         });
       }
     } catch (error) {
-      const partialBody = latestProjectedAssistantText();
-      const transcriptSnapshot = buildPromptTranscriptSnapshot(latestTranscript, partialBody);
+      const transcriptSnapshot = turnSession.buildTranscriptSnapshot();
       if (transcriptSnapshot.length > 0) {
         setBusyPhase("saving-history");
         persistPromptTranscript({
@@ -1975,7 +1445,7 @@ export function TuiApp(props: TuiAppProps) {
           runtimeConfig: sessionRuntimeConfig(),
           transcript: transcriptSnapshot,
           subagentTasks: subagentTasks(),
-          sessionEvents: [...baseSessionEvents, ...turnSessionEvents],
+          sessionEvents: turnSession.getAllSessionEvents(),
           currentConversation: currentConversation(),
           sessionMode: sessionMode(),
           setPreviousMessages: setTranscriptMessages,
@@ -1987,7 +1457,6 @@ export function TuiApp(props: TuiAppProps) {
         appendEntry(setEntries, createEntry("error", "error", toErrorMessage(error)));
       }
     } finally {
-      flushAndResetPendingStreamText();
       setStreamingBody("");
       if (activeAbortController === abortController) {
         activeAbortController = undefined;
@@ -2026,74 +1495,20 @@ export function TuiApp(props: TuiAppProps) {
 
   const handlePromptKeyDown = (key: KeyEvent): boolean => {
     if (isLikelyPlainTextPasteChunk(key)) {
-      notePlainTextPasteFallbackChunk();
+      plainTextPasteFallback.noteChunk();
       return false;
     }
 
-    if ((key.name === "return" || key.name === "enter") && shouldTreatReturnAsPlainTextPasteNewline()) {
+    if ((key.name === "return" || key.name === "enter") && plainTextPasteFallback.shouldTreatReturnAsNewline()) {
       key.preventDefault();
       key.stopPropagation();
       inputRef?.insertText("\n");
       handlePromptContentChange();
-      notePlainTextPasteFallbackChunk();
+      plainTextPasteFallback.noteChunk();
       return true;
     }
 
     return false;
-  };
-
-  const notePlainTextPasteFallbackChunk = () => {
-    if (plainTextPasteFallbackStartDraft === undefined) {
-      plainTextPasteFallbackStartDraft = draft();
-    }
-    plainTextPasteFallbackLastChunkAt = Date.now();
-    schedulePlainTextPasteFallbackSummary();
-  };
-
-  const shouldTreatReturnAsPlainTextPasteNewline = () =>
-    plainTextPasteFallbackStartDraft !== undefined && Date.now() - plainTextPasteFallbackLastChunkAt < 120;
-
-  const schedulePlainTextPasteFallbackSummary = () => {
-    if (plainTextPasteFallbackTimer !== undefined) {
-      clearTimeout(plainTextPasteFallbackTimer);
-    }
-
-    plainTextPasteFallbackTimer = setTimeout(() => {
-      plainTextPasteFallbackTimer = undefined;
-      summarizePlainTextPasteFallback();
-    }, 90);
-  };
-
-  const summarizePlainTextPasteFallback = () => {
-    const startDraft = plainTextPasteFallbackStartDraft;
-    plainTextPasteFallbackStartDraft = undefined;
-
-    if (startDraft === undefined || inputRef === undefined || busy() || modalOpen() || isCommandDraft(draft())) {
-      return;
-    }
-
-    const nextDraft = normalizeDraftInput(draft(), inputRef.plainText);
-    if (!nextDraft.startsWith(startDraft)) {
-      return;
-    }
-
-    const pastedText = nextDraft.slice(startDraft.length);
-    const normalizedPastedText = pastedText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-    const lineCount = normalizedPastedText.trimEnd() === ""
-      ? 0
-      : normalizedPastedText.trimEnd().split("\n").length;
-
-    if (lineCount <= 1) {
-      return;
-    }
-
-    const token = createPromptPasteToken(lineCount);
-    setPendingPastes((current) => [...current, { token, text: normalizedPastedText }]);
-    const nextVisibleDraft = `${startDraft}${token} `;
-    setRenderableText(inputRef, toVisibleDraft(nextVisibleDraft));
-    syncDraftValue(nextVisibleDraft);
-    setCommandSelectionIndex(0);
-    inputRef.focus();
   };
 
   function createPromptPasteToken(lineCount: number): string {
@@ -2336,106 +1751,4 @@ export function TuiApp(props: TuiAppProps) {
       />
     </box>
   );
-}
-
-function getRenderableText(input: PromptRenderable | undefined): string {
-  return input?.plainText ?? "";
-}
-
-function setRenderableText(input: PromptRenderable | undefined, value: string): void {
-  if (input === undefined) {
-    return;
-  }
-
-  if (input instanceof InputRenderable) {
-    input.value = value;
-  } else {
-    input.editBuffer.setText(value);
-    input.cursorOffset = value.length;
-  }
-}
-
-function moveRenderableCursorToEnd(input: PromptRenderable | undefined, value: string): void {
-  if (input === undefined) {
-    return;
-  }
-
-  input.cursorOffset = value.length;
-}
-
-function applyInputCursorStyle(input: PromptRenderable | undefined, color: string): void {
-  if (input === undefined) {
-    return;
-  }
-
-  input.cursorStyle = {
-    style: "line",
-    blinking: false
-  };
-  input.cursorColor = color;
-}
-
-function clearDraft(
-  input: PromptRenderable | undefined,
-  setDraft: (value: string) => void
-): void {
-  setRenderableText(input, "");
-  setDraft("");
-}
-
-function applyCommandDraft(
-  input: PromptRenderable | undefined,
-  setDraft: (value: string) => void,
-  setCommandSelectionIndex: (value: number) => void,
-  command: string
-): void {
-  if (input !== undefined) {
-    setRenderableText(input, toVisibleDraft(command));
-    input.focus();
-  }
-
-  setDraft(command);
-  setCommandSelectionIndex(0);
-}
-
-function writeClipboardText(text: string): void {
-  const encoded = Buffer.from(text, "utf8").toString("base64");
-  process.stdout.write(`\u001B]52;c;${encoded}\u0007`);
-}
-
-function buildCommandPanelState(
-  draft: string,
-  commands: readonly { readonly command: string; readonly description: string }[],
-  busy: boolean,
-  selectedIndex: number
-): CommandPanelState | undefined {
-  const prompt = draft.trim();
-
-  if (busy || !prompt.startsWith("/")) {
-    return undefined;
-  }
-
-  const visibleCommands = commands;
-  const normalizedSelectedIndex = normalizeBuiltinCommandSelectionIndex(selectedIndex, visibleCommands.length);
-
-  return {
-    commands: visibleCommands,
-    hasMore: false,
-    selectedIndex: normalizedSelectedIndex,
-    selectedCommand: visibleCommands[normalizedSelectedIndex]
-  };
-}
-
-function createToolRegistryForMode(baseRegistry: ToolRegistry, mode: SessionMode): ToolRegistry {
-  return mode === "build"
-    ? baseRegistry
-    : new ToolRegistry(filterToolsForSessionMode(baseRegistry.list(), mode));
-}
-
-function toErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return "Unknown error";
 }

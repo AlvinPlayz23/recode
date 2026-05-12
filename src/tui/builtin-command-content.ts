@@ -12,13 +12,13 @@ import { loadRecodeConfigFile } from "../config/recode-config.ts";
 import type { ConversationMessage } from "../transcript/message.ts";
 import type { RuntimeConfig } from "../runtime/runtime-config.ts";
 import { getBuiltinCommands } from "./message-format.ts";
-import { getSessionModeLabel, type SessionMode } from "./session-mode.ts";
+import { getSessionModeLabel, type SessionMode } from "./session/session-mode.ts";
 import {
   getThemeDefinition,
   getToolMarkerDefinition,
   type ThemeName,
   type ToolMarkerName
-} from "./theme.ts";
+} from "./appearance/theme.ts";
 
 /**
  * Snapshot of the active context-window configuration and estimates.

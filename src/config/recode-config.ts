@@ -18,7 +18,7 @@ import {
   type LayoutMode,
   type ThemeName,
   type ToolMarkerName
-} from "../tui/theme.ts";
+} from "../tui/appearance/theme.ts";
 import type { ApprovalMode, ToolApprovalScope } from "../tools/tool.ts";
 import {
   permissionRulesFromConfig,

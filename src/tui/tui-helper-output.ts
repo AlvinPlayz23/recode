@@ -2,7 +2,7 @@
  * Small output helpers shared by TUI action helpers.
  */
 
-import { createEntry, type UiEntry } from "./transcript-entry-state.ts";
+import { createEntry, type UiEntry } from "./transcript/transcript-entry-state.ts";
 
 /**
  * Object that can append a UI entry.

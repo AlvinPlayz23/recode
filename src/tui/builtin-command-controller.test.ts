@@ -17,8 +17,8 @@ import {
   type BuiltinCommandDispatchOptions
 } from "./builtin-command-controller.ts";
 import type { SubagentTaskRecord } from "../agent/subagent.ts";
-import type { SpinnerPhase } from "./spinner.tsx";
-import type { UiEntry } from "./transcript-entry-state.ts";
+import type { SpinnerPhase } from "./appearance/spinner.tsx";
+import type { UiEntry } from "./transcript/transcript-entry-state.ts";
 
 describe("builtin command controller", () => {
   it("returns normal prompts without clearing the draft", async () => {
