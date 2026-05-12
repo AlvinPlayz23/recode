@@ -23,6 +23,8 @@ export interface UiEntry {
   readonly kind: "user" | "assistant" | "tool" | "tool-preview" | "tool-group" | "error" | "status";
   readonly title: string;
   readonly body: string;
+  /** Unix ms timestamp set when the entry is created live. Absent for rehydrated history entries. */
+  readonly createdAt?: number;
   readonly toolCallId?: string;
   readonly toolStatus?: "running" | "completed" | "error";
   readonly metadata?: ToolResultMetadata;
@@ -147,14 +149,16 @@ function asDeterministicResultEntries(sessionEntry: ToolSessionEntry, id: string
 }
 
 /**
- * Create a UI entry with a unique local ID.
+ * Create a UI entry with a unique local ID and a live timestamp.
  */
 export function createEntry(kind: UiEntry["kind"], title: string, body: string): UiEntry {
+  const now = Date.now();
   return {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
     kind,
     title,
-    body
+    body,
+    createdAt: now
   };
 }
 
@@ -656,51 +660,70 @@ export function replaceTaskToolCallEntryWithResult(
 
 /**
  * Collapse consecutive tool entries into summary rows when requested.
+ * When `previewsCollapsed` is true, strip preview metadata from tool-preview
+ * entries so only their header line renders (no diff or bash output body).
  */
 export function renderVisibleEntries(
   entries: readonly UiEntry[],
-  collapsed: boolean
+  collapsed: boolean,
+  previewsCollapsed = false
 ): readonly UiEntry[] {
+  let result: UiEntry[];
+
   if (!collapsed) {
-    return entries;
+    result = [...entries];
+  } else {
+    result = [];
+    let toolRunCount = 0;
+    let toolRunStartIndex = -1;
+
+    for (let i = 0; i <= entries.length; i++) {
+      const entry = entries[i];
+      const isTool = entry !== undefined && entry.kind === "tool";
+
+      if (isTool) {
+        if (toolRunCount === 0) {
+          toolRunStartIndex = i;
+        }
+        toolRunCount += 1;
+        continue;
+      }
+
+      if (toolRunCount > 0) {
+        if (toolRunCount === 1) {
+          result.push(entries[toolRunStartIndex]!);
+        } else {
+          result.push(createEntry(
+            "tool-group",
+            "tool",
+            `${toolRunCount} tool calls (collapsed)`
+          ));
+        }
+        toolRunCount = 0;
+        toolRunStartIndex = -1;
+      }
+
+      if (entry !== undefined) {
+        result.push(entry);
+      }
+    }
   }
 
-  const result: UiEntry[] = [];
-  let toolRunCount = 0;
-  let toolRunStartIndex = -1;
-
-  for (let i = 0; i <= entries.length; i++) {
-    const entry = entries[i];
-    const isTool = entry !== undefined && entry.kind === "tool";
-
-    if (isTool) {
-      if (toolRunCount === 0) {
-        toolRunStartIndex = i;
-      }
-      toolRunCount += 1;
-      continue;
-    }
-
-    if (toolRunCount > 0) {
-      if (toolRunCount === 1) {
-        result.push(entries[toolRunStartIndex]!);
-      } else {
-        result.push(createEntry(
-          "tool-group",
-          "tool",
-          `${toolRunCount} tool calls (collapsed)`
-        ));
-      }
-      toolRunCount = 0;
-      toolRunStartIndex = -1;
-    }
-
-    if (entry !== undefined) {
-      result.push(entry);
-    }
+  if (!previewsCollapsed) {
+    return result;
   }
 
-  return result;
+  // Drop metadata from tool-preview entries so only the header line renders.
+  // Using destructuring ensures the key is absent rather than undefined, which
+  // satisfies exactOptionalPropertyTypes.
+  return result.map((entry): UiEntry => {
+    if (entry.kind !== "tool-preview" || entry.metadata === undefined) {
+      return entry;
+    }
+
+    const { metadata: _dropped, ...collapsedEntry } = entry;
+    return collapsedEntry;
+  });
 }
 
 function toToolDisplayName(toolName: string): string {

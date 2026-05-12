@@ -27,7 +27,10 @@ export type SpinnerStyleName =
   | "petal-drift"
   | "solarized-beam"
   | "monochrome-scan"
-  | "sunset-pulse";
+  | "sunset-pulse"
+  | "ocean-wave"
+  | "neon-pulse"
+  | "ink-blot";
 
 interface SpinnerThemeDefinition {
   readonly style: SpinnerStyleName;
@@ -119,6 +122,33 @@ const SPINNER_THEME_DEFINITIONS: Readonly<Record<ThemeName, SpinnerThemeDefiniti
     holdEnd: 2,
     headGlyph: "◆",
     trailGlyphs: ["◇", "▪", "·"],
+    inactiveGlyph: "·"
+  }),
+  "ocean-depth": createScannerDefinition({
+    style: "ocean-wave",
+    width: 8,
+    holdStart: 3,
+    holdEnd: 3,
+    headGlyph: "◉",
+    trailGlyphs: ["◎", "○", "·", "·"],
+    inactiveGlyph: "·"
+  }),
+  "neon-noir": createScannerDefinition({
+    style: "neon-pulse",
+    width: 8,
+    holdStart: 1,
+    holdEnd: 1,
+    headGlyph: "▓",
+    trailGlyphs: ["▒", "░", "·", "·"],
+    inactiveGlyph: "·"
+  }),
+  "paper": createScannerDefinition({
+    style: "ink-blot",
+    width: 7,
+    holdStart: 3,
+    holdEnd: 2,
+    headGlyph: "●",
+    trailGlyphs: ["◉", "◌", "·"],
     inactiveGlyph: "·"
   })
 };

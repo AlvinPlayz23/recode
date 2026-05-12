@@ -10,6 +10,7 @@ import {
   type TextareaRenderable
 } from "@opentui/core";
 import { For, Show } from "solid-js";
+import type { ContextWindowStatusSnapshot } from "../builtin-command-content.ts";
 import type { ApprovalMode, TodoItem } from "../../tools/tool.ts";
 import type { CommandPanelState } from "../keyboard-router.ts";
 import type { FileSuggestionPanelState } from "../file-suggestions.ts";
@@ -49,6 +50,7 @@ export interface ComposerProps {
   readonly sessionMode: SessionMode;
   readonly model: string;
   readonly approvalMode: ApprovalMode;
+  readonly contextWindowStatus: ContextWindowStatusSnapshot | undefined;
   readonly exitHintVisible: boolean;
   readonly promptKeyBindings: TextareaKeyBinding[];
   readonly bindPromptRef: (value: TextareaRenderable) => void;
@@ -394,6 +396,10 @@ function ComposerFooter(props: ComposerProps) {
         <text fg={props.theme.tool}>{props.model}</text>
         <text fg={props.theme.divider} attributes={TextAttributes.DIM}>·</text>
         <text fg={props.theme.hintText} attributes={TextAttributes.DIM}>{props.approvalMode}</text>
+        <Show when={props.contextWindowStatus !== undefined}>
+          <text fg={props.theme.divider} attributes={TextAttributes.DIM}>·</text>
+          <ContextBar snapshot={props.contextWindowStatus!} theme={props.theme} />
+        </Show>
       </box>
       <box flexDirection="row" alignItems="center" gap={1}>
         <Show when={props.todoPanelEnabled && props.todos.length > 0}>
@@ -411,6 +417,48 @@ function ComposerFooter(props: ComposerProps) {
       </box>
     </box>
   );
+}
+
+const CONTEXT_BAR_LENGTH = 8;
+
+function ContextBar(props: { readonly snapshot: ContextWindowStatusSnapshot; readonly theme: ThemeColors }) {
+  const estimate = () => props.snapshot.lastEstimate;
+  const pct = () => {
+    const est = estimate();
+    if (est === undefined) {
+      return undefined;
+    }
+    return Math.min(1, est.estimatedTokens / props.snapshot.contextWindowTokens);
+  };
+
+  return (
+    <Show when={pct() !== undefined}>
+      <box flexDirection="row" alignItems="center">
+        <text fg={contextBarColor(pct()!, props.theme)}>
+          {buildContextBarGlyphs(pct()!)}
+        </text>
+        <text fg={props.theme.hintText} attributes={TextAttributes.DIM}>
+          {` ${Math.round(pct()! * 100)}%`}
+        </text>
+      </box>
+    </Show>
+  );
+}
+
+function buildContextBarGlyphs(pct: number): string {
+  const filled = Math.round(pct * CONTEXT_BAR_LENGTH);
+  const empty = CONTEXT_BAR_LENGTH - filled;
+  return `${"█".repeat(filled)}${"░".repeat(empty)}`;
+}
+
+function contextBarColor(pct: number, theme: ThemeColors): string {
+  if (pct >= 0.85) {
+    return theme.error;
+  }
+  if (pct >= 0.65) {
+    return theme.warning;
+  }
+  return theme.success;
 }
 
 export function getTodoDropupHeight(todos: readonly TodoItem[]): number {

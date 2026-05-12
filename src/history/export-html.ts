@@ -270,6 +270,75 @@ function escapeHtml(value: string): string {
     .replaceAll("'", "&#39;");
 }
 
+/**
+ * Markdown export request.
+ */
+export interface ExportConversationMarkdownOptions {
+  readonly workspaceRoot: string;
+  readonly conversation: SavedConversationRecord;
+  readonly outputPath?: string;
+}
+
+/**
+ * Export one conversation to a Markdown file.
+ */
+export function exportConversationToMarkdown(options: ExportConversationMarkdownOptions): string {
+  const outputPath = options.outputPath ?? defaultMarkdownExportPath(options.workspaceRoot, options.conversation);
+  const md = buildConversationMarkdown(options.conversation);
+  mkdirSync(dirname(outputPath), { recursive: true });
+  writeFileSync(outputPath, md, "utf8");
+  return outputPath;
+}
+
+function defaultMarkdownExportPath(workspaceRoot: string, conversation: SavedConversationRecord): string {
+  const timestamp = conversation.updatedAt.replace(/[:]/g, "-").replace(/\.\d+Z$/, "Z");
+  const slug = slugify(conversation.title);
+  return resolve(join(workspaceRoot, `recode-export-${slug}-${timestamp}.md`));
+}
+
+function buildConversationMarkdown(conversation: SavedConversationRecord): string {
+  const header = [
+    `# ${conversation.title}`,
+    "",
+    `- **Provider**: ${conversation.providerName}`,
+    `- **Model**: ${conversation.model}`,
+    `- **Mode**: ${conversation.mode.toUpperCase()}`,
+    `- **Created**: ${formatDate(conversation.createdAt)}`,
+    `- **Updated**: ${formatDate(conversation.updatedAt)}`,
+    ""
+  ].join("\n");
+
+  const body = conversation.transcript.map(renderMessageMarkdown).filter((s) => s !== "").join("\n\n---\n\n");
+  return `${header}\n${body}\n`;
+}
+
+function renderMessageMarkdown(message: ConversationMessage): string {
+  switch (message.role) {
+    case "user":
+      return `### You\n\n${message.content}`;
+    case "assistant": {
+      const toolLines = message.toolCalls.map(
+        (toolCall) => `- **${toolCall.name}**: \`${toolCall.argumentsJson.slice(0, 120)}\``
+      );
+      const parts = [
+        "### Recode",
+        "",
+        message.content === "" ? "_tool-only turn_" : message.content
+      ];
+      if (toolLines.length > 0) {
+        parts.push("", "_Tool calls:_", ...toolLines);
+      }
+      return parts.join("\n");
+    }
+    case "summary":
+      return `### Continuation Summary\n\n${message.content}`;
+    case "tool": {
+      const header = message.isError ? `### Tool Error · ${message.toolName}` : `### Tool Result · ${message.toolName}`;
+      return `${header}\n\n\`\`\`\n${message.content}\n\`\`\``;
+    }
+  }
+}
+
 function slugify(value: string): string {
   const slug = value
     .toLowerCase()

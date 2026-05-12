@@ -15,7 +15,9 @@ export const FOOTER_TIPS: readonly FooterTip[] = [
   { text: "Tip: type @ to mention a file from the current workspace." },
   { text: "Tip: Ctrl+Enter adds a newline before you send." },
   { text: "Tip: /approval-mode changes how much autonomy tools get." },
-  { text: "Tip: /export writes the current conversation to HTML." }
+  { text: "Tip: /export writes the current conversation to HTML." },
+  { text: "Tip: Ctrl+K collapses or expands all tool output in the transcript." },
+  { text: "Tip: press ↑ in an empty prompt to cycle through previous messages." }
 ] as const;
 
 /**

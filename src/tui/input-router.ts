@@ -131,6 +131,7 @@ export interface InputRouterOptions {
   readonly modelPicker: LinearPickerRoute;
   readonly todoDropupOpen: () => boolean;
   readonly closeTodoDropup: () => void;
+  readonly handleToggleToolPreviews: (key: TuiKeyEvent) => void;
   readonly focusPrompt: () => void;
   readonly isBusy: () => boolean;
   readonly abortActiveRun: () => void;
@@ -193,6 +194,11 @@ export function registerTuiInputHandlers(options: InputRouterOptions): void {
 
     if (key.ctrl && key.name === "g") {
       options.handleCycleChatView(key);
+      return;
+    }
+
+    if (key.ctrl && key.name === "k") {
+      options.handleToggleToolPreviews(key);
       return;
     }
 

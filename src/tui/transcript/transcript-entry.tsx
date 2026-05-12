@@ -64,6 +64,10 @@ function getToolStatusColor(entry: UiEntry, t: () => ReturnType<typeof getTheme>
 
 export { countDiffLines } from "./tool-renderer-registry.tsx";
 
+function formatTimestamp(ts: number): string {
+  return new Date(ts).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
 /**
  * Render one transcript entry.
  */
@@ -95,13 +99,18 @@ export function renderEntry(
           paddingTop={compact() ? 0 : 0}
           paddingBottom={compact() ? 0 : 0}
         >
-          <box flexDirection="row">
-            <text fg={t().user}>◈ </text>
-            <box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
-              <For each={toDisplayLines(entry.body)}>
-                {(line) => <text fg={t().user}>{line}</text>}
-              </For>
+          <box flexDirection="row" justifyContent="space-between" alignItems="flex-start">
+            <box flexDirection="row" flexGrow={1} flexShrink={1} minWidth={0}>
+              <text fg={t().user}>◈ </text>
+              <box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
+                <For each={toDisplayLines(entry.body)}>
+                  {(line) => <text fg={t().user}>{line}</text>}
+                </For>
+              </box>
             </box>
+            <Show when={entry.createdAt !== undefined}>
+              <text fg={t().hintText} attributes={TextAttributes.DIM}>{formatTimestamp(entry.createdAt!)}</text>
+            </Show>
           </box>
         </box>
       );
@@ -113,6 +122,9 @@ export function renderEntry(
             <box width={2} flexShrink={0}>
               <text fg={t().assistantLabel}>❀ </text>
             </box>
+            <Show when={entry.createdAt !== undefined}>
+              <text fg={t().hintText} attributes={TextAttributes.DIM}>{formatTimestamp(entry.createdAt!)+" "}</text>
+            </Show>
             <box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0} paddingRight={1}>
               <markdown
                 content={entry.id === currentStreamingId() ? currentStreamingBody() : entry.body}

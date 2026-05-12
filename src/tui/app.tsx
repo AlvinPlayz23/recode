@@ -357,12 +357,15 @@ export function TuiApp(props: TuiAppProps) {
   const [todoDropupOpen, setTodoDropupOpen] = createSignal(false);
   const [todos, setTodos] = createSignal<readonly TodoItem[]>([]);
   const [toolsCollapsed, setToolsCollapsed] = createSignal(false);
+  const [toolPreviewsCollapsed, setToolPreviewsCollapsed] = createSignal(false);
   const [layoutPickerOpen, setLayoutPickerOpen] = createSignal(false);
   const [layoutPickerSelectedIndex, setLayoutPickerSelectedIndex] = createSignal(0);
   const [layoutPickerWindowStart, setLayoutPickerWindowStart] = createSignal(0);
   const [layoutPickerScrollBox, setLayoutPickerScrollBox] = createSignal<ScrollBoxRenderable | undefined>(undefined);
   const [footerTipIndex, setFooterTipIndex] = createSignal(0);
   const [busyPhase, setBusyPhase] = createSignal<SpinnerPhase>("thinking");
+  const [promptHistory, setPromptHistory] = createSignal<readonly string[]>([]);
+  const [promptHistoryIndex, setPromptHistoryIndex] = createSignal(-1);
   const [providerStatusText, setProviderStatusText] = createSignal<string | undefined>(undefined);
   const [fileSuggestionVersion, setFileSuggestionVersion] = createSignal(0);
   const [splashDetailsVisible, setSplashDetailsVisible] = createSignal(true);
@@ -375,6 +378,7 @@ export function TuiApp(props: TuiAppProps) {
   let activeAbortController: AbortController | undefined;
   let syncingVisibleDraft = false;
   let promptPasteTokenCounter = 0;
+  let savedDraftBeforeHistory = "";
   const t = createMemo<ThemeColors>(() => getTheme(themeName()));
   const markdownStyle = createMemo(() => createMarkdownSyntaxStyle(t()));
   const sessionLanguageModel = createMemo(() => createLanguageModel(sessionRuntimeConfig()));
@@ -796,6 +800,15 @@ export function TuiApp(props: TuiAppProps) {
       key.stopPropagation();
       if (!modalOpen()) {
         toggleComposerTodoPanel();
+      }
+    },
+    handleToggleToolPreviews(key) {
+      key.preventDefault();
+      key.stopPropagation();
+      if (!modalOpen()) {
+        const next = !toolPreviewsCollapsed();
+        setToolPreviewsCollapsed(next);
+        showToast(next ? "Tool previews hidden  ⌃K to restore" : "Tool previews visible");
       }
     },
     handleCycleChatView(key) {
@@ -1331,6 +1344,19 @@ export function TuiApp(props: TuiAppProps) {
       return;
     }
 
+    // Save to prompt history (deduplicate consecutive identical entries, cap at 50)
+    const promptToSave = commandResult.prompt.trim();
+    if (promptToSave !== "") {
+      setPromptHistory((previous) => {
+        if (previous.length > 0 && previous[previous.length - 1] === promptToSave) {
+          return previous;
+        }
+        const next = [...previous, promptToSave];
+        return next.length > 50 ? next.slice(next.length - 50) : next;
+      });
+    }
+    setPromptHistoryIndex(-1);
+
     const { expandedPrompt, modelPrompt } = buildPromptRunInput({
       prompt: commandResult.prompt,
       pendingPastes: pendingPastes(),
@@ -1508,6 +1534,53 @@ export function TuiApp(props: TuiAppProps) {
       return true;
     }
 
+    // History navigation: ↑ when draft is empty or already navigating history
+    if (key.name === "up" && !key.ctrl && !key.shift && !busy() && !modalOpen()) {
+      const history = promptHistory();
+      if (history.length === 0) {
+        return false;
+      }
+      const currentIndex = promptHistoryIndex();
+      const currentDraft = draft();
+      // Only enter history mode from scratch when the composer is empty
+      if (currentIndex === -1 && currentDraft.trim() !== "") {
+        return false;
+      }
+      if (currentIndex === -1) {
+        savedDraftBeforeHistory = currentDraft;
+        const newIndex = history.length - 1;
+        setPromptHistoryIndex(newIndex);
+        syncDraftValue(history[newIndex] ?? "");
+      } else if (currentIndex > 0) {
+        const newIndex = currentIndex - 1;
+        setPromptHistoryIndex(newIndex);
+        syncDraftValue(history[newIndex] ?? "");
+      }
+      key.preventDefault();
+      key.stopPropagation();
+      return true;
+    }
+
+    // History navigation: ↓ to go forward / exit history mode
+    if (key.name === "down" && !key.ctrl && !key.shift && !busy() && !modalOpen()) {
+      const currentIndex = promptHistoryIndex();
+      if (currentIndex === -1) {
+        return false;
+      }
+      const history = promptHistory();
+      if (currentIndex >= history.length - 1) {
+        setPromptHistoryIndex(-1);
+        syncDraftValue(savedDraftBeforeHistory);
+      } else {
+        const newIndex = currentIndex + 1;
+        setPromptHistoryIndex(newIndex);
+        syncDraftValue(history[newIndex] ?? "");
+      }
+      key.preventDefault();
+      key.stopPropagation();
+      return true;
+    }
+
     return false;
   };
 
@@ -1539,6 +1612,7 @@ export function TuiApp(props: TuiAppProps) {
       sessionMode={sessionMode()}
       model={sessionRuntimeConfig().model}
       approvalMode={approvalMode()}
+      contextWindowStatus={currentContextWindowStatus()}
       exitHintVisible={exitHintVisible()}
       promptKeyBindings={PROMPT_TEXTAREA_KEY_BINDINGS}
       bindPromptRef={bindPromptRef}
@@ -1582,7 +1656,7 @@ export function TuiApp(props: TuiAppProps) {
           <box flexDirection="column" flexGrow={1} paddingRight={1}>
             <SubagentBreadcrumb task={activeSubagentTask()} theme={t()} />
             <box flexDirection="column" flexShrink={0}>
-              <For each={renderVisibleEntries(visibleEntries(), activeChatIsSubagent() ? false : toolsCollapsed())}>
+              <For each={renderVisibleEntries(visibleEntries(), activeChatIsSubagent() ? false : toolsCollapsed(), activeChatIsSubagent() ? false : toolPreviewsCollapsed())}>
                 {(entry) => renderEntry(entry, t, markdownStyle, visibleStreamingEntryId, visibleStreamingBody, layoutMode, () => toolMarkerDefinition().symbol)}
               </For>
             </box>
@@ -1594,7 +1668,7 @@ export function TuiApp(props: TuiAppProps) {
           <SubagentBreadcrumb task={activeSubagentTask()} theme={t()} />
           <scrollbox flexGrow={1} flexShrink={1} minHeight={0} scrollY stickyScroll stickyStart="bottom">
             <box flexDirection="column" flexShrink={0}>
-              <For each={renderVisibleEntries(visibleEntries(), activeChatIsSubagent() ? false : toolsCollapsed())}>
+              <For each={renderVisibleEntries(visibleEntries(), activeChatIsSubagent() ? false : toolsCollapsed(), activeChatIsSubagent() ? false : toolPreviewsCollapsed())}>
                 {(entry) => renderEntry(entry, t, markdownStyle, visibleStreamingEntryId, visibleStreamingBody, layoutMode, () => toolMarkerDefinition().symbol)}
               </For>
             </box>

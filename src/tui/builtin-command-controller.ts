@@ -15,7 +15,7 @@ import {
   saveRecodeConfigFile,
   selectConfiguredMinimalMode
 } from "../config/recode-config.ts";
-import { exportConversationToHtml } from "../history/export-html.ts";
+import { exportConversationToHtml, exportConversationToMarkdown } from "../history/export-html.ts";
 import type { SavedConversationRecord } from "../history/recode-history.ts";
 import type { SessionEvent } from "../session/session-event.ts";
 import type { RuntimeConfig } from "../runtime/runtime-config.ts";
@@ -173,6 +173,9 @@ async function executeBuiltinCommand(
     case "export":
       exportCurrentConversation(options);
       return;
+    case "export-md":
+      exportCurrentConversationMarkdown(options);
+      return;
     case "new":
     case "clear":
       startNewConversation(options);
@@ -255,6 +258,23 @@ function exportCurrentConversation(options: BuiltinCommandDispatchOptions): void
       workspaceRoot: options.runtimeConfig.workspaceRoot,
       conversation: options.currentConversation,
       themeName: options.themeName
+    });
+    options.appendEntry(createEntry("status", "status", `Exported conversation to ${outputPath}`));
+  } catch (error) {
+    options.appendEntry(createEntry("error", "error", toErrorMessage(error)));
+  }
+}
+
+function exportCurrentConversationMarkdown(options: BuiltinCommandDispatchOptions): void {
+  if (options.currentConversation === undefined) {
+    options.appendEntry(createEntry("error", "error", "There is no active conversation to export."));
+    return;
+  }
+
+  try {
+    const outputPath = exportConversationToMarkdown({
+      workspaceRoot: options.runtimeConfig.workspaceRoot,
+      conversation: options.currentConversation
     });
     options.appendEntry(createEntry("status", "status", `Exported conversation to ${outputPath}`));
   } catch (error) {

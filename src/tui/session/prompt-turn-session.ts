@@ -84,7 +84,7 @@ export function createPromptTurnSession(options: PromptTurnSessionOptions): Prom
         break;
       case "tool.started":
         options.setBusyPhase("tool");
-        options.setProviderStatusText(undefined);
+        options.setProviderStatusText(formatActiveToolLabel(event.toolCall.name, event.toolCall.argumentsJson));
         break;
       case "tool.completed":
       case "tool.errored": {
@@ -112,6 +112,7 @@ export function createPromptTurnSession(options: PromptTurnSessionOptions): Prom
 
   return {
     handleSessionEvent,
+
     handleTranscriptUpdate(transcript) {
       latestTranscript = transcript;
       options.setTranscriptMessages(transcript);
@@ -127,4 +128,33 @@ export function createPromptTurnSession(options: PromptTurnSessionOptions): Prom
       return [...options.baseSessionEvents, ...turnSessionEvents];
     }
   };
+}
+
+const TOOL_ARG_KEYS = ["command", "path", "file_path", "pattern", "query", "description"] as const;
+const MAX_ARG_DISPLAY_LENGTH = 36;
+
+/**
+ * Build a short human-readable label for the active tool call shown in the busy indicator.
+ * Format: "ToolName · first-meaningful-arg (truncated)"
+ */
+function formatActiveToolLabel(toolName: string, argumentsJson: string): string {
+  try {
+    const parsed = JSON.parse(argumentsJson) as unknown;
+    if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const args = parsed as Record<string, unknown>;
+      for (const key of TOOL_ARG_KEYS) {
+        const value = args[key];
+        if (typeof value === "string" && value.trim() !== "") {
+          const trimmed = value.trim().replace(/\s+/g, " ");
+          const display = trimmed.length > MAX_ARG_DISPLAY_LENGTH
+            ? `${trimmed.slice(0, MAX_ARG_DISPLAY_LENGTH)}…`
+            : trimmed;
+          return `${toolName} · ${display}`;
+        }
+      }
+    }
+  } catch {
+    // Fall back to tool name only
+  }
+  return toolName;
 }

@@ -67,7 +67,7 @@ export interface ThemeColors {
 }
 
 /** Named theme identifiers. */
-export type ThemeName = "senren-dusk" | "matcha-night" | "midnight-ink" | "amber-terminal" | "frost-glass" | "sakura-bloom" | "solarized-light" | "monochrome" | "1998";
+export type ThemeName = "senren-dusk" | "matcha-night" | "midnight-ink" | "amber-terminal" | "frost-glass" | "sakura-bloom" | "solarized-light" | "monochrome" | "1998" | "ocean-depth" | "neon-noir" | "paper";
 
 /** Named tool marker identifiers. */
 export type ToolMarkerName = "arrow" | "hook" | "fancy" | "triangle" | "minimal" | "stylized";
@@ -379,6 +379,99 @@ export const SUNSET_CHARCOAL_THEME: ThemeColors = {
   diffRemoved: "#3B2022",
 };
 
+/** Deep teal and navy ocean theme. */
+export const OCEAN_DEPTH_THEME: ThemeColors = {
+  text: "#d0ece8",
+  inverseText: "#04121a",
+  brand: "#00c4b4",
+  brandShimmer: "#7fecdf",
+  inactive: "#8ab8b4",
+  subtle: "#6a9a96",
+  success: "#3dd68c",
+  error: "#ff6b6b",
+  warning: "#ffcc5c",
+  suggestion: "#00d4c8",
+  userMessageBackground: "#062030",
+  userMessageBackgroundHover: "#0b2c3e",
+  messageActionsBackground: "#0e3448",
+  promptBorder: "#1a5a6a55",
+  bashBorder: "#00c4b4",
+  bashMessageBackgroundColor: "#041820",
+  selectionBg: "#1a4a5a",
+  statusText: "#b0dcd8",
+  hintText: "#6a9a96",
+  divider: "#1a5060",
+  active: "#00c4b4",
+  user: "#ffe599",
+  assistantLabel: "#7fecdf",
+  assistantBody: "#e0f4f2",
+  tool: "#40c4b8",
+  diffAdded: "#0e3d2e",
+  diffRemoved: "#3d1a1a",
+};
+
+/** Black background with electric purple and cyan accents. */
+export const NEON_NOIR_THEME: ThemeColors = {
+  text: "#e8e0ff",
+  inverseText: "#08000f",
+  brand: "#bf5fff",
+  brandShimmer: "#df9fff",
+  inactive: "#9970cc",
+  subtle: "#7050aa",
+  success: "#00ffcc",
+  error: "#ff3366",
+  warning: "#ffcc00",
+  suggestion: "#00e5ff",
+  userMessageBackground: "#0e0020",
+  userMessageBackgroundHover: "#160030",
+  messageActionsBackground: "#1c003a",
+  promptBorder: "#6030a055",
+  bashBorder: "#bf5fff",
+  bashMessageBackgroundColor: "#090015",
+  selectionBg: "#4a1080",
+  statusText: "#d0b0ff",
+  hintText: "#8060b0",
+  divider: "#3a1060",
+  active: "#bf5fff",
+  user: "#00ffcc",
+  assistantLabel: "#df9fff",
+  assistantBody: "#f0e8ff",
+  tool: "#00e5ff",
+  diffAdded: "#003326",
+  diffRemoved: "#330014",
+};
+
+/** Dark parchment theme — warm cream text with crimson accents on a black background. */
+export const PAPER_THEME: ThemeColors = {
+  text: "#ede0c4",
+  inverseText: "#1c1209",
+  brand: "#c0392b",
+  brandShimmer: "#e8604a",
+  inactive: "#a89070",
+  subtle: "#8a7060",
+  success: "#6aaa3a",
+  error: "#e8604a",
+  warning: "#c8902a",
+  suggestion: "#c0392b",
+  userMessageBackground: "#1a1510",
+  userMessageBackgroundHover: "#221c14",
+  messageActionsBackground: "#2a221a",
+  promptBorder: "#5a4a3055",
+  bashBorder: "#c0392b",
+  bashMessageBackgroundColor: "#14100a",
+  selectionBg: "#4a3020",
+  statusText: "#d8c8a8",
+  hintText: "#8a7860",
+  divider: "#4a3a28",
+  active: "#c0392b",
+  user: "#ede0c4",
+  assistantLabel: "#e8604a",
+  assistantBody: "#ddd0b8",
+  tool: "#b89868",
+  diffAdded: "#1c3010",
+  diffRemoved: "#3a1010",
+};
+
 const THEMES: readonly ThemeDefinition[] = [
   {
     name: "senren-dusk",
@@ -442,6 +535,27 @@ const THEMES: readonly ThemeDefinition[] = [
     description: "Professional charcoal palette with muted sunset accents.",
     colors: SUNSET_CHARCOAL_THEME,
     promptMarker: "◆"
+  },
+  {
+    name: "ocean-depth",
+    label: "Ocean Depth",
+    description: "Deep teal and navy blues with aqua highlights.",
+    colors: OCEAN_DEPTH_THEME,
+    promptMarker: "◈"
+  },
+  {
+    name: "neon-noir",
+    label: "Neon Noir",
+    description: "Black background with electric purple and cyan accents.",
+    colors: NEON_NOIR_THEME,
+    promptMarker: "⟡"
+  },
+  {
+    name: "paper",
+    label: "Paper",
+    description: "Warm cream paper with ink-black text and crimson accents.",
+    colors: PAPER_THEME,
+    promptMarker: "›"
   }
 ] as const;
 
