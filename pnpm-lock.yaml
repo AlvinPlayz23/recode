@@ -30,6 +30,9 @@ importers:
         specifier: ^7.2.0
         version: 7.2.4
     devDependencies:
+      '@babel/helper-plugin-utils':
+        specifier: ^7.28.6
+        version: 7.28.6
       '@types/bun':
         specifier: latest
         version: 1.3.13

@@ -6,18 +6,36 @@ import type { ApprovalMode } from "../tools/tool.ts";
 
 /** Parsed CLI invocation shape. */
 export interface ParsedCliArgs {
-  readonly command: "help" | "version" | "setup" | "doctor" | "tui" | "prompt";
+  readonly command: "help" | "version" | "setup" | "doctor" | "acp-server" | "tui" | "prompt";
   readonly prompt: string;
   readonly providerId?: string;
   readonly modelId?: string;
   readonly approvalMode?: ApprovalMode;
   readonly persistHistory: boolean;
+  readonly acpHost?: string;
+  readonly acpPort?: number;
+  readonly acpToken?: string;
 }
 
 /**
  * Parse global options, subcommands, and prompt text.
  */
 export function parseCliArgs(argv: readonly string[]): ParsedCliArgs {
+  if (argv[0] === "acp-server") {
+    const options = parseOptions(argv.slice(1));
+    return {
+      command: "acp-server",
+      prompt: "",
+      persistHistory: !options.noHistory,
+      ...(options.providerId === undefined ? {} : { providerId: options.providerId }),
+      ...(options.modelId === undefined ? {} : { modelId: options.modelId }),
+      ...(options.approvalMode === undefined ? {} : { approvalMode: options.approvalMode }),
+      ...(options.acpHost === undefined ? {} : { acpHost: options.acpHost }),
+      ...(options.acpPort === undefined ? {} : { acpPort: options.acpPort }),
+      ...(options.acpToken === undefined ? {} : { acpToken: options.acpToken })
+    };
+  }
+
   const options = parseOptions(argv);
   const command = resolveCommand(options.remaining);
   const prompt = command === "prompt" ? options.remaining.join(" ").trim() : "";
@@ -28,7 +46,10 @@ export function parseCliArgs(argv: readonly string[]): ParsedCliArgs {
     persistHistory: !options.noHistory,
     ...(options.providerId === undefined ? {} : { providerId: options.providerId }),
     ...(options.modelId === undefined ? {} : { modelId: options.modelId }),
-    ...(options.approvalMode === undefined ? {} : { approvalMode: options.approvalMode })
+    ...(options.approvalMode === undefined ? {} : { approvalMode: options.approvalMode }),
+    ...(options.acpHost === undefined ? {} : { acpHost: options.acpHost }),
+    ...(options.acpPort === undefined ? {} : { acpPort: options.acpPort }),
+    ...(options.acpToken === undefined ? {} : { acpToken: options.acpToken })
   };
 }
 
@@ -38,6 +59,9 @@ interface ParsedOptions {
   readonly modelId?: string;
   readonly approvalMode?: ApprovalMode;
   readonly noHistory: boolean;
+  readonly acpHost?: string;
+  readonly acpPort?: number;
+  readonly acpToken?: string;
 }
 
 function parseOptions(argv: readonly string[]): ParsedOptions {
@@ -46,6 +70,9 @@ function parseOptions(argv: readonly string[]): ParsedOptions {
   let modelId: string | undefined;
   let approvalMode: ApprovalMode | undefined;
   let noHistory = false;
+  let acpHost: string | undefined;
+  let acpPort: number | undefined;
+  let acpToken: string | undefined;
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
@@ -92,6 +119,27 @@ function parseOptions(argv: readonly string[]): ParsedOptions {
       continue;
     }
 
+    const acpHostValue = readOptionValue(argv, index, token, "--host");
+    if (acpHostValue.matched) {
+      acpHost = acpHostValue.value;
+      index += acpHostValue.consumedNext ? 1 : 0;
+      continue;
+    }
+
+    const acpPortValue = readOptionValue(argv, index, token, "--port");
+    if (acpPortValue.matched) {
+      acpPort = parsePort(acpPortValue.value);
+      index += acpPortValue.consumedNext ? 1 : 0;
+      continue;
+    }
+
+    const acpTokenValue = readOptionValue(argv, index, token, "--token");
+    if (acpTokenValue.matched) {
+      acpToken = acpTokenValue.value;
+      index += acpTokenValue.consumedNext ? 1 : 0;
+      continue;
+    }
+
     if (token.startsWith("-")) {
       throw new Error(`Unknown option: ${token}`);
     }
@@ -105,7 +153,10 @@ function parseOptions(argv: readonly string[]): ParsedOptions {
     noHistory,
     ...(providerId === undefined ? {} : { providerId }),
     ...(modelId === undefined ? {} : { modelId }),
-    ...(approvalMode === undefined ? {} : { approvalMode })
+    ...(approvalMode === undefined ? {} : { approvalMode }),
+    ...(acpHost === undefined ? {} : { acpHost }),
+    ...(acpPort === undefined ? {} : { acpPort }),
+    ...(acpToken === undefined ? {} : { acpToken })
   };
 }
 
@@ -151,6 +202,15 @@ function parseApprovalMode(value: string): ApprovalMode {
   throw new Error(`Invalid approval mode: ${value}. Expected approval, auto-edits, or yolo.`);
 }
 
+function parsePort(value: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 65535) {
+    throw new Error(`Invalid ACP server port: ${value}. Expected 0-65535.`);
+  }
+
+  return parsed;
+}
+
 function resolveCommand(remaining: readonly string[]): ParsedCliArgs["command"] {
   const first = remaining[0];
   if (first === undefined) {
@@ -166,6 +226,8 @@ function resolveCommand(remaining: readonly string[]): ParsedCliArgs["command"] 
       return remaining.length === 1 ? "setup" : "prompt";
     case "doctor":
       return remaining.length === 1 ? "doctor" : "prompt";
+    case "acp-server":
+      return "acp-server";
     default:
       return "prompt";
   }

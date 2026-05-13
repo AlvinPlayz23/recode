@@ -52,6 +52,7 @@ Usage:
   recode             Start the TUI
   recode setup       Open the provider and model setup wizard
   recode doctor      Check config, provider, model, history, and model listing
+  recode acp-server  Start the local ACP HTTP/WebSocket broker
   recode <prompt>    Run one-shot mode
 
 Options:
@@ -61,6 +62,9 @@ Options:
   --model <id>       Use a model ID for this run
   --approval-mode <mode>
                      Use approval, auto-edits, or yolo for this run
+  --host <host>      ACP server host, default 127.0.0.1
+  --port <port>      ACP server port, default 0
+  --token <token>    ACP server bearer token, default generated
   --no-history       Do not save one-shot runs to history
   -h, --help         Show help
   -v, --version      Show version`);
@@ -72,6 +76,20 @@ Options:
   if (cliArgs.command === "setup") {
     await runSetupWizard(workspaceRoot);
     process.exit(0);
+  }
+
+  if (cliArgs.command === "acp-server") {
+    const { runAcpServer } = await import("./acp/acp-server.ts");
+    await runAcpServer({
+      ...(cliArgs.acpHost === undefined ? {} : { host: cliArgs.acpHost }),
+      ...(cliArgs.acpPort === undefined ? {} : { port: cliArgs.acpPort }),
+      ...(cliArgs.acpToken === undefined ? {} : { token: cliArgs.acpToken }),
+      overrides: {
+        ...(cliArgs.providerId === undefined ? {} : { providerId: cliArgs.providerId }),
+        ...(cliArgs.modelId === undefined ? {} : { modelId: cliArgs.modelId }),
+        ...(cliArgs.approvalMode === undefined ? {} : { approvalMode: cliArgs.approvalMode })
+      }
+    });
   }
 
   const prompt = cliArgs.prompt;

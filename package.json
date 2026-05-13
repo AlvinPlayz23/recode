@@ -12,7 +12,7 @@
     "check": "tsc --noEmit",
     "build": "bun run scripts/build.ts --single",
     "build:all": "bun run scripts/build.ts",
-    "test": "bun test ./src/agent ./src/ai ./src/cli ./src/config ./src/history ./src/models ./src/providers ./src/runtime ./src/session ./src/tools ./src/tui"
+    "test": "bun test ./src/acp ./src/agent ./src/ai ./src/cli ./src/config ./src/history ./src/models ./src/providers ./src/runtime ./src/session ./src/tools ./src/tui"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
@@ -24,8 +24,9 @@
     "turndown": "^7.2.0"
   },
   "devDependencies": {
-    "@types/turndown": "^5.0.5",
+    "@babel/helper-plugin-utils": "^7.28.6",
     "@types/bun": "latest",
+    "@types/turndown": "^5.0.5",
     "typescript": "^5.9.3"
   }
 }
