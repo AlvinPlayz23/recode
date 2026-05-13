@@ -10,7 +10,8 @@ describe("parseCliArgs", () => {
     expect(parseCliArgs([])).toEqual({
       command: "tui",
       prompt: "",
-      persistHistory: true
+      persistHistory: true,
+      acpStdio: false
     });
   });
 
@@ -30,7 +31,8 @@ describe("parseCliArgs", () => {
       providerId: "openai-main",
       modelId: "gpt-test",
       approvalMode: "yolo",
-      persistHistory: false
+      persistHistory: false,
+      acpStdio: false
     });
   });
 
@@ -38,7 +40,8 @@ describe("parseCliArgs", () => {
     expect(parseCliArgs(["explain", "--help"])).toEqual({
       command: "prompt",
       prompt: "explain --help",
-      persistHistory: true
+      persistHistory: true,
+      acpStdio: false
     });
   });
 
@@ -46,7 +49,8 @@ describe("parseCliArgs", () => {
     expect(parseCliArgs(["--", "--help"])).toEqual({
       command: "prompt",
       prompt: "--help",
-      persistHistory: true
+      persistHistory: true,
+      acpStdio: false
     });
   });
 
@@ -81,7 +85,17 @@ describe("parseCliArgs", () => {
       providerId: "openai-main",
       modelId: "gpt-test",
       approvalMode: "auto-edits",
-      persistHistory: true
+      persistHistory: true,
+      acpStdio: false
+    });
+  });
+
+  test("parses ACP stdio transport flag", () => {
+    expect(parseCliArgs(["acp-server", "--stdio"])).toEqual({
+      command: "acp-server",
+      prompt: "",
+      persistHistory: true,
+      acpStdio: true
     });
   });
 

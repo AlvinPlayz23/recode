@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recode | The Harness</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&display=swap');
+        
+        :root {
+            --rc-bg: #050505;
+            --rc-sidebar: #09090b;
+            --rc-border: #1f1f23;
+            --rc-accent: #3b82f6;
+        }
+
+        body {
+            font-family: 'Geist', sans-serif;
+            background-color: var(--rc-bg);
+            color: #ececec;
+            letter-spacing: -0.01em;
+        }
+
+        .mono { font-family: 'Geist Mono', monospace; }
+
+        .sessions-panel {
+            width: 0;
+            opacity: 0;
+            overflow: hidden;
+            border-right: 0px solid var(--rc-border);
+            background-color: #050505;
+        }
+
+        .thread-item {
+            position: relative;
+            transition: all 0.2s ease;
+        }
+
+        .thread-item.active {
+            background: linear-gradient(90deg, rgba(59, 130, 246, 0.08) 0%, rgba(59, 130, 246, 0) 100%);
+        }
+
+        .thread-item.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background-color: var(--rc-accent);
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+        }
+
+        .folder-btn.active {
+            background-color: #18181b;
+            color: var(--rc-accent);
+            border-color: var(--rc-accent) !important;
+        }
+
+        .supervised-active {
+            color: var(--rc-accent);
+            background: rgba(59, 130, 246, 0.1);
+            border-color: rgba(59, 130, 246, 0.3);
+        }
+
+        .dropdown-content { display: none; opacity: 0; position: absolute; }
+        .dropdown-content.show { display: block; opacity: 1; }
+
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: #1f1f23; border-radius: 10px; }
+    </style>
+</head>
+<body class="h-screen flex overflow-hidden">
+    <div id="project-modal" class="fixed inset-0 z-[100] hidden flex items-center justify-center p-6">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeProjectModal()"></div>
+        <div class="bg-[#0c0c0e] border border-zinc-800 w-full max-w-md rounded-2xl shadow-2xl relative overflow-hidden">
+            <div class="p-6 border-b border-zinc-900/50">
+                <h3 class="text-sm font-bold text-white uppercase tracking-widest mb-1">Select Repository</h3>
+                <p class="text-xs text-zinc-500">Choose a local folder to index with Recode.</p>
+            </div>
+            <div class="p-2 max-h-[400px] overflow-y-auto">
+                <div onclick="selectMockProject('Marketing App', 'folder-heart')" class="group flex items-center gap-3 p-3 rounded-xl hover:bg-zinc-800/50 cursor-pointer transition-all border border-transparent hover:border-zinc-800">
+                    <div class="w-10 h-10 rounded-lg bg-zinc-900 flex items-center justify-center text-zinc-500 group-hover:text-blue-500 transition-colors">
+                        <i data-lucide="folder-heart" class="w-5 h-5"></i>
+                    </div>
+                    <div class="flex-1">
+                        <div class="text-[13px] font-medium text-zinc-200">marketing-frontend</div>
+                        <div class="text-[10px] mono text-zinc-600">~/projects/marketing-frontend</div>
+                    </div>
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-zinc-800 group-hover:text-zinc-400 transition-all"></i>
+                </div>
+                
+                <div onclick="selectMockProject('Inventory API', 'folder-root')" class="group flex items-center gap-3 p-3 rounded-xl hover:bg-zinc-800/50 cursor-pointer transition-all border border-transparent hover:border-zinc-800">
+                    <div class="w-10 h-10 rounded-lg bg-zinc-900 flex items-center justify-center text-zinc-500 group-hover:text-emerald-500 transition-colors">
+                        <i data-lucide="folder-root" class="w-5 h-5"></i>
+                    </div>
+                    <div class="flex-1">
+                        <div class="text-[13px] font-medium text-zinc-200">inventory-api</div>
+                        <div class="text-[10px] mono text-zinc-600">~/work/api-v2</div>
+                    </div>
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-zinc-800 group-hover:text-zinc-400 transition-all"></i>
+                </div>
+
+                <div onclick="selectMockProject('Data Engine', 'folder-git-2')" class="group flex items-center gap-3 p-3 rounded-xl hover:bg-zinc-800/50 cursor-pointer transition-all border border-transparent hover:border-zinc-800">
+                    <div class="w-10 h-10 rounded-lg bg-zinc-900 flex items-center justify-center text-zinc-500 group-hover:text-purple-500 transition-colors">
+                        <i data-lucide="folder-git-2" class="w-5 h-5"></i>
+                    </div>
+                    <div class="flex-1">
+                        <div class="text-[13px] font-medium text-zinc-200">data-pipeline</div>
+                        <div class="text-[10px] mono text-zinc-600">~/oss/data-engine</div>
+                    </div>
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-zinc-800 group-hover:text-zinc-400 transition-all"></i>
+                </div>
+            </div>
+            <div class="p-4 bg-zinc-900/20 border-t border-zinc-900/50 flex justify-end">
+                <button onclick="closeProjectModal()" class="px-4 py-2 text-[11px] font-bold text-zinc-500 hover:text-white transition-colors uppercase tracking-wider">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden input remains but isn't triggered by default plus button anymore -->
+    <input type="file" id="folder-picker" webkitdirectory directory multiple class="hidden">
+
+    <aside class="w-16 border-r border-zinc-900 flex flex-col items-center py-4 gap-4 bg-black z-50">
+        <div class="w-10 h-10 bg-white rounded-lg flex items-center justify-center font-bold text-black text-xl mb-4 cursor-pointer">RC</div>
+        
+        <div id="projects-container" class="flex flex-col items-center gap-4 w-full">
+            <button onclick="toggleSessions('Project Alpha', this)" class="folder-btn w-10 h-10 rounded-lg border border-zinc-800 flex items-center justify-center text-zinc-500 hover:text-white transition-all" title="Project Alpha">
+                <i data-lucide="folder-kanban" class="w-5 h-5"></i>
+            </button>
+            
+            <button onclick="toggleSessions('Auth Service', this)" class="folder-btn w-10 h-10 rounded-lg border border-zinc-800 flex items-center justify-center text-zinc-500 hover:text-white transition-all" title="Auth Service">
+                <i data-lucide="folder-lock" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <div class="w-8 h-[1px] bg-zinc-900 my-1"></div>
+        
+        <button onclick="createNewProject()" class="w-10 h-10 rounded-lg border border-dashed border-zinc-800 flex items-center justify-center text-zinc-700 hover:text-zinc-400 hover:border-zinc-600 transition-all group">
+            <i data-lucide="plus" class="w-5 h-5 group-hover:scale-110 transition-transform"></i>
+        </button>
+
+        <div class="mt-auto flex flex-col gap-6 pb-4">
+            <i data-lucide="search" class="w-5 h-5 text-zinc-700 hover:text-white cursor-pointer"></i>
+            <i data-lucide="settings" class="w-5 h-5 text-zinc-700 hover:text-white cursor-pointer"></i>
+        </div>
+    </aside>
+
+    <div id="sessions-panel" class="sessions-panel h-full flex flex-col">
+        <div class="p-5 border-b border-zinc-900/50 flex justify-between items-center whitespace-nowrap">
+            <h2 class="text-[11px] font-bold text-zinc-500 uppercase tracking-[0.15em]">Active Threads</h2>
+            <button class="w-5 h-5 rounded border border-zinc-800 flex items-center justify-center hover:bg-zinc-800 text-zinc-500 transition-colors">
+                <i data-lucide="plus" class="w-3 h-3"></i>
+            </button>
+        </div>
+        
+        <div class="flex-1 py-4 overflow-y-auto">
+            <div class="thread-item active px-6 py-4 cursor-pointer mb-1">
+                <div class="text-[14px] font-semibold text-white mb-1">refactor-stripe-webhooks</div>
+                <div class="flex items-center gap-2 text-[11px] text-zinc-500">
+                    <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                    Claude 3.5 Sonnet • 2m ago
+                </div>
+            </div>
+
+            <div class="thread-item px-6 py-4 cursor-pointer hover:bg-zinc-900/30 transition-colors">
+                <div class="text-[14px] text-zinc-400 group-hover:text-zinc-200 mb-1">fix-hydration-error</div>
+                <div class="text-[11px] text-zinc-600">Gemma 2 9b • 1h ago</div>
+            </div>
+
+            <div class="thread-item px-6 py-4 cursor-pointer hover:bg-zinc-900/30 transition-colors">
+                <div class="text-[14px] text-zinc-400 group-hover:text-zinc-200 mb-1">update-schema-v2</div>
+                <div class="text-[11px] text-zinc-600">Claude 3.5 Sonnet • 5h ago</div>
+            </div>
+        </div>
+    </div>
+
+    <main class="flex-1 flex flex-col relative bg-[#020202]">
+        <header class="h-12 border-b border-zinc-900/50 flex items-center px-6 justify-between bg-black/20">
+            <div class="flex items-center gap-2 text-[11px] mono text-zinc-500 uppercase tracking-tighter">
+                <i data-lucide="git-branch" class="w-3 h-3"></i>
+                <span id="breadcrumb">recode:ready</span>
+            </div>
+            <div class="flex items-center gap-4">
+                <div class="flex items-center gap-2 px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20">
+                    <div class="w-1 h-1 rounded-full bg-blue-500 animate-pulse"></div>
+                    <span class="text-[9px] font-bold text-blue-500 uppercase tracking-widest">Recode Engine</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="flex-1 p-8 overflow-y-auto flex flex-col items-center justify-center">
+            <div id="empty-state" class="text-center space-y-4 max-w-sm">
+                <div class="w-16 h-16 bg-zinc-900/30 rounded-2xl flex items-center justify-center mx-auto border border-zinc-800/50 shadow-inner">
+                    <i data-lucide="terminal" class="w-8 h-8 text-zinc-800"></i>
+                </div>
+                <h3 class="text-zinc-400 font-medium text-sm">No Active Session Selected</h3>
+                <p class="text-zinc-600 text-xs leading-relaxed">Select a thread from the sidebar or start a new task by typing in the Recode composer below.</p>
+            </div>
+        </div>
+
+        <div class="p-6 bg-gradient-to-t from-black to-transparent">
+            <div class="max-w-3xl mx-auto relative group">
+                <div class="bg-[#0c0c0e] border border-zinc-800 rounded-2xl shadow-2xl transition-all focus-within:border-zinc-700 focus-within:ring-1 ring-zinc-800/50">
+                    <div class="p-4">
+                        <textarea rows="1" class="w-full bg-transparent border-none focus:ring-0 text-[14px] placeholder-zinc-700 resize-none outline-none leading-relaxed text-zinc-200" placeholder="Ask Recode to build, refactor, or test..."></textarea>
+                    </div>
+                    
+                    <div class="px-3 py-2 border-t border-zinc-900/50 bg-zinc-900/20 flex items-center justify-between">
+                        <div class="flex items-center gap-1.5">
+                            <div class="relative">
+                                <button onclick="toggleDropdown('model-menu')" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md hover:bg-zinc-800 text-[11px] font-medium text-zinc-500 border border-transparent hover:border-zinc-700 transition-all">
+                                    <i data-lucide="cpu" class="w-3.5 h-3.5"></i>
+                                    <span id="current-model">Claude 3.5 Sonnet</span>
+                                    <i data-lucide="chevron-down" class="w-3 h-3"></i>
+                                </button>
+                                <div id="model-menu" class="dropdown-content bottom-full mb-2 left-0 w-48 bg-[#161618] border border-zinc-800 rounded-lg p-1 z-50 shadow-2xl">
+                                    <div onclick="selectModel('Claude 3.5 Sonnet')" class="px-3 py-2 text-xs hover:bg-blue-600 rounded-md cursor-pointer transition-colors">Claude 3.5 Sonnet</div>
+                                    <div onclick="selectModel('GPT-4o')" class="px-3 py-2 text-xs hover:bg-blue-600 rounded-md cursor-pointer transition-colors">GPT-4o</div>
+                                </div>
+                            </div>
+
+                            <div class="relative">
+                                <button onclick="toggleDropdown('reasoning-menu')" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md hover:bg-zinc-800 text-[11px] font-medium text-zinc-500 border border-transparent hover:border-zinc-700 transition-all">
+                                    <i data-lucide="brain-circuit" class="w-3.5 h-3.5"></i>
+                                    <span id="current-reasoning">Reasoning: Med</span>
+                                    <i data-lucide="chevron-down" class="w-3 h-3"></i>
+                                </button>
+                                <div id="reasoning-menu" class="dropdown-content bottom-full mb-2 left-0 w-40 bg-[#161618] border border-zinc-800 rounded-lg p-1 z-50 shadow-2xl">
+                                    <div onclick="selectReasoning('High')" class="px-3 py-2 text-xs hover:bg-zinc-800 rounded-md cursor-pointer flex justify-between items-center">High <span class="text-[9px] text-zinc-600">Deep</span></div>
+                                    <div onclick="selectReasoning('Med')" class="px-3 py-2 text-xs hover:bg-zinc-800 rounded-md cursor-pointer flex justify-between items-center">Medium <span class="text-[9px] text-zinc-600">Balanced</span></div>
+                                    <div onclick="selectReasoning('Low')" class="px-3 py-2 text-xs hover:bg-zinc-800 rounded-md cursor-pointer flex justify-between items-center">Low <span class="text-[9px] text-zinc-600">Fast</span></div>
+                                </div>
+                            </div>
+
+                            <div class="h-4 w-[1px] bg-zinc-800 mx-1"></div>
+
+                            <button id="supervised-btn" onclick="toggleSupervised()" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium text-zinc-600 border border-zinc-800 transition-all active:scale-95">
+                                <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                                <span>Supervised</span>
+                            </button>
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] mono text-zinc-700 mr-2 hidden md:inline">⌘↵ to send</span>
+                            <button class="bg-zinc-100 text-black p-1.5 rounded-lg hover:bg-blue-500 hover:text-white transition-all">
+                                <i data-lucide="arrow-up-right" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        lucide.createIcons();
+
+        let currentProject = null;
+
+        const folderPicker = document.getElementById('folder-picker');
+        const projectsContainer = document.getElementById('projects-container');
+        const projectModal = document.getElementById('project-modal');
+
+        function createNewProject() {
+            // Instead of clicking input, show our custom selection modal
+            projectModal.classList.remove('hidden');
+            gsap.fromTo("#project-modal > div:last-child", 
+                { scale: 0.9, opacity: 0, y: 20 }, 
+                { scale: 1, opacity: 1, y: 0, duration: 0.4, ease: "expo.out" }
+            );
+        }
+
+        function closeProjectModal() {
+            gsap.to("#project-modal > div:last-child", {
+                scale: 0.9,
+                opacity: 0,
+                y: 10,
+                duration: 0.2,
+                onComplete: () => projectModal.classList.add('hidden')
+            });
+        }
+
+        function selectMockProject(name, iconName) {
+            addProjectToSidebar(name, iconName);
+            closeProjectModal();
+            
+            // Visual feedback in breadcrumb
+            const breadcrumb = document.getElementById('breadcrumb');
+            breadcrumb.innerText = `recode:indexing-${name.toLowerCase().replace(/\s+/g, '-')}`;
+            gsap.fromTo('#breadcrumb', { opacity: 0.3 }, { opacity: 1, duration: 1 });
+        }
+
+        function addProjectToSidebar(name, icon = 'folder') {
+            const btn = document.createElement('button');
+            btn.className = "folder-btn w-10 h-10 rounded-lg border border-zinc-800 flex items-center justify-center text-zinc-500 hover:text-white transition-all";
+            btn.title = name;
+            btn.innerHTML = `<i data-lucide="${icon}" class="w-5 h-5"></i>`;
+            
+            // Add click event
+            btn.onclick = () => toggleSessions(name, btn);
+            
+            // Animate entry
+            projectsContainer.appendChild(btn);
+            lucide.createIcons(); 
+            
+            gsap.from(btn, {
+                scale: 0.5,
+                opacity: 0,
+                duration: 0.4,
+                ease: "back.out(1.7)"
+            });
+
+            setTimeout(() => toggleSessions(name, btn), 100);
+        }
+
+        function toggleSessions(projectName, el) {
+            const panel = document.getElementById('sessions-panel');
+            const breadcrumb = document.getElementById('breadcrumb');
+
+            document.querySelectorAll('.folder-btn').forEach(btn => btn.classList.remove('active'));
+
+            if (currentProject === projectName) {
+                closeSessions();
+            } else {
+                currentProject = projectName;
+                el.classList.add('active');
+                breadcrumb.innerText = `recode: ${projectName.toLowerCase().replace(' ', '-')}`;
+                
+                gsap.to(panel, { 
+                    width: 320, 
+                    opacity: 1, 
+                    duration: 0.5, 
+                    ease: "expo.out",
+                    borderRightWidth: 1
+                });
+            }
+        }
+
+        function closeSessions() {
+            const panel = document.getElementById('sessions-panel');
+            document.querySelectorAll('.folder-btn').forEach(btn => btn.classList.remove('active'));
+            currentProject = null;
+
+            gsap.to(panel, { 
+                width: 0, 
+                opacity: 0, 
+                duration: 0.4, 
+                ease: "expo.in",
+                borderRightWidth: 0
+            });
+        }
+
+        function toggleDropdown(id) {
+            const el = document.getElementById(id);
+            const isShowing = el.classList.contains('show');
+            document.querySelectorAll('.dropdown-content').forEach(d => d.classList.remove('show'));
+            if (!isShowing) {
+                el.classList.add('show');
+                gsap.fromTo(el, { y: 10, opacity: 0 }, { y: 0, opacity: 1, duration: 0.2 });
+            }
+        }
+
+        function selectModel(val) {
+            document.getElementById('current-model').innerText = val;
+            document.querySelectorAll('.dropdown-content').forEach(d => d.classList.remove('show'));
+        }
+
+        function selectReasoning(val) {
+            document.getElementById('current-reasoning').innerText = `Reasoning: ${val}`;
+            document.querySelectorAll('.dropdown-content').forEach(d => d.classList.remove('show'));
+        }
+
+        function toggleSupervised() {
+            document.getElementById('supervised-btn').classList.toggle('supervised-active');
+        }
+
+        window.onclick = function(event) {
+            if (!event.target.closest('.relative') && !event.target.closest('.folder-btn')) {
+                document.querySelectorAll('.dropdown-content').forEach(d => d.classList.remove('show'));
+            }
+        }
+
+        const tx = document.querySelector('textarea');
+        tx.addEventListener("input", function() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + "px";
+        });
+    </script>
+</body>
+</html>

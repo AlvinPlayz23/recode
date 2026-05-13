@@ -27,6 +27,18 @@ export interface AcpServerOptions {
   readonly overrides?: AcpRuntimeOverrides;
 }
 
+/** ACP stdio startup options. */
+export interface AcpStdioServerOptions {
+  readonly overrides?: AcpRuntimeOverrides;
+}
+
+/** ACP NDJSON transport options. */
+export interface AcpNdjsonTransportOptions {
+  readonly input: AsyncIterable<string | Buffer | Uint8Array>;
+  readonly write: (chunk: string) => void | Promise<void>;
+  readonly overrides?: AcpRuntimeOverrides;
+}
+
 /** Started ACP server metadata. */
 export interface StartedAcpServer {
   readonly server: Server<AcpSocketData>;
@@ -56,6 +68,44 @@ export async function runAcpServer(options: AcpServerOptions): Promise<never> {
   }));
 
   return await new Promise<never>(() => {});
+}
+
+/** Run ACP over stdio using newline-delimited JSON-RPC messages. */
+export async function runAcpStdioServer(options: AcpStdioServerOptions): Promise<void> {
+  await runAcpNdjsonTransport({
+    input: process.stdin,
+    write(chunk) {
+      process.stdout.write(chunk);
+    },
+    ...(options.overrides === undefined ? {} : { overrides: options.overrides })
+  });
+}
+
+/** Run one ACP connection over an NDJSON stream. Exported for transport tests. */
+export async function runAcpNdjsonTransport(options: AcpNdjsonTransportOptions): Promise<void> {
+  const connection = new AcpConnection(async (message) => {
+    await options.write(`${message}\n`);
+  }, options.overrides ?? {});
+  let buffer = "";
+
+  try {
+    for await (const chunk of options.input) {
+      buffer += typeof chunk === "string" ? chunk : Buffer.from(chunk as Uint8Array).toString("utf8");
+      const lines = buffer.split(/\r?\n/u);
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.trim() !== "") {
+          await connection.handleTextMessage(line);
+        }
+      }
+    }
+
+    if (buffer.trim() !== "") {
+      await connection.handleTextMessage(buffer);
+    }
+  } finally {
+    connection.close();
+  }
 }
 
 /** Start the ACP broker. Exported for integration tests. */
@@ -148,6 +198,10 @@ class AcpConnection {
   }
 
   handleMessage(message: string | Buffer): void {
+    void this.handleTextMessage(message);
+  }
+
+  async handleTextMessage(message: string | Buffer): Promise<void> {
     const text = typeof message === "string" ? message : message.toString("utf8");
     let parsed: unknown;
     try {
@@ -157,7 +211,7 @@ class AcpConnection {
       return;
     }
 
-    void this.handleParsedMessage(parsed);
+    await this.handleParsedMessage(parsed);
   }
 
   async handleParsedMessage(parsed: unknown): Promise<JsonRpcResponse | undefined> {

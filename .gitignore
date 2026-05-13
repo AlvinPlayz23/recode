@@ -6,6 +6,9 @@ node_modules/
 dist/
 .recode/
 refs/
-desktop-app/
+desktop-app/electrobun-docs/
+desktop-app/mock.html/
+desktop-app/vite-to-electrobun.txt
 acp-docs/
 desktop-prompt.txt
+effect-acp-ref/

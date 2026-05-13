@@ -2,12 +2,18 @@
 
 The Recode ACP server is a local JSON-RPC broker that lets external clients drive Recode sessions without embedding the TUI. It is intended for desktop apps, editors, IDE integrations, and automation clients that need multiple Recode sessions across multiple workspace folders.
 
-The server speaks ACP-style messages over WebSocket and streamable HTTP/SSE. It is local-first and protected with a bearer token.
+The server speaks ACP-style messages over stdio, WebSocket, and streamable HTTP/SSE. Remote transports are local-first and protected with a bearer token.
 
 ## Starting The Server
 
 ```bash
 recode acp-server
+```
+
+For editor subprocess clients that expect ACP stdio:
+
+```bash
+recode acp-server --stdio
 ```
 
 Useful options:
@@ -26,6 +32,7 @@ Defaults:
 | `--provider` | config default | Optional provider override for sessions. |
 | `--model` | provider default | Optional model override for sessions. |
 | `--approval-mode` | config default | Optional approval mode override for sessions. |
+| `--stdio` | disabled | Use newline-delimited JSON-RPC over stdin/stdout instead of starting HTTP/WebSocket. |
 
 On startup the server writes connection metadata to stderr:
 
@@ -39,6 +46,14 @@ On startup the server writes connection metadata to stderr:
 ```
 
 ## Transport
+
+### stdio
+
+With `--stdio`, the client launches Recode as a subprocess. Recode reads newline-delimited UTF-8 JSON-RPC messages from stdin and writes newline-delimited JSON-RPC messages to stdout. Messages must be one JSON-RPC object per line and must not contain embedded newlines. Logs and diagnostics may go to stderr; stdout is reserved for ACP messages.
+
+Stdio does not use bearer auth, host, port, `Acp-Connection-Id`, or `Acp-Session-Id`. The client must still send `initialize` first.
+
+### HTTP/WebSocket
 
 Endpoint:
 
@@ -56,6 +71,7 @@ Supported transports:
 
 | Route | Purpose |
 | --- | --- |
+| `stdio` with `--stdio` | Newline-delimited JSON-RPC over stdin/stdout. |
 | `GET /acp` with `Upgrade: websocket` | Bidirectional JSON-RPC text frames. |
 | `POST /acp` | Streamable HTTP client-to-server JSON-RPC requests and client responses. |
 | `GET /acp` with `Accept: text/event-stream` | SSE server-to-client JSON-RPC messages. |
@@ -67,7 +83,7 @@ Session-scoped HTTP requests, such as `session/prompt`, `session/cancel`, `sessi
 
 ## Connection Flow
 
-1. Client connects with WebSocket, or sends HTTP `initialize`.
+1. Client starts `recode acp-server --stdio`, connects with WebSocket, or sends HTTP `initialize`.
 2. Client sends `initialize`.
 3. Client creates or loads sessions with `session/new`, `session/load`, or `session/resume`.
 4. Client sends prompts with `session/prompt`.
@@ -582,7 +598,6 @@ Recode does not currently implement MCP server integration. ACP schemas and some
 
 ## Current Limits
 
-- ACP stdio is not implemented in this server.
 - Client filesystem and terminal methods are not used by Recode tools yet; Recode tools execute through Recode's own local tool layer.
 - Image and audio prompt content are not advertised.
 - The server is local-first. Do not bind it to a LAN address without adding stronger auth and origin policy.

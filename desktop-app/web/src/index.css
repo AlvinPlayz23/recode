@@ -1,0 +1,105 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --rc-bg: #f9f9f9;
+  --rc-sidebar: #f3f3f3;
+  --rc-card: #ffffff;
+  --rc-border: #e5e5e5;
+  --rc-border-soft: #ececec;
+  --rc-text: #1a1a1a;
+  --rc-text-muted: #757575;
+  --rc-text-faint: #9b9b9b;
+  --rc-accent: #2962ff;
+  --rc-accent-soft: rgba(41, 98, 255, 0.08);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: var(--rc-bg);
+  color: var(--rc-text);
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.005em;
+  overflow: hidden;
+}
+
+.mono {
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+}
+
+/* Subtle scrollbars to keep the surface clean. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+}
+*:hover::-webkit-scrollbar-thumb {
+  background: #d6d6d6;
+}
+*:hover::-webkit-scrollbar-thumb:hover {
+  background: #c2c2c2;
+}
+
+/* Composer floating card shadow. */
+.composer-card {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 6px 18px rgba(0, 0, 0, 0.06);
+}
+
+/* Active thread row */
+.thread-row.active {
+  background-color: #e8e8e8;
+  color: var(--rc-text);
+}
+
+/* Composer hero ↔ docked transition */
+.composer-fade-in {
+  animation: composerFade 320ms ease-out both;
+}
+@keyframes composerFade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hero-fade-in {
+  animation: heroFade 280ms ease-out both;
+}
+@keyframes heroFade {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

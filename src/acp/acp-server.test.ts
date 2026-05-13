@@ -3,7 +3,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { startAcpServer, type StartedAcpServer } from "./acp-server.ts";
+import { runAcpNdjsonTransport, startAcpServer, type StartedAcpServer } from "./acp-server.ts";
 import type { JsonRpcResponse } from "./json-rpc.ts";
 
 let startedServer: StartedAcpServer | undefined;
@@ -209,6 +209,59 @@ describe("startAcpServer", () => {
   });
 });
 
+describe("runAcpNdjsonTransport", () => {
+  test("serves initialize over newline-delimited stdio messages", async () => {
+    const written: string[] = [];
+
+    await runAcpNdjsonTransport({
+      input: lines([
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: {
+            protocolVersion: 2,
+            clientCapabilities: {}
+          }
+        }) + "\n"
+      ]),
+      write(chunk) {
+        written.push(chunk);
+      }
+    });
+
+    expect(written).toHaveLength(1);
+    expect(written[0]?.endsWith("\n")).toBe(true);
+    expect(JSON.parse(written[0] ?? "")).toMatchObject({
+      jsonrpc: "2.0",
+      id: 1,
+      result: {
+        protocolVersion: 2
+      }
+    });
+  });
+
+  test("emits JSON-RPC parse errors over newline-delimited stdio", async () => {
+    const written: string[] = [];
+
+    await runAcpNdjsonTransport({
+      input: lines(["not-json\n"]),
+      write(chunk) {
+        written.push(chunk);
+      }
+    });
+
+    expect(JSON.parse(written[0] ?? "")).toEqual({
+      jsonrpc: "2.0",
+      id: null,
+      error: {
+        code: -32700,
+        message: "Parse error"
+      }
+    });
+  });
+});
+
 function waitForOpen(socket: WebSocket): Promise<void> {
   return new Promise((resolve, reject) => {
     socket.addEventListener("open", () => resolve(), { once: true });
@@ -313,5 +366,11 @@ async function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
     if (timeout !== undefined) {
       clearTimeout(timeout);
     }
+  }
+}
+
+async function* lines(chunks: readonly string[]): AsyncIterable<string> {
+  for (const chunk of chunks) {
+    yield chunk;
   }
 }

@@ -15,6 +15,7 @@ export interface ParsedCliArgs {
   readonly acpHost?: string;
   readonly acpPort?: number;
   readonly acpToken?: string;
+  readonly acpStdio: boolean;
 }
 
 /**
@@ -32,7 +33,8 @@ export function parseCliArgs(argv: readonly string[]): ParsedCliArgs {
       ...(options.approvalMode === undefined ? {} : { approvalMode: options.approvalMode }),
       ...(options.acpHost === undefined ? {} : { acpHost: options.acpHost }),
       ...(options.acpPort === undefined ? {} : { acpPort: options.acpPort }),
-      ...(options.acpToken === undefined ? {} : { acpToken: options.acpToken })
+      ...(options.acpToken === undefined ? {} : { acpToken: options.acpToken }),
+      acpStdio: options.acpStdio
     };
   }
 
@@ -49,7 +51,8 @@ export function parseCliArgs(argv: readonly string[]): ParsedCliArgs {
     ...(options.approvalMode === undefined ? {} : { approvalMode: options.approvalMode }),
     ...(options.acpHost === undefined ? {} : { acpHost: options.acpHost }),
     ...(options.acpPort === undefined ? {} : { acpPort: options.acpPort }),
-    ...(options.acpToken === undefined ? {} : { acpToken: options.acpToken })
+    ...(options.acpToken === undefined ? {} : { acpToken: options.acpToken }),
+    acpStdio: options.acpStdio
   };
 }
 
@@ -62,6 +65,7 @@ interface ParsedOptions {
   readonly acpHost?: string;
   readonly acpPort?: number;
   readonly acpToken?: string;
+  readonly acpStdio: boolean;
 }
 
 function parseOptions(argv: readonly string[]): ParsedOptions {
@@ -73,6 +77,7 @@ function parseOptions(argv: readonly string[]): ParsedOptions {
   let acpHost: string | undefined;
   let acpPort: number | undefined;
   let acpToken: string | undefined;
+  let acpStdio = false;
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
@@ -86,15 +91,20 @@ function parseOptions(argv: readonly string[]): ParsedOptions {
     }
 
     if (token === "-h" || token === "--help") {
-      return { remaining: ["help"], noHistory };
+      return { remaining: ["help"], noHistory, acpStdio };
     }
 
     if (token === "-v" || token === "--version") {
-      return { remaining: ["version"], noHistory };
+      return { remaining: ["version"], noHistory, acpStdio };
     }
 
     if (token === "--no-history") {
       noHistory = true;
+      continue;
+    }
+
+    if (token === "--stdio") {
+      acpStdio = true;
       continue;
     }
 
@@ -151,6 +161,7 @@ function parseOptions(argv: readonly string[]): ParsedOptions {
   return {
     remaining,
     noHistory,
+    acpStdio,
     ...(providerId === undefined ? {} : { providerId }),
     ...(modelId === undefined ? {} : { modelId }),
     ...(approvalMode === undefined ? {} : { approvalMode }),

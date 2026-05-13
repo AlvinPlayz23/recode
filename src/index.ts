@@ -53,6 +53,8 @@ Usage:
   recode setup       Open the provider and model setup wizard
   recode doctor      Check config, provider, model, history, and model listing
   recode acp-server  Start the local ACP HTTP/WebSocket broker
+  recode acp-server --stdio
+                     Run ACP over stdio for editor subprocess clients
   recode <prompt>    Run one-shot mode
 
 Options:
@@ -65,6 +67,7 @@ Options:
   --host <host>      ACP server host, default 127.0.0.1
   --port <port>      ACP server port, default 0
   --token <token>    ACP server bearer token, default generated
+  --stdio            Run ACP over stdin/stdout instead of HTTP/WebSocket
   --no-history       Do not save one-shot runs to history
   -h, --help         Show help
   -v, --version      Show version`);
@@ -79,7 +82,18 @@ Options:
   }
 
   if (cliArgs.command === "acp-server") {
-    const { runAcpServer } = await import("./acp/acp-server.ts");
+    const { runAcpServer, runAcpStdioServer } = await import("./acp/acp-server.ts");
+    if (cliArgs.acpStdio) {
+      await runAcpStdioServer({
+        overrides: {
+          ...(cliArgs.providerId === undefined ? {} : { providerId: cliArgs.providerId }),
+          ...(cliArgs.modelId === undefined ? {} : { modelId: cliArgs.modelId }),
+          ...(cliArgs.approvalMode === undefined ? {} : { approvalMode: cliArgs.approvalMode })
+        }
+      });
+      process.exit(0);
+    }
+
     await runAcpServer({
       ...(cliArgs.acpHost === undefined ? {} : { host: cliArgs.acpHost }),
       ...(cliArgs.acpPort === undefined ? {} : { port: cliArgs.acpPort }),
