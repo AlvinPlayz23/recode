@@ -10,6 +10,7 @@ import type {
   DesktopMessage,
   DesktopPermissionRequest,
   DesktopProject,
+  DesktopSessionActivated,
   DesktopSessionCreated,
   DesktopSessionUpdate,
   DesktopSnapshot,
@@ -143,6 +144,16 @@ export class DesktopSessionManager {
     return { project, thread: this.#getThread(thread.id), configOptions };
   }
 
+  async activateSession(threadId: string): Promise<DesktopSessionActivated> {
+    const session = await this.#ensureActive(threadId);
+    this.#applyConfigOptions(threadId, session.configOptions);
+    this.#save();
+    return {
+      thread: { ...this.#getThread(threadId) },
+      configOptions: session.configOptions,
+    };
+  }
+
   async sendPrompt(params: { threadId: string; text: string }): Promise<{ messageId: string }> {
     const session = await this.#ensureActive(params.threadId);
     const response = await session.client.request("session/prompt", {
@@ -242,6 +253,8 @@ export class DesktopSessionManager {
       pendingPermissions: new Map(),
     };
     this.#active.set(threadId, session);
+    this.#applyConfigOptions(threadId, session.configOptions);
+    this.#save();
     return session;
   }
 

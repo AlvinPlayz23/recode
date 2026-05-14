@@ -31,6 +31,7 @@ const rpc = BrowserView.defineRPC<RecodeDesktopRPC>({
       listDirectory: (params) => listDirectory(params.path),
       addWorkspace: (params) => sessions.addWorkspace(params.workspacePath),
       createSession: async (params) => await sessions.createSession(params),
+      activateSession: async (params) => await sessions.activateSession(params.threadId),
       sendPrompt: async (params) => await sessions.sendPrompt(params),
       setConfigOption: async (params) => await sessions.setConfigOption(params),
       answerPermission: (params) => {

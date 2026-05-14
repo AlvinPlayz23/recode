@@ -7,7 +7,7 @@
  * Phase 1: state-only mock, no real ACP/CLI wiring.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { ChatHeader } from './components/ChatHeader'
 import { Transcript } from './components/Transcript'
@@ -89,6 +89,8 @@ export function App() {
   const [detectedRepoRoot, setDetectedRepoRoot] = useState<string | undefined>()
   const [bridge, setBridge] = useState<DesktopBridge | null>(null)
   const [configOptions, setConfigOptions] = useState<DesktopConfigOption[]>([])
+  const configOptionsByThread = useRef<Map<string, DesktopConfigOption[]>>(new Map())
+  const [configOptionsLoading, setConfigOptionsLoading] = useState(false)
   const [permissionRequest, setPermissionRequest] =
     useState<DesktopPermissionRequest | null>(null)
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
@@ -128,7 +130,7 @@ export function App() {
     void desktopBridge?.rpc.request.getSnapshot({}).then((snapshot) => {
       setProjects(snapshot.projects)
       setThreads(snapshot.threads)
-      setActiveThreadId(snapshot.threads[0]?.id ?? null)
+      setActiveThreadId(null)
       setMessages(snapshot.messages)
       setRuntimeMode(snapshot.settings.runtimeMode)
       setRecodeRepoRoot(snapshot.settings.recodeRepoRoot)
@@ -150,14 +152,57 @@ export function App() {
   )
 
   useEffect(() => {
-    if (!activeThread) {
+    const selectedThread = activeThreadId
+      ? (threads.find((thread) => thread.id === activeThreadId) ?? null)
+      : null
+
+    if (!selectedThread) {
       setModel('Recode default')
       setMode('build')
+      setConfigOptions([])
+      setConfigOptionsLoading(false)
       return
     }
-    setModel(activeThread.model)
-    setMode(activeThread.mode ?? 'build')
-  }, [activeThread])
+    setModel(selectedThread.model)
+    setMode(selectedThread.mode ?? 'build')
+
+    const cachedConfigOptions = configOptionsByThread.current.get(selectedThread.id)
+    if (cachedConfigOptions !== undefined) {
+      setConfigOptions(cachedConfigOptions)
+      setConfigOptionsLoading(false)
+      return
+    }
+
+    setConfigOptions([])
+    if (!bridge) return
+
+    let cancelled = false
+    setConfigOptionsLoading(true)
+    void bridge.rpc.request
+      .activateSession({ threadId: selectedThread.id })
+      .then((result) => {
+        if (cancelled) return
+        configOptionsByThread.current.set(result.thread.id, result.configOptions)
+        setThreads((prev) =>
+          prev.map((thread) =>
+            thread.id === result.thread.id ? { ...thread, ...result.thread } : thread,
+          ),
+        )
+        setConfigOptions(result.configOptions)
+        setModel(result.thread.model)
+        setMode(result.thread.mode ?? 'build')
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) showWorkspaceError(error)
+      })
+      .finally(() => {
+        if (!cancelled) setConfigOptionsLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeThreadId, bridge])
 
   function toggleProjectCollapsed(id: string) {
     setCollapsedProjects((prev) => {
@@ -218,6 +263,7 @@ export function App() {
           )
           setThreads((prev) => [created.thread, ...prev])
           setActiveThreadId(created.thread.id)
+          configOptionsByThread.current.set(created.thread.id, created.configOptions)
           setConfigOptions(created.configOptions)
           setModel(created.thread.model)
           setMode(created.thread.mode ?? 'build')
@@ -331,6 +377,7 @@ export function App() {
           ...prev.filter((thread) => thread.id !== created.thread.id),
         ])
         setActiveThreadId(created.thread.id)
+        configOptionsByThread.current.set(created.thread.id, created.configOptions)
         setConfigOptions(created.configOptions)
         setModel(created.thread.model)
         setMode(created.thread.mode ?? 'build')
@@ -410,7 +457,10 @@ export function App() {
           configId: 'model',
           value: nextModel,
         })
-        .then((result) => setConfigOptions(result.configOptions))
+        .then((result) => {
+          configOptionsByThread.current.set(activeThread.id, result.configOptions)
+          setConfigOptions(result.configOptions)
+        })
     }
   }
 
@@ -423,7 +473,10 @@ export function App() {
           configId: 'mode',
           value: nextMode,
         })
-        .then((result) => setConfigOptions(result.configOptions))
+        .then((result) => {
+          configOptionsByThread.current.set(activeThread.id, result.configOptions)
+          setConfigOptions(result.configOptions)
+        })
     }
   }
 
@@ -446,7 +499,10 @@ export function App() {
       ),
     )
     if (update.configOptions) {
-      setConfigOptions(update.configOptions)
+      configOptionsByThread.current.set(update.thread.id, update.configOptions)
+      if (update.thread.id === activeThreadId) {
+        setConfigOptions(update.configOptions)
+      }
     }
     if (update.message && !update.appendToMessageId) {
       setMessages((prev) => ({
@@ -525,6 +581,11 @@ export function App() {
                 mode={mode}
                 reasoning={reasoning}
                 modelOptions={configOptions.find((item) => item.id === 'model')?.options}
+                modelMenuEmptyLabel={
+                  configOptionsLoading
+                    ? 'Loading models...'
+                    : 'Select a workspace to load models'
+                }
                 onChangeModel={handleChangeModel}
                 onChangeMode={handleChangeMode}
                 onChangeReasoning={setReasoning}

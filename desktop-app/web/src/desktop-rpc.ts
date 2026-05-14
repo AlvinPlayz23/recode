@@ -72,6 +72,11 @@ export interface DesktopSessionCreated {
   configOptions: DesktopConfigOption[]
 }
 
+export interface DesktopSessionActivated {
+  thread: DesktopThread
+  configOptions: DesktopConfigOption[]
+}
+
 export interface DesktopSessionUpdate {
   thread: DesktopThread
   message?: DesktopMessage
@@ -134,6 +139,12 @@ export type RecodeDesktopRPC = {
           model?: string
         }
         response: DesktopSessionCreated
+      }
+      activateSession: {
+        params: {
+          threadId: string
+        }
+        response: DesktopSessionActivated
       }
       sendPrompt: {
         params: {

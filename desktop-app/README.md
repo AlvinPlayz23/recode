@@ -22,6 +22,12 @@ The React renderer still keeps Phase 1 mock projects, threads, and messages for 
 
 The Electrobun desktop runtime disables that mock state. In desktop mode, the app starts from the persisted desktop snapshot and waits for real workspaces, sessions, and model options from the Recode ACP server. Browser preview threads use the neutral `Recode default` model label until real ACP model options are available.
 
+## Startup Behavior
+
+On restart, the desktop app restores saved workspaces, threads, and messages into the sidebar, but it does not auto-open the most recent thread. The main pane stays on the start screen until the user picks a thread or creates a new one.
+
+When the user selects an existing saved thread, the app lazily resumes the matching ACP session and loads model/mode options for that thread. This avoids starting ACP processes for every saved thread during app boot while still keeping model switching available after a thread is selected.
+
 ## Commands
 
 Install dependencies with pnpm only:

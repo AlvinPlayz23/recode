@@ -5,6 +5,7 @@ import type {
   DesktopErrorUpdate,
   DesktopProject,
   DesktopPermissionRequest,
+  DesktopSessionActivated,
   DesktopSessionCreated,
   DesktopSessionUpdate,
   DesktopSettings,
@@ -28,6 +29,7 @@ export interface DesktopBridge {
         mode?: SessionMode
         model?: string
       }) => Promise<DesktopSessionCreated>
+      activateSession: (params: { threadId: string }) => Promise<DesktopSessionActivated>
       sendPrompt: (params: {
         threadId: string
         text: string

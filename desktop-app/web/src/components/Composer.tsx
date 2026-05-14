@@ -21,6 +21,7 @@ interface ComposerProps {
   mode: SessionMode
   reasoning: ReasoningLevel
   modelOptions?: DesktopConfigOptionValue[]
+  modelMenuEmptyLabel?: string
   onChangeModel: (model: string) => void
   onChangeMode: (mode: SessionMode) => void
   onChangeReasoning: (level: ReasoningLevel) => void
@@ -38,6 +39,7 @@ export function Composer({
   mode,
   reasoning,
   modelOptions,
+  modelMenuEmptyLabel = 'Select a workspace to load models',
   onChangeModel,
   onChangeMode,
   onChangeReasoning,
@@ -78,8 +80,6 @@ export function Composer({
   }
 
   const resolvedModelOptions = modelOptions ?? []
-  const selectedModelName =
-    resolvedModelOptions.find((option) => option.value === model)?.name ?? model
 
   return (
     <div className="px-6 pb-5 pt-2">
@@ -146,7 +146,7 @@ export function Composer({
                   }}
                   className="flex items-center gap-1 px-2 py-1 rounded-md text-[12px] text-rc-text hover:bg-rc-hover transition-colors"
                 >
-                  <span>{selectedModelName}</span>
+                  <span>{model}</span>
                   {openMenu === 'model' ? (
                     <ChevronUp className="w-3 h-3 text-rc-muted" strokeWidth={2} />
                   ) : (
@@ -165,11 +165,11 @@ export function Composer({
                             setOpenMenu(null)
                           }}
                         >
-                          {m.name}
+                          {m.value}
                         </MenuItem>
                       ))
                     ) : (
-                      <MenuEmpty>Select a workspace to load models</MenuEmpty>
+                      <MenuEmpty>{modelMenuEmptyLabel}</MenuEmpty>
                     )}
                   </Menu>
                 )}
