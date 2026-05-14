@@ -105,6 +105,26 @@ body {
   color: var(--rc-text);
 }
 
+.tool-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--rc-hover) 0%,
+    var(--rc-hover-strong) 45%,
+    var(--rc-hover) 90%
+  );
+  background-size: 220% 100%;
+  animation: toolShimmer 1.25s ease-in-out infinite;
+}
+
+@keyframes toolShimmer {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
+}
+
 .markdown-body {
   letter-spacing: 0;
 }

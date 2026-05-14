@@ -16,6 +16,7 @@ const manager = new DesktopSessionManager({
   statePath: join(stateDir, "desktop-sessions.json"),
   sendSessionUpdate: () => undefined,
   sendPermissionRequest: () => undefined,
+  sendQuestionRequest: () => undefined,
   sendError: (_threadId, message) => {
     if (!message.includes("recode.acp_server")) {
       errors.push(message);

@@ -32,4 +32,9 @@ export interface ChatMessage {
   id: string
   role: 'user' | 'assistant' | 'tool' | 'system'
   body: string
+  toolCallId?: string
+  toolKind?: string
+  toolStatus?: 'pending' | 'in_progress' | 'completed' | 'failed'
+  toolInput?: Record<string, unknown>
+  toolContent?: string
 }

@@ -88,6 +88,18 @@ export class AcpJsonRpcClient {
     return await promise;
   }
 
+  notify(method: string, params?: unknown): void {
+    if (this.#closed) {
+      throw new Error("ACP client is closed.");
+    }
+
+    this.#write({
+      jsonrpc: "2.0",
+      method,
+      ...(params === undefined ? {} : { params }),
+    } satisfies JsonRpcRequest);
+  }
+
   respond(id: string | number, result: unknown): void {
     this.#write({
       jsonrpc: "2.0",

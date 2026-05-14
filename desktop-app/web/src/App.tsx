@@ -31,6 +31,7 @@ import type {
 import type {
   DesktopConfigOption,
   DesktopPermissionRequest,
+  DesktopQuestionRequest,
   DesktopSessionUpdate,
   RecodeRuntimeMode,
   SessionMode,
@@ -93,6 +94,8 @@ export function App() {
   const [configOptionsLoading, setConfigOptionsLoading] = useState(false)
   const [permissionRequest, setPermissionRequest] =
     useState<DesktopPermissionRequest | null>(null)
+  const [questionRequest, setQuestionRequest] =
+    useState<DesktopQuestionRequest | null>(null)
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
 
   const [modalOpen, setModalOpen] = useState(false)
@@ -109,6 +112,7 @@ export function App() {
     const desktopBridge = createDesktopBridge({
       onSessionUpdate: applyDesktopSessionUpdate,
       onPermissionRequest: setPermissionRequest,
+      onQuestionRequest: setQuestionRequest,
       onSessionError: (error) => {
         const targetThreadId = error.threadId ?? activeThreadId
         if (!targetThreadId) return
@@ -448,6 +452,20 @@ export function App() {
     pushMessages(activeThread.id, text)
   }
 
+  function handleCancelGeneration() {
+    if (!activeThread || !bridge) return
+    void bridge.rpc.request
+      .cancelSession({ threadId: activeThread.id })
+      .then((result) => {
+        setThreads((prev) =>
+          prev.map((thread) =>
+            thread.id === result.thread.id ? { ...thread, ...result.thread } : thread,
+          ),
+        )
+      })
+      .catch((error: unknown) => showWorkspaceError(error))
+  }
+
   function handleChangeModel(nextModel: string) {
     setModel(nextModel)
     if (bridge && activeThread) {
@@ -504,7 +522,7 @@ export function App() {
         setConfigOptions(update.configOptions)
       }
     }
-    if (update.message && !update.appendToMessageId) {
+    if (update.message && !update.appendToMessageId && !update.replaceMessageId) {
       setMessages((prev) => ({
         ...prev,
         [update.message!.threadId]: [
@@ -524,6 +542,14 @@ export function App() {
           message.id === update.appendToMessageId
             ? { ...message, body: `${message.body}${update.message?.body ?? ''}` }
             : message,
+        ),
+      }))
+    }
+    if (update.replaceMessageId && update.message) {
+      setMessages((prev) => ({
+        ...prev,
+        [update.thread.id]: (prev[update.thread.id] ?? []).map((message) =>
+          message.id === update.replaceMessageId ? update.message! : message,
         ),
       }))
     }
@@ -590,6 +616,11 @@ export function App() {
                 onChangeMode={handleChangeMode}
                 onChangeReasoning={setReasoning}
                 onSubmit={handleSubmit}
+                onCancel={handleCancelGeneration}
+                isGenerating={
+                  activeThread?.status === 'running'
+                  || activeThread?.status === 'requires_action'
+                }
               />
             )
             return (
@@ -698,6 +729,27 @@ export function App() {
         </div>
       )}
 
+      {questionRequest && (
+        <QuestionPromptModal
+          request={questionRequest}
+          onDismiss={() => {
+            void bridge?.rpc.request.answerQuestion({
+              requestId: questionRequest.id,
+              dismissed: true,
+            })
+            setQuestionRequest(null)
+          }}
+          onSubmit={(answers) => {
+            void bridge?.rpc.request.answerQuestion({
+              requestId: questionRequest.id,
+              dismissed: false,
+              answers,
+            })
+            setQuestionRequest(null)
+          }}
+        />
+      )}
+
       {workspaceError && (
         <div className="fixed bottom-5 right-5 z-[120] w-[360px] rounded-xl border border-rc-border bg-rc-elevated shadow-2xl p-4">
           <div className="text-[12px] font-semibold text-rc-text mb-1">
@@ -716,6 +768,100 @@ export function App() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function QuestionPromptModal({
+  request,
+  onDismiss,
+  onSubmit,
+}: {
+  request: DesktopQuestionRequest
+  onDismiss: () => void
+  onSubmit: (answers: { questionId: string; selectedOptionLabels: string[]; customText: string }[]) => void
+}) {
+  const [selected, setSelected] = useState<Record<string, string[]>>({})
+  const [customText, setCustomText] = useState<Record<string, string>>({})
+
+  function toggle(questionId: string, label: string, multiSelect: boolean) {
+    setSelected((prev) => {
+      const current = prev[questionId] ?? []
+      const next = multiSelect
+        ? current.includes(label)
+          ? current.filter((item) => item !== label)
+          : [...current, label]
+        : [label]
+      return { ...prev, [questionId]: next }
+    })
+  }
+
+  return (
+    <div className="fixed inset-0 z-[130] flex items-center justify-center p-6">
+      <div className="absolute inset-0 bg-black/25 backdrop-blur-sm" onClick={onDismiss} />
+      <div className="relative w-full max-w-[560px] rounded-xl border border-rc-border bg-rc-elevated shadow-2xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-rc-border-soft">
+          <div className="text-[13px] font-semibold text-rc-text">Question</div>
+          <div className="text-[12px] text-rc-muted mt-0.5">Recode needs your input to continue.</div>
+        </div>
+        <div className="max-h-[520px] overflow-y-auto p-4 space-y-4">
+          {request.questions.map((question) => (
+            <div key={question.id} className="rounded-lg border border-rc-border-soft bg-rc-card p-3">
+              <div className="text-[12px] font-semibold text-rc-text mb-1">{question.header}</div>
+              <div className="text-[12.5px] text-rc-muted leading-relaxed mb-3">{question.question}</div>
+              <div className="space-y-2">
+                {question.options.map((option) => {
+                  const active = (selected[question.id] ?? []).includes(option.label)
+                  return (
+                    <button
+                      key={option.label}
+                      onClick={() => toggle(question.id, option.label, question.multiSelect)}
+                      className={`w-full text-left rounded-lg border px-3 py-2 transition-colors ${
+                        active
+                          ? 'border-rc-accent bg-rc-accent-soft'
+                          : 'border-rc-border-soft hover:bg-rc-hover'
+                      }`}
+                    >
+                      <div className="flex gap-2">
+                        <span className={`mt-0.5 h-3.5 w-3.5 rounded-full border ${
+                          active ? 'border-rc-accent bg-rc-accent' : 'border-rc-faint'
+                        }`} />
+                        <span className="min-w-0">
+                          <span className="block text-[12.5px] font-medium text-rc-text">{option.label}</span>
+                          <span className="block text-[11.5px] text-rc-muted leading-relaxed">{option.description}</span>
+                        </span>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+              {question.allowCustomText && (
+                <textarea
+                  value={customText[question.id] ?? ''}
+                  onChange={(event) => setCustomText((prev) => ({ ...prev, [question.id]: event.target.value }))}
+                  placeholder="Add custom answer"
+                  className="mt-3 w-full min-h-20 rounded-lg border border-rc-border bg-rc-bg px-3 py-2 text-[12.5px] text-rc-text outline-none placeholder-rc-faint"
+                />
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="px-4 py-3 border-t border-rc-border-soft flex justify-end gap-2 bg-rc-bg">
+          <button onClick={onDismiss} className="px-3 py-1.5 text-[12px] text-rc-muted hover:text-rc-text transition-colors">
+            Dismiss
+          </button>
+          <button
+            onClick={() => onSubmit(request.questions.map((question) => ({
+              questionId: question.id,
+              selectedOptionLabels: selected[question.id] ?? [],
+              customText: customText[question.id] ?? '',
+            })))}
+            className="px-3 py-1.5 rounded-md bg-rc-text text-rc-bg text-[12px] hover:opacity-85 transition-opacity"
+          >
+            Continue
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

@@ -18,6 +18,7 @@ let mainWindow: BrowserWindow | undefined;
 const sessions = new DesktopSessionManager({
   sendSessionUpdate: (update) => rpc.send.sessionUpdate(update),
   sendPermissionRequest: (request) => rpc.send.permissionRequest(request),
+  sendQuestionRequest: (request) => rpc.send.questionRequest(request),
   sendError: (threadId, message) => rpc.send.sessionError({ threadId, message }),
 });
 
@@ -33,9 +34,14 @@ const rpc = BrowserView.defineRPC<RecodeDesktopRPC>({
       createSession: async (params) => await sessions.createSession(params),
       activateSession: async (params) => await sessions.activateSession(params.threadId),
       sendPrompt: async (params) => await sessions.sendPrompt(params),
+      cancelSession: async (params) => await sessions.cancelSession(params.threadId),
       setConfigOption: async (params) => await sessions.setConfigOption(params),
       answerPermission: (params) => {
         sessions.answerPermission(params);
+        return {};
+      },
+      answerQuestion: (params) => {
+        sessions.answerQuestion(params);
         return {};
       },
       closeSession: async (params) => {

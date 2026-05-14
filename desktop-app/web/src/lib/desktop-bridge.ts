@@ -5,11 +5,13 @@ import type {
   DesktopErrorUpdate,
   DesktopProject,
   DesktopPermissionRequest,
+  DesktopQuestionRequest,
   DesktopSessionActivated,
   DesktopSessionCreated,
   DesktopSessionUpdate,
   DesktopSettings,
   DesktopSnapshot,
+  DesktopThread,
   RecodeDesktopRPC,
   RecodeRuntimeMode,
   SessionMode,
@@ -34,6 +36,7 @@ export interface DesktopBridge {
         threadId: string
         text: string
       }) => Promise<{ messageId: string }>
+      cancelSession: (params: { threadId: string }) => Promise<{ thread: DesktopThread }>
       setConfigOption: (params: {
         threadId: string
         configId: 'mode' | 'model'
@@ -43,6 +46,21 @@ export interface DesktopBridge {
         requestId: string
         optionId: string
       }) => Promise<Record<string, never>>
+      answerQuestion: (params:
+        | {
+            requestId: string
+            dismissed: true
+          }
+        | {
+            requestId: string
+            dismissed: false
+            answers: {
+              questionId: string
+              selectedOptionLabels: string[]
+              customText: string
+            }[]
+          }
+      ) => Promise<Record<string, never>>
       closeSession: (params: { threadId: string }) => Promise<Record<string, never>>
     }
   }
@@ -51,6 +69,7 @@ export interface DesktopBridge {
 export interface DesktopBridgeHandlers {
   onSessionUpdate: (update: DesktopSessionUpdate) => void
   onPermissionRequest: (request: DesktopPermissionRequest) => void
+  onQuestionRequest: (request: DesktopQuestionRequest) => void
   onSessionError: (error: DesktopErrorUpdate) => void
 }
 
@@ -72,6 +91,7 @@ export function createDesktopBridge(
       messages: {
         sessionUpdate: handlers.onSessionUpdate,
         permissionRequest: handlers.onPermissionRequest,
+        questionRequest: handlers.onQuestionRequest,
         sessionError: handlers.onSessionError,
       },
     },

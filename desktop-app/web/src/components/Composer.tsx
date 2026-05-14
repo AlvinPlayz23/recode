@@ -12,6 +12,7 @@ import {
   Plus,
   Search,
   SmilePlus,
+  Square,
 } from 'lucide-react'
 import { cn } from '../lib/cn'
 import type { ReasoningLevel } from '../types'
@@ -23,10 +24,12 @@ interface ComposerProps {
   reasoning: ReasoningLevel
   modelOptions?: DesktopConfigOptionValue[]
   modelMenuEmptyLabel?: string
+  isGenerating?: boolean
   onChangeModel: (model: string) => void
   onChangeMode: (mode: SessionMode) => void
   onChangeReasoning: (level: ReasoningLevel) => void
   onSubmit: (text: string) => void
+  onCancel: () => void
 }
 
 const MODES: { value: SessionMode; name: string }[] = [
@@ -41,10 +44,12 @@ export function Composer({
   reasoning,
   modelOptions,
   modelMenuEmptyLabel = 'Select a workspace to load models',
+  isGenerating = false,
   onChangeModel,
   onChangeMode,
   onChangeReasoning,
   onSubmit,
+  onCancel,
 }: ComposerProps) {
   const [text, setText] = useState('')
   const [openMenu, setOpenMenu] = useState<'mode' | 'model' | 'reasoning' | null>(null)
@@ -77,6 +82,10 @@ export function Composer({
   }, [openMenu])
 
   function handleSubmit() {
+    if (isGenerating) {
+      onCancel()
+      return
+    }
     const trimmed = text.trim()
     if (!trimmed) return
     onSubmit(trimmed)
@@ -247,17 +256,21 @@ export function Composer({
                 <Mic className="w-[15px] h-[15px]" strokeWidth={1.6} />
               </ToolbarIcon>
               <button
-                onClick={handleSubmit}
-                disabled={text.trim().length === 0}
+                onClick={isGenerating ? onCancel : handleSubmit}
+                disabled={!isGenerating && text.trim().length === 0}
                 className={cn(
                   'ml-1 w-7 h-7 rounded-full flex items-center justify-center transition-colors',
-                  text.trim().length === 0
+                  !isGenerating && text.trim().length === 0
                     ? 'bg-rc-hover-strong text-rc-faint'
                     : 'bg-rc-text text-rc-bg hover:opacity-85',
                 )}
-                title="Send"
+                title={isGenerating ? 'Stop' : 'Send'}
               >
-                <ArrowUp className="w-[14px] h-[14px]" strokeWidth={2} />
+                {isGenerating ? (
+                  <Square className="w-[11px] h-[11px]" fill="currentColor" strokeWidth={2} />
+                ) : (
+                  <ArrowUp className="w-[14px] h-[14px]" strokeWidth={2} />
+                )}
               </button>
             </div>
           </div>

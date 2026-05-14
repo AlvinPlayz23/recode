@@ -37,6 +37,11 @@ export interface DesktopMessage {
   threadId: string
   role: 'user' | 'assistant' | 'tool' | 'system'
   body: string
+  toolCallId?: string
+  toolKind?: string
+  toolStatus?: 'pending' | 'in_progress' | 'completed' | 'failed'
+  toolInput?: Record<string, unknown>
+  toolContent?: string
 }
 
 export interface DesktopPermissionOption {
@@ -51,6 +56,32 @@ export interface DesktopPermissionRequest {
   title: string
   kind: string
   options: DesktopPermissionOption[]
+}
+
+export interface DesktopQuestionOption {
+  label: string
+  description: string
+}
+
+export interface DesktopQuestionPrompt {
+  id: string
+  header: string
+  question: string
+  multiSelect: boolean
+  allowCustomText: boolean
+  options: DesktopQuestionOption[]
+}
+
+export interface DesktopQuestionRequest {
+  id: string
+  threadId: string
+  questions: DesktopQuestionPrompt[]
+}
+
+export interface DesktopQuestionAnswer {
+  questionId: string
+  selectedOptionLabels: string[]
+  customText: string
 }
 
 export interface DesktopSnapshot {
@@ -81,6 +112,7 @@ export interface DesktopSessionUpdate {
   thread: DesktopThread
   message?: DesktopMessage
   appendToMessageId?: string
+  replaceMessageId?: string
   configOptions?: DesktopConfigOption[]
 }
 
@@ -153,6 +185,12 @@ export type RecodeDesktopRPC = {
         }
         response: { messageId: string }
       }
+      cancelSession: {
+        params: {
+          threadId: string
+        }
+        response: { thread: DesktopThread }
+      }
       setConfigOption: {
         params: {
           threadId: string
@@ -166,6 +204,19 @@ export type RecodeDesktopRPC = {
           requestId: string
           optionId: string
         }
+        response: Record<string, never>
+      }
+      answerQuestion: {
+        params:
+          | {
+              requestId: string
+              dismissed: true
+            }
+          | {
+              requestId: string
+              dismissed: false
+              answers: DesktopQuestionAnswer[]
+            }
         response: Record<string, never>
       }
       closeSession: {
@@ -182,6 +233,7 @@ export type RecodeDesktopRPC = {
     messages: {
       sessionUpdate: DesktopSessionUpdate
       permissionRequest: DesktopPermissionRequest
+      questionRequest: DesktopQuestionRequest
       sessionError: DesktopErrorUpdate
     }
   }>

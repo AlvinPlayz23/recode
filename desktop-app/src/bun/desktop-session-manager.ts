@@ -10,6 +10,7 @@ import type {
   DesktopMessage,
   DesktopPermissionRequest,
   DesktopProject,
+  DesktopQuestionRequest,
   DesktopSessionActivated,
   DesktopSessionCreated,
   DesktopSessionUpdate,
@@ -36,12 +37,15 @@ interface ActiveDesktopSession {
   client: AcpJsonRpcClient;
   configOptions: DesktopConfigOption[];
   assistantMessageId?: string;
+  assistantProtocolMessageId?: string;
   pendingPermissions: Map<string, (result: unknown) => void>;
+  pendingQuestions: Map<string, (result: unknown) => void>;
 }
 
 export interface DesktopSessionManagerOptions {
   sendSessionUpdate: (update: DesktopSessionUpdate) => void;
   sendPermissionRequest: (request: DesktopPermissionRequest) => void;
+  sendQuestionRequest: (request: DesktopQuestionRequest) => void;
   sendError: (threadId: string | undefined, message: string) => void;
   statePath?: string;
 }
@@ -129,6 +133,7 @@ export class DesktopSessionManager {
       client,
       configOptions,
       pendingPermissions: new Map(),
+      pendingQuestions: new Map(),
     };
     this.#active.set(thread.id, session);
 
@@ -164,6 +169,27 @@ export class DesktopSessionManager {
     return { messageId: expectString(record.messageId, "messageId") };
   }
 
+  async cancelSession(threadId: string): Promise<{ thread: DesktopThread }> {
+    const session = await this.#ensureActive(threadId);
+    for (const respond of session.pendingPermissions.values()) {
+      respond({ outcome: { outcome: "cancelled" } });
+    }
+    session.pendingPermissions.clear();
+    for (const respond of session.pendingQuestions.values()) {
+      respond({ dismissed: true });
+    }
+    session.pendingQuestions.clear();
+    session.client.notify("session/cancel", { sessionId: session.acpSessionId });
+    session.assistantMessageId = undefined;
+    session.assistantProtocolMessageId = undefined;
+
+    const thread = this.#getThread(threadId);
+    thread.status = "idle";
+    this.#save();
+    this.#options.sendSessionUpdate({ thread: { ...thread } });
+    return { thread: { ...thread } };
+  }
+
   async setConfigOption(params: {
     threadId: string;
     configId: "mode" | "model";
@@ -194,6 +220,20 @@ export class DesktopSessionManager {
             optionId: params.optionId,
           },
         });
+        return;
+      }
+    }
+  }
+
+  answerQuestion(params:
+    | { requestId: string; dismissed: true }
+    | { requestId: string; dismissed: false; answers: { questionId: string; selectedOptionLabels: string[]; customText: string }[] }
+  ): void {
+    for (const session of this.#active.values()) {
+      const respond = session.pendingQuestions.get(params.requestId);
+      if (respond !== undefined) {
+        session.pendingQuestions.delete(params.requestId);
+        respond(params.dismissed ? { dismissed: true } : { dismissed: false, answers: params.answers });
         return;
       }
     }
@@ -251,6 +291,7 @@ export class DesktopSessionManager {
       client,
       configOptions: readConfigOptions(setupRecord.configOptions),
       pendingPermissions: new Map(),
+      pendingQuestions: new Map(),
     };
     this.#active.set(threadId, session);
     this.#applyConfigOptions(threadId, session.configOptions);
@@ -295,7 +336,24 @@ export class DesktopSessionManager {
     }
 
     if (request.method === "_recode/question") {
-      respond({ dismissed: true });
+      const params = expectRecord(request.params, "question params");
+      const sessionId = expectString(params.sessionId, "sessionId");
+      const session = this.#active.get(sessionId);
+      if (session === undefined || request.id === undefined) {
+        respond({ dismissed: true });
+        return;
+      }
+      const questions = readQuestionPrompts(params.questions);
+      if (questions.length === 0) {
+        respond({ dismissed: true });
+        return;
+      }
+      session.pendingQuestions.set(String(request.id), respond);
+      this.#options.sendQuestionRequest({
+        id: String(request.id),
+        threadId: session.threadId,
+        questions,
+      });
       return;
     }
 
@@ -319,8 +377,15 @@ export class DesktopSessionManager {
       this.#pushMessage(message);
     } else if (kind === "agent_message_chunk") {
       const text = readContentText(update.content);
-      if (session.assistantMessageId === undefined) {
-        session.assistantMessageId = readString(update.messageId) ?? crypto.randomUUID();
+      const updateMessageId = readString(update.messageId);
+      if (
+        session.assistantMessageId === undefined
+        || (updateMessageId !== undefined && updateMessageId !== session.assistantProtocolMessageId)
+      ) {
+        session.assistantProtocolMessageId = updateMessageId;
+        session.assistantMessageId = updateMessageId === undefined
+          ? crypto.randomUUID()
+          : `${updateMessageId}:${crypto.randomUUID()}`;
         message = {
           id: session.assistantMessageId,
           threadId: thread.id,
@@ -339,18 +404,36 @@ export class DesktopSessionManager {
         this.#appendMessage(thread.id, session.assistantMessageId, text);
       }
     } else if (kind === "tool_call") {
+      // A later assistant chunk belongs after this tool row, matching the TUI
+      // transcript order for assistant -> tool -> assistant progress.
+      session.assistantMessageId = undefined;
+      session.assistantProtocolMessageId = undefined;
       message = {
         id: readString(update.toolCallId) ?? crypto.randomUUID(),
         threadId: thread.id,
         role: "tool",
         body: readString(update.title) ?? "Tool call",
+        toolCallId: readString(update.toolCallId),
+        toolKind: readString(update.kind),
+        toolStatus: readToolStatus(update.status),
+        toolInput: readRecord(update.rawInput),
       };
       this.#pushMessage(message);
+    } else if (kind === "tool_call_update") {
+      const toolCallId = readString(update.toolCallId);
+      if (toolCallId !== undefined) {
+        message = this.#updateToolMessage(thread.id, toolCallId, {
+          ...(readString(update.title) === undefined ? {} : { body: readString(update.title)! }),
+          ...(readToolStatus(update.status) === undefined ? {} : { toolStatus: readToolStatus(update.status)! }),
+          ...(readToolContent(update.content) === undefined ? {} : { toolContent: readToolContent(update.content)! }),
+        });
+      }
     } else if (kind === "state_change") {
       const state = readString(update.state);
       thread.status = state === "running" || state === "requires_action" ? state : "idle";
       if (thread.status === "idle") {
         session.assistantMessageId = undefined;
+        session.assistantProtocolMessageId = undefined;
       }
     } else if (kind === "config_option_update") {
       configOptions = readConfigOptions(update.configOptions);
@@ -364,6 +447,7 @@ export class DesktopSessionManager {
     this.#options.sendSessionUpdate({
       thread: { ...this.#getThread(thread.id) },
       ...(message === undefined ? {} : { message }),
+      ...(kind === "tool_call_update" && message !== undefined ? { replaceMessageId: message.id } : {}),
       ...(appendToMessageId === undefined ? {} : { appendToMessageId }),
       ...(configOptions === undefined ? {} : { configOptions }),
     });
@@ -408,6 +492,17 @@ export class DesktopSessionManager {
     this.#state.messages[threadId] = messages.map((message) =>
       message.id === messageId ? { ...message, body: `${message.body}${text}` } : message
     );
+  }
+
+  #updateToolMessage(threadId: string, toolCallId: string, patch: Partial<DesktopMessage>): DesktopMessage | undefined {
+    const messages = this.#state.messages[threadId] ?? [];
+    let updated: DesktopMessage | undefined;
+    this.#state.messages[threadId] = messages.map((message) => {
+      if (message.id !== toolCallId && message.toolCallId !== toolCallId) return message;
+      updated = { ...message, ...patch };
+      return updated;
+    });
+    return updated;
   }
 
   #save(): void {
@@ -495,6 +590,64 @@ function isDesktopMessage(value: unknown): value is DesktopMessage {
     && typeof value.threadId === "string"
     && typeof value.body === "string"
     && (value.role === "user" || value.role === "assistant" || value.role === "tool" || value.role === "system");
+}
+
+function readRecord(value: unknown): Record<string, unknown> | undefined {
+  return isRecord(value) ? value : undefined;
+}
+
+function readToolStatus(value: unknown): DesktopMessage["toolStatus"] | undefined {
+  return value === "pending" || value === "in_progress" || value === "completed" || value === "failed"
+    ? value
+    : undefined;
+}
+
+function readToolContent(value: unknown): string | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const parts: string[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) continue;
+    if (item.type === "diff") {
+      const path = readString(item.path) ?? "diff";
+      const oldText = readString(item.oldText) ?? "";
+      const newText = readString(item.newText) ?? "";
+      parts.push(`--- ${path}\n+++ ${path}\n${formatSimpleDiff(oldText, newText)}`);
+      continue;
+    }
+    if (item.type === "content" && isRecord(item.content)) {
+      const text = readString(item.content.text);
+      if (text !== undefined) parts.push(text);
+    }
+  }
+  return parts.length === 0 ? undefined : parts.join("\n\n");
+}
+
+function formatSimpleDiff(oldText: string, newText: string): string {
+  if (oldText === "") return newText.split("\n").map((line) => `+ ${line}`).join("\n");
+  return [
+    ...oldText.split("\n").map((line) => `- ${line}`),
+    ...newText.split("\n").map((line) => `+ ${line}`),
+  ].join("\n");
+}
+
+function readQuestionPrompts(value: unknown): DesktopQuestionRequest["questions"] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isRecord).map((question) => {
+    const options = Array.isArray(question.options)
+      ? question.options.filter(isRecord).map((option) => ({
+        label: readString(option.label) ?? "",
+        description: readString(option.description) ?? "",
+      })).filter((option) => option.label.length > 0)
+      : [];
+    return {
+      id: readString(question.id) ?? crypto.randomUUID(),
+      header: readString(question.header) ?? "Question",
+      question: readString(question.question) ?? "",
+      multiSelect: question.multiSelect === true,
+      allowCustomText: question.allowCustomText === true,
+      options,
+    };
+  }).filter((question) => question.question.length > 0 && question.options.length > 0);
 }
 
 function readConfigOptions(value: unknown): DesktopConfigOption[] {
