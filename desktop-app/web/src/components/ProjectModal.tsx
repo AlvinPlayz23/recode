@@ -3,7 +3,14 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronLeft, ChevronRight, Folder, Loader2 } from 'lucide-react'
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Folder,
+  Loader2,
+  Search,
+} from 'lucide-react'
 import gsap from 'gsap'
 import { pickerProjects, type PickerEntry } from '../mock-data'
 import type { DesktopDirectoryListing } from '../desktop-rpc'
@@ -35,8 +42,20 @@ export function ProjectModal({
   const [listing, setListing] = useState<DesktopDirectoryListing | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
 
   const desktopPicker = Boolean(onOpenDirectory)
+  const normalizedQuery = query.trim().toLowerCase()
+  const filteredEntries = listing?.entries.filter((entry) =>
+    normalizedQuery.length === 0
+      || entry.name.toLowerCase().includes(normalizedQuery)
+      || entry.path.toLowerCase().includes(normalizedQuery),
+  ) ?? []
+  const filteredMockProjects = pickerProjects.filter((entry) =>
+    normalizedQuery.length === 0
+      || entry.name.toLowerCase().includes(normalizedQuery)
+      || entry.path.toLowerCase().includes(normalizedQuery),
+  )
 
   useEffect(() => {
     if (open && cardRef.current) {
@@ -52,6 +71,10 @@ export function ProjectModal({
     if (!open || !onOpenDirectory) return
     void openDirectory(undefined)
   }, [open, onOpenDirectory])
+
+  useEffect(() => {
+    if (open) setQuery('')
+  }, [open])
 
   async function openDirectory(path: string | undefined) {
     if (!onOpenDirectory) return
@@ -87,26 +110,52 @@ export function ProjectModal({
           </p>
         </div>
         {desktopPicker && listing && (
-          <div className="px-3 py-2 border-b border-rc-border-soft flex items-center gap-2">
-            <button
-              onClick={() => void openDirectory(listing.parentPath)}
-              disabled={!listing.parentPath || loading}
-              title="Parent folder"
-              className="w-7 h-7 rounded-md flex items-center justify-center text-rc-muted hover:text-rc-text hover:bg-rc-hover disabled:opacity-35 disabled:hover:bg-transparent"
-            >
-              <ChevronLeft className="w-4 h-4" strokeWidth={1.7} />
-            </button>
-            <div className="min-w-0 flex-1 text-[11px] mono text-rc-muted truncate">
-              {listing.path}
+          <div className="border-b border-rc-border-soft">
+            <div className="px-3 py-2 flex items-center gap-2">
+              <button
+                onClick={() => void openDirectory(listing.parentPath)}
+                disabled={!listing.parentPath || loading}
+                title="Parent folder"
+                className="w-7 h-7 rounded-md flex items-center justify-center text-rc-muted hover:text-rc-text hover:bg-rc-hover disabled:opacity-35 disabled:hover:bg-transparent"
+              >
+                <ChevronLeft className="w-4 h-4" strokeWidth={1.7} />
+              </button>
+              <div className="min-w-0 flex-1 text-[11px] mono text-rc-muted truncate">
+                {listing.path}
+              </div>
+              <button
+                onClick={() => onSelectDirectory?.(listing.path)}
+                disabled={loading}
+                className="h-7 px-2.5 rounded-md bg-rc-text text-rc-bg text-[12px] flex items-center gap-1.5 hover:opacity-85 disabled:opacity-50"
+              >
+                <Check className="w-3.5 h-3.5" strokeWidth={2} />
+                {useLabel}
+              </button>
             </div>
-            <button
-              onClick={() => onSelectDirectory?.(listing.path)}
-              disabled={loading}
-              className="h-7 px-2.5 rounded-md bg-rc-text text-rc-bg text-[12px] flex items-center gap-1.5 hover:opacity-85 disabled:opacity-50"
-            >
-              <Check className="w-3.5 h-3.5" strokeWidth={2} />
-              {useLabel}
-            </button>
+            <div className="px-3 pb-2">
+              <div className="h-8 rounded-lg border border-rc-border bg-rc-bg flex items-center gap-2 px-2.5">
+                <Search className="w-3.5 h-3.5 text-rc-faint" strokeWidth={1.7} />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search folders"
+                  className="min-w-0 flex-1 bg-transparent border-0 outline-none text-[12.5px] text-rc-text placeholder-rc-faint"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+        {!desktopPicker && showMockProjects && (
+          <div className="px-3 py-2 border-b border-rc-border-soft">
+            <div className="h-8 rounded-lg border border-rc-border bg-rc-bg flex items-center gap-2 px-2.5">
+              <Search className="w-3.5 h-3.5 text-rc-faint" strokeWidth={1.7} />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search workspaces"
+                className="min-w-0 flex-1 bg-transparent border-0 outline-none text-[12.5px] text-rc-text placeholder-rc-faint"
+              />
+            </div>
           </div>
         )}
         <div className="p-1.5 max-h-[360px] overflow-y-auto">
@@ -126,8 +175,13 @@ export function ProjectModal({
               No folders here.
             </div>
           )}
+          {desktopPicker && !loading && listing && listing.entries.length > 0 && filteredEntries.length === 0 && (
+            <div className="px-3 py-3 text-[12px] text-rc-muted">
+              No folders match "{query}".
+            </div>
+          )}
           {desktopPicker &&
-            listing?.entries.map((entry) => (
+            filteredEntries.map((entry) => (
               <button
                 key={entry.path}
                 onClick={() => void openDirectory(entry.path)}
@@ -150,7 +204,12 @@ export function ProjectModal({
                 />
               </button>
             ))}
-          {showMockProjects && pickerProjects.map((entry) => (
+          {showMockProjects && filteredMockProjects.length === 0 && (
+            <div className="px-3 py-3 text-[12px] text-rc-muted">
+              No workspaces match "{query}".
+            </div>
+          )}
+          {showMockProjects && filteredMockProjects.map((entry) => (
             <button
               key={entry.id}
               onClick={() => onSelect(entry)}
