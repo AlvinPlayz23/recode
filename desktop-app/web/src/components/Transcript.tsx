@@ -3,6 +3,8 @@
  * assistant messages as plain prose (left-aligned, no bubble).
  */
 
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { Terminal } from 'lucide-react'
 import type { ChatMessage, Thread } from '../types'
 
@@ -64,9 +66,13 @@ export function Transcript({ thread, messages }: TranscriptProps) {
           return (
             <div
               key={msg.id}
-              className="text-[13.5px] text-rc-text leading-[1.65] whitespace-pre-wrap"
+              className="text-[13.5px] text-rc-text leading-[1.65]"
             >
-              {msg.body}
+              <div className="markdown-body">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {msg.body}
+                </ReactMarkdown>
+              </div>
             </div>
           )
         })}
