@@ -7,6 +7,7 @@ dist/
 .recode/
 refs/
 desktop-app/electrobun-docs/
+desktop-app/build/
 desktop-app/mock.html/
 desktop-app/vite-to-electrobun.txt
 acp-docs/

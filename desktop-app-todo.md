@@ -13,8 +13,12 @@ All desktop app work happens inside `desktop-app/`.
 ```
 desktop-app/
 ├── electrobun-docs/         # Electrobun framework docs (reference)
+├── electrobun.config.ts     # Electrobun app/build config
+├── package.json             # Desktop shell scripts + dependencies
+├── src/bun/                 # Bun host process
+├── scripts/                 # Local dev/build smoke helpers
 ├── vite-to-electrobun.txt   # Guide for converting a Vite app into an Electrobun app
-└── (mock UI + electrobun project will live here)
+└── web/                     # Vite + React renderer
 ```
 
 The CLI itself stays untouched in `src/`. The desktop app calls into it.
@@ -50,7 +54,7 @@ The CLI itself stays untouched in `src/`. The desktop app calls into it.
 
 ### CHECKBOX
 
-- [~] **PHASE 1: VITE-REACT-TS-TAILWIND MOCK** *(in progress — initial mock adapted from `desktop-app/mock.html`)*
+- [x] **PHASE 1: VITE-REACT-TS-TAILWIND MOCK** *(completed; approved frontend lives in `desktop-app/web/`)*
   - [x] Scaffold Vite + React + TS + Tailwind in `desktop-app/web/`
   - [x] Adapt `desktop-app/mock.html` into React components
     - `ProjectRail` (left icon rail)
@@ -59,25 +63,26 @@ The CLI itself stays untouched in `src/`. The desktop app calls into it.
     - `Composer` (textarea + model/reasoning dropdowns + supervised toggle)
     - `ProjectModal` (mock repo picker)
   - [x] `bun run build` works, `bunx tsc -p tsconfig.app.json --noEmit` clean
-  - [ ] Live look/feel review with the user — iterate until approved
-  - [ ] Decide if shadcn/ui gets layered in or if current hand-rolled styles are enough
+  - [x] Live look/feel review with the user — iterate until approved
+  - [x] Decide if shadcn/ui gets layered in or if current hand-rolled styles are enough
   - Run with: `bun run dev` from `desktop-app/web`
 
-- [ ] **PHASE 1.5: ELECTROBUN INITIALIZATION**
-  - Follow `desktop-app/vite-to-electrobun.txt` to convert the approved Vite mock into an Electrobun project
-  - Confirm dev loop (HMR/reload), build, and packaging work
-  - Confirm Bun-side main process can spawn child processes (needed for `recode acp-server`)
-  - Still no real ACP wiring yet — just the shell working end-to-end
+- [x] **PHASE 1.5: ELECTROBUN INITIALIZATION** *(completed; build/package/spawn verified, GUI dev loop command wired for local visual confirmation)*
+  - [x] Follow `desktop-app/vite-to-electrobun.txt` to convert the approved Vite mock into an Electrobun project
+  - [x] Add combined dev loop command: `bun run dev` from `desktop-app/` starts Vite then Electrobun against the Vite dev URL
+  - [x] Confirm build and packaging work with `bun run build`
+  - [x] Confirm Bun-side main process can spawn child processes with `bun run smoke:spawn`
+  - [x] Still no real ACP wiring yet — just the shell working end-to-end
 
-- [ ] **PHASE 2: ADDING ACP AND STARTING ON MAKING THE DESKTOP APP**
-  - Study ACP from `acp-docs/` (protocol/, libraries/, get-started/)
-  - Inspect `effect-acp-ref/` to figure out whether it's a usable client, server, or both, and decide whether to depend on it, vendor it, or write our own minimal client
-  - Spawn `recode acp-server` per session as a child process from the Electrobun main process
-  - Implement the ACP client: initialize, open session, send prompts, stream events, handle tool-call approvals, close session
-  - Wire each UI session to its own ACP child process + workspace folder so sessions truly run in parallel
-  - Surface approval prompts in the GUI
-  - Persist session metadata (workspace path, last activity, etc.)
-  - Verify: open 2+ sessions in different folders, run prompts in parallel, confirm independence
+- [~] **PHASE 2: ADDING ACP AND STARTING ON MAKING THE DESKTOP APP**
+  - [x] Study ACP from `acp-docs/` (protocol/, libraries/, get-started/)
+  - [x] Inspect `effect-acp-ref/` to figure out whether it's a usable client, server, or both, and decide whether to depend on it, vendor it, or write our own minimal client
+  - [x] Spawn `recode acp-server` per session as a child process from the Electrobun main process
+  - [x] Implement the ACP client: initialize, open session, send prompts, stream events, handle tool-call approvals, close session
+  - [x] Wire each UI session to its own ACP child process + workspace folder so sessions can run independently
+  - [x] Surface approval prompts in the GUI
+  - [x] Persist session metadata (workspace path, last activity, etc.)
+  - [ ] Verify live GUI: open 2+ sessions in different folders, run prompts in parallel, confirm independence
 
 ## Out of Scope (for now)
 

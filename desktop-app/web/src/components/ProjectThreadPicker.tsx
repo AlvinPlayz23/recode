@@ -42,7 +42,7 @@ export function ProjectThreadPicker({
           e.stopPropagation()
           setOpen((o) => !o)
         }}
-        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-rc-text font-medium hover:bg-black/[0.06] transition-colors"
+        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-rc-text font-medium hover:bg-rc-hover transition-colors"
       >
         <span>{active?.name ?? 'no workspace'}</span>
         <ChevronDown
@@ -55,7 +55,7 @@ export function ProjectThreadPicker({
       </button>
 
       {open && (
-        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 min-w-[260px] max-w-[360px] bg-white border border-rc-border rounded-lg shadow-lg p-1 z-40">
+        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 min-w-[260px] max-w-[360px] bg-rc-elevated border border-rc-border rounded-lg shadow-lg p-1 z-40">
           <div className="px-2.5 pt-1.5 pb-1 text-[10.5px] uppercase tracking-wider text-rc-faint">
             Switch workspace
           </div>
@@ -77,8 +77,8 @@ export function ProjectThreadPicker({
                     className={cn(
                       'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-left transition-colors',
                       isActive
-                        ? 'bg-black/[0.05] text-rc-text'
-                        : 'text-rc-text hover:bg-black/[0.04]',
+                        ? 'bg-rc-hover-strong text-rc-text'
+                        : 'text-rc-text hover:bg-rc-hover',
                     )}
                   >
                     <Folder

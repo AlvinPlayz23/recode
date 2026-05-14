@@ -33,7 +33,7 @@ export function ChatHeader({
           <button
             onClick={onShowSidebar}
             title="Show sidebar"
-            className="w-7 h-7 rounded-md flex items-center justify-center text-rc-muted hover:text-rc-text hover:bg-black/5 transition-colors mr-1"
+            className="w-7 h-7 rounded-md flex items-center justify-center text-rc-muted hover:text-rc-text hover:bg-rc-hover transition-colors mr-1"
           >
             <PanelLeftOpen className="w-[15px] h-[15px]" strokeWidth={1.5} />
           </button>
@@ -48,7 +48,7 @@ export function ChatHeader({
           </>
         )}
       </div>
-      <button className="w-7 h-7 rounded-md flex items-center justify-center text-rc-faint hover:text-rc-text hover:bg-black/5 transition-colors">
+      <button className="w-7 h-7 rounded-md flex items-center justify-center text-rc-faint hover:text-rc-text hover:bg-rc-hover transition-colors">
         <MoreHorizontal className="w-4 h-4" strokeWidth={1.5} />
       </button>
     </header>

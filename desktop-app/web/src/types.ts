@@ -16,6 +16,8 @@ export interface Thread {
   projectId: string
   title: string
   model: string
+  mode?: 'build' | 'plan'
+  status?: 'idle' | 'running' | 'requires_action' | 'error'
   /** short relative label, e.g. "2h", "18h", "1d" */
   age: string
   /** optional small status icon name (e.g. "git-branch") */
@@ -24,8 +26,10 @@ export interface Thread {
 
 export type ReasoningLevel = 'High' | 'Med' | 'Low'
 
+export type ThemeMode = 'light' | 'dark'
+
 export interface ChatMessage {
   id: string
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'tool' | 'system'
   body: string
 }

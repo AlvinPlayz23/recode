@@ -1,5 +1,5 @@
 /**
- * Composer (Codex-style): white floating card with a thin separator between
+ * Composer (Codex-style): floating card with a thin separator between
  * the textarea and the toolbar.
  */
 
@@ -14,27 +14,38 @@ import {
 } from 'lucide-react'
 import { cn } from '../lib/cn'
 import type { ReasoningLevel } from '../types'
+import type { DesktopConfigOptionValue, SessionMode } from '../desktop-rpc'
 
 interface ComposerProps {
   model: string
+  mode: SessionMode
   reasoning: ReasoningLevel
+  modelOptions?: DesktopConfigOptionValue[]
   onChangeModel: (model: string) => void
+  onChangeMode: (mode: SessionMode) => void
   onChangeReasoning: (level: ReasoningLevel) => void
   onSubmit: (text: string) => void
 }
 
 const MODELS = ['Claude 3.5 Sonnet', 'GPT-4o', 'Gemma 2 9b']
+const MODES: { value: SessionMode; name: string }[] = [
+  { value: 'build', name: 'Build' },
+  { value: 'plan', name: 'Plan' },
+]
 const REASONING: ReasoningLevel[] = ['High', 'Med', 'Low']
 
 export function Composer({
   model,
+  mode,
   reasoning,
+  modelOptions,
   onChangeModel,
+  onChangeMode,
   onChangeReasoning,
   onSubmit,
 }: ComposerProps) {
   const [text, setText] = useState('')
-  const [openMenu, setOpenMenu] = useState<'model' | 'reasoning' | null>(null)
+  const [openMenu, setOpenMenu] = useState<'mode' | 'model' | 'reasoning' | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -70,7 +81,7 @@ export function Composer({
   return (
     <div className="px-6 pb-5 pt-2">
       <div className="max-w-[760px] mx-auto">
-        <div className="composer-card bg-white border border-rc-border rounded-2xl">
+        <div className="composer-card bg-rc-elevated border border-rc-border rounded-2xl">
           <div className="px-4 pt-3 pb-2">
             <textarea
               ref={textareaRef}
@@ -89,6 +100,40 @@ export function Composer({
                 <Plus className="w-[15px] h-[15px]" strokeWidth={1.6} />
               </ToolbarIcon>
 
+              {/* Mode picker */}
+              <div className="relative" data-composer-menu>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setOpenMenu(openMenu === 'mode' ? null : 'mode')
+                  }}
+                  className="flex items-center gap-1 px-2 py-1 rounded-md text-[12px] text-rc-muted hover:bg-rc-hover hover:text-rc-text transition-colors"
+                >
+                  <span>{mode === 'plan' ? 'Plan' : 'Build'}</span>
+                  {openMenu === 'mode' ? (
+                    <ChevronUp className="w-3 h-3" strokeWidth={2} />
+                  ) : (
+                    <ChevronDown className="w-3 h-3" strokeWidth={2} />
+                  )}
+                </button>
+                {openMenu === 'mode' && (
+                  <Menu>
+                    {MODES.map((item) => (
+                      <MenuItem
+                        key={item.value}
+                        active={item.value === mode}
+                        onClick={() => {
+                          onChangeMode(item.value)
+                          setOpenMenu(null)
+                        }}
+                      >
+                        {item.name}
+                      </MenuItem>
+                    ))}
+                  </Menu>
+                )}
+              </div>
+
               {/* Model picker */}
               <div className="relative" data-composer-menu>
                 <button
@@ -96,7 +141,7 @@ export function Composer({
                     e.stopPropagation()
                     setOpenMenu(openMenu === 'model' ? null : 'model')
                   }}
-                  className="flex items-center gap-1 px-2 py-1 rounded-md text-[12px] text-rc-text hover:bg-black/5 transition-colors"
+                  className="flex items-center gap-1 px-2 py-1 rounded-md text-[12px] text-rc-text hover:bg-rc-hover transition-colors"
                 >
                   <span>{model}</span>
                   {openMenu === 'model' ? (
@@ -107,16 +152,19 @@ export function Composer({
                 </button>
                 {openMenu === 'model' && (
                   <Menu>
-                    {MODELS.map((m) => (
+                    {(modelOptions && modelOptions.length > 0
+                      ? modelOptions
+                      : MODELS.map((m) => ({ value: m, name: m }))
+                    ).map((m) => (
                       <MenuItem
-                        key={m}
-                        active={m === model}
+                        key={m.value}
+                        active={m.value === model}
                         onClick={() => {
-                          onChangeModel(m)
+                          onChangeModel(m.value)
                           setOpenMenu(null)
                         }}
                       >
-                        {m}
+                        {m.name}
                       </MenuItem>
                     ))}
                   </Menu>
@@ -130,7 +178,7 @@ export function Composer({
                     e.stopPropagation()
                     setOpenMenu(openMenu === 'reasoning' ? null : 'reasoning')
                   }}
-                  className="flex items-center gap-1 px-2 py-1 rounded-md text-[12px] text-rc-muted hover:bg-black/5 hover:text-rc-text transition-colors"
+                  className="flex items-center gap-1 px-2 py-1 rounded-md text-[12px] text-rc-muted hover:bg-rc-hover hover:text-rc-text transition-colors"
                 >
                   <span>{reasoning}</span>
                   {openMenu === 'reasoning' ? (
@@ -171,8 +219,8 @@ export function Composer({
                 className={cn(
                   'ml-1 w-7 h-7 rounded-full flex items-center justify-center transition-colors',
                   text.trim().length === 0
-                    ? 'bg-[#e5e5e5] text-rc-faint'
-                    : 'bg-rc-text text-white hover:bg-black',
+                    ? 'bg-rc-hover-strong text-rc-faint'
+                    : 'bg-rc-text text-rc-bg hover:opacity-85',
                 )}
                 title="Send"
               >
@@ -196,7 +244,7 @@ function ToolbarIcon({
   return (
     <button
       title={title}
-      className="w-7 h-7 rounded-md flex items-center justify-center text-rc-muted hover:text-rc-text hover:bg-black/5 transition-colors"
+      className="w-7 h-7 rounded-md flex items-center justify-center text-rc-muted hover:text-rc-text hover:bg-rc-hover transition-colors"
     >
       {children}
     </button>
@@ -205,7 +253,7 @@ function ToolbarIcon({
 
 function Menu({ children }: { children: React.ReactNode }) {
   return (
-    <div className="absolute bottom-full mb-1.5 left-0 min-w-[180px] bg-white border border-rc-border rounded-lg p-1 z-50 shadow-lg">
+    <div className="absolute bottom-full mb-1.5 left-0 min-w-[180px] bg-rc-elevated border border-rc-border rounded-lg p-1 z-50 shadow-lg">
       {children}
     </div>
   )
@@ -226,8 +274,8 @@ function MenuItem({
       className={cn(
         'w-full text-left px-2.5 py-1.5 text-[12.5px] rounded-md transition-colors',
         active
-          ? 'bg-rc-accent/10 text-rc-accent'
-          : 'text-rc-text hover:bg-black/[0.04]',
+          ? 'bg-rc-accent-soft text-rc-accent'
+          : 'text-rc-text hover:bg-rc-hover',
       )}
     >
       {children}
