@@ -1,0 +1,23 @@
+desktop-app/web/src/components/Composer.tsx
+  cfd92cb3ddcab343 6,13,51,53,71-78,94-100,177-199,303-325
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "2c125171ee5352223705f1432984ba5c2efe67bc",
+  "prompts": {
+    "cfd92cb3ddcab343": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "ba93476a-0234-46bd-8eda-6da5fa4bbecf",
+        "model": "SWE-1.6 Slow"
+      },
+      "human_author": "AlvinPlayz23",
+      "messages": [],
+      "total_additions": 66,
+      "total_deletions": 13,
+      "accepted_lines": 66,
+      "overriden_lines": 0
+    }
+  }
+}
