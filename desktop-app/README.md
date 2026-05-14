@@ -16,6 +16,12 @@ Current state:
 - Bun-side child process spawning is smoke-tested for future ACP server management
 - Real ACP client wiring is not implemented yet
 
+## Renderer Mock Data
+
+The React renderer still keeps Phase 1 mock projects, threads, and messages for plain browser/Vite preview mode only. This lets `desktop-app/web` render a useful UI when it is opened without Electrobun or ACP.
+
+The Electrobun desktop runtime disables that mock state. In desktop mode, the app starts from the persisted desktop snapshot and waits for real workspaces, sessions, and model options from the Recode ACP server. Browser preview threads use the neutral `Recode default` model label until real ACP model options are available.
+
 ## Commands
 
 Install dependencies with pnpm only:
