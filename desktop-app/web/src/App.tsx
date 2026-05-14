@@ -244,10 +244,6 @@ export function App() {
       if (activeThreadId === threadId) {
         setActiveThreadId(next[0]?.id ?? null)
       }
-      const projectIds = new Set(next.map((thread) => thread.projectId))
-      setProjects((current) =>
-        bridge ? current.filter((project) => projectIds.has(project.id)) : current,
-      )
       return next
     })
     setMessages((prev) => {

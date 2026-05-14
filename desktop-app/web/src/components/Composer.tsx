@@ -253,7 +253,7 @@ function ToolbarIcon({
 
 function Menu({ children }: { children: React.ReactNode }) {
   return (
-    <div className="absolute bottom-full mb-1.5 left-0 min-w-[180px] bg-rc-elevated border border-rc-border rounded-lg p-1 z-50 shadow-lg">
+    <div className="absolute bottom-full mb-1.5 left-0 min-w-[180px] max-w-[360px] max-h-[260px] overflow-y-auto overscroll-contain bg-rc-elevated border border-rc-border rounded-lg p-1 z-50 shadow-lg">
       {children}
     </div>
   )
@@ -272,7 +272,7 @@ function MenuItem({
     <button
       onClick={onClick}
       className={cn(
-        'w-full text-left px-2.5 py-1.5 text-[12.5px] rounded-md transition-colors',
+        'w-full text-left px-2.5 py-1.5 text-[12.5px] rounded-md transition-colors truncate',
         active
           ? 'bg-rc-accent-soft text-rc-accent'
           : 'text-rc-text hover:bg-rc-hover',

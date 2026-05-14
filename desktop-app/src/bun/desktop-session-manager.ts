@@ -200,8 +200,6 @@ export class DesktopSessionManager {
     }
     this.#state.threads = this.#state.threads.filter((thread) => thread.id !== threadId);
     delete this.#state.messages[threadId];
-    const activeProjectIds = new Set(this.#state.threads.map((thread) => thread.projectId));
-    this.#state.projects = this.#state.projects.filter((project) => activeProjectIds.has(project.id));
     this.#save();
   }
 
