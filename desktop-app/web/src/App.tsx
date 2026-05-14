@@ -16,7 +16,11 @@ import { ProjectModal } from './components/ProjectModal'
 import { ProjectThreadPicker } from './components/ProjectThreadPicker'
 import { SettingsModal } from './components/SettingsModal'
 import { initialProjects, initialThreads, type PickerEntry } from './mock-data'
-import { createDesktopBridge, type DesktopBridge } from './lib/desktop-bridge'
+import {
+  createDesktopBridge,
+  isDesktopRuntime,
+  type DesktopBridge,
+} from './lib/desktop-bridge'
 import type {
   ChatMessage,
   Project,
@@ -41,16 +45,8 @@ function readStoredTheme(): ThemeMode {
     : 'light'
 }
 
-export function App() {
-  const [projects, setProjects] = useState<Project[]>(initialProjects)
-  const [threads, setThreads] = useState<Thread[]>(initialThreads)
-  const [activeThreadId, setActiveThreadId] = useState<string | null>(
-    initialThreads[0]?.id ?? null,
-  )
-  const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(
-    new Set(),
-  )
-  const [messages, setMessages] = useState<Record<string, ChatMessage[]>>({
+function createMockMessages(): Record<string, ChatMessage[]> {
+  return {
     'thread-1': [
       {
         id: 'm-1',
@@ -63,9 +59,28 @@ export function App() {
         body: 'I’ll inspect shot-scraper’s entry points, capture the supported commands and flags, then write a concise SKILL.md with grouped examples.',
       },
     ],
-  })
+  }
+}
 
-  const [model, setModel] = useState('Claude 3.5 Sonnet')
+export function App() {
+  const [desktopRuntime] = useState(isDesktopRuntime)
+  const [projects, setProjects] = useState<Project[]>(() =>
+    desktopRuntime ? [] : initialProjects,
+  )
+  const [threads, setThreads] = useState<Thread[]>(() =>
+    desktopRuntime ? [] : initialThreads,
+  )
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(
+    desktopRuntime ? null : (initialThreads[0]?.id ?? null),
+  )
+  const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(
+    new Set(),
+  )
+  const [messages, setMessages] = useState<Record<string, ChatMessage[]>>(() =>
+    desktopRuntime ? {} : createMockMessages(),
+  )
+
+  const [model, setModel] = useState('Recode default')
   const [mode, setMode] = useState<SessionMode>('build')
   const [reasoning, setReasoning] = useState<ReasoningLevel>('Med')
   const [theme, setTheme] = useState<ThemeMode>(readStoredTheme)
@@ -135,7 +150,11 @@ export function App() {
   )
 
   useEffect(() => {
-    if (!activeThread) return
+    if (!activeThread) {
+      setModel('Recode default')
+      setMode('build')
+      return
+    }
     setModel(activeThread.model)
     setMode(activeThread.mode ?? 'build')
   }, [activeThread])
@@ -568,7 +587,7 @@ export function App() {
             : undefined
         }
         onSelectDirectory={handleSelectDirectory}
-        showMockProjects={!bridge}
+        showMockProjects={!desktopRuntime && !bridge}
         title={folderPickerMode === 'recode-repo' ? 'Choose Recode repo' : 'Open workspace'}
         description={
           folderPickerMode === 'recode-repo'

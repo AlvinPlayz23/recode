@@ -113,7 +113,7 @@ export function SettingsModal({
             )}
             {section === 'Models' && (
               <>
-                <Row label="Default model" value="Claude 3.5 Sonnet" />
+                <Row label="Default model" value="Recode configured default" />
                 <Row label="Default reasoning" value="Medium" />
                 <Row label="Stream tool output" toggle defaultOn />
               </>

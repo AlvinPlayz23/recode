@@ -52,10 +52,14 @@ export interface DesktopBridgeHandlers {
   onSessionError: (error: DesktopErrorUpdate) => void
 }
 
+export function isDesktopRuntime(): boolean {
+  return typeof window !== 'undefined' && '__electrobun' in window
+}
+
 export function createDesktopBridge(
   handlers: DesktopBridgeHandlers,
 ): DesktopBridge | null {
-  if (!('__electrobun' in window)) {
+  if (!isDesktopRuntime()) {
     return null
   }
 

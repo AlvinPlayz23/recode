@@ -27,7 +27,6 @@ interface ComposerProps {
   onSubmit: (text: string) => void
 }
 
-const MODELS = ['Claude 3.5 Sonnet', 'GPT-4o', 'Gemma 2 9b']
 const MODES: { value: SessionMode; name: string }[] = [
   { value: 'build', name: 'Build' },
   { value: 'plan', name: 'Plan' },
@@ -77,6 +76,10 @@ export function Composer({
       handleSubmit()
     }
   }
+
+  const resolvedModelOptions = modelOptions ?? []
+  const selectedModelName =
+    resolvedModelOptions.find((option) => option.value === model)?.name ?? model
 
   return (
     <div className="px-6 pb-5 pt-2">
@@ -143,7 +146,7 @@ export function Composer({
                   }}
                   className="flex items-center gap-1 px-2 py-1 rounded-md text-[12px] text-rc-text hover:bg-rc-hover transition-colors"
                 >
-                  <span>{model}</span>
+                  <span>{selectedModelName}</span>
                   {openMenu === 'model' ? (
                     <ChevronUp className="w-3 h-3 text-rc-muted" strokeWidth={2} />
                   ) : (
@@ -152,21 +155,22 @@ export function Composer({
                 </button>
                 {openMenu === 'model' && (
                   <Menu>
-                    {(modelOptions && modelOptions.length > 0
-                      ? modelOptions
-                      : MODELS.map((m) => ({ value: m, name: m }))
-                    ).map((m) => (
-                      <MenuItem
-                        key={m.value}
-                        active={m.value === model}
-                        onClick={() => {
-                          onChangeModel(m.value)
-                          setOpenMenu(null)
-                        }}
-                      >
-                        {m.name}
-                      </MenuItem>
-                    ))}
+                    {resolvedModelOptions.length > 0 ? (
+                      resolvedModelOptions.map((m) => (
+                        <MenuItem
+                          key={m.value}
+                          active={m.value === model}
+                          onClick={() => {
+                            onChangeModel(m.value)
+                            setOpenMenu(null)
+                          }}
+                        >
+                          {m.name}
+                        </MenuItem>
+                      ))
+                    ) : (
+                      <MenuEmpty>Select a workspace to load models</MenuEmpty>
+                    )}
                   </Menu>
                 )}
               </div>
@@ -254,6 +258,14 @@ function ToolbarIcon({
 function Menu({ children }: { children: React.ReactNode }) {
   return (
     <div className="absolute bottom-full mb-1.5 left-0 min-w-[180px] max-w-[360px] max-h-[260px] overflow-y-auto overscroll-contain bg-rc-elevated border border-rc-border rounded-lg p-1 z-50 shadow-lg">
+      {children}
+    </div>
+  )
+}
+
+function MenuEmpty({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="px-2.5 py-1.5 text-[12.5px] text-rc-muted whitespace-nowrap">
       {children}
     </div>
   )
