@@ -430,6 +430,8 @@ async function summarizeCompactionWindow(
       case "text-delta":
         summaryText += part.text;
         break;
+      case "reasoning-delta":
+        break;
       case "tool-call":
         throw new ConversationCompactionError("Compaction unexpectedly attempted to call a tool.");
       case "error":

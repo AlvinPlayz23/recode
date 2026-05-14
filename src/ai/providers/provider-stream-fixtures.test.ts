@@ -79,6 +79,22 @@ describe("provider stream fixtures", () => {
       sse({
         choices: [
           {
+            delta: { reasoning_content: "Thinking. " },
+            finish_reason: null
+          }
+        ]
+      }),
+      sse({
+        choices: [
+          {
+            delta: { reasoning_content: "Still thinking." },
+            finish_reason: null
+          }
+        ]
+      }),
+      sse({
+        choices: [
+          {
             delta: { content: "Hello" },
             finish_reason: null
           }
@@ -131,6 +147,8 @@ describe("provider stream fixtures", () => {
     ));
 
     expect(parts).toEqual([
+      { type: "reasoning-delta", text: "Thinking. " },
+      { type: "reasoning-delta", text: "Still thinking." },
       { type: "text-delta", text: "Hello" },
       {
         type: "tool-call",

@@ -3,13 +3,14 @@
  * the textarea and the toolbar.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { forwardRef, useEffect, useRef, useState } from 'react'
 import {
   ArrowUp,
   ChevronDown,
   ChevronUp,
   Mic,
   Plus,
+  Search,
   SmilePlus,
 } from 'lucide-react'
 import { cn } from '../lib/cn'
@@ -47,7 +48,9 @@ export function Composer({
 }: ComposerProps) {
   const [text, setText] = useState('')
   const [openMenu, setOpenMenu] = useState<'mode' | 'model' | 'reasoning' | null>(null)
+  const [modelQuery, setModelQuery] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const modelSearchRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const el = textareaRef.current
@@ -65,6 +68,14 @@ export function Composer({
     return () => window.removeEventListener('click', handleClick)
   }, [])
 
+  useEffect(() => {
+    if (openMenu !== 'model') {
+      setModelQuery('')
+      return
+    }
+    window.setTimeout(() => modelSearchRef.current?.focus(), 0)
+  }, [openMenu])
+
   function handleSubmit() {
     const trimmed = text.trim()
     if (!trimmed) return
@@ -80,6 +91,13 @@ export function Composer({
   }
 
   const resolvedModelOptions = modelOptions ?? []
+  const normalizedModelQuery = modelQuery.trim().toLowerCase()
+  const filteredModelOptions = resolvedModelOptions.filter((option) =>
+    normalizedModelQuery.length === 0
+      || option.value.toLowerCase().includes(normalizedModelQuery)
+      || option.name.toLowerCase().includes(normalizedModelQuery)
+      || option.description?.toLowerCase().includes(normalizedModelQuery),
+  )
 
   return (
     <div className="px-6 pb-5 pt-2">
@@ -156,18 +174,29 @@ export function Composer({
                 {openMenu === 'model' && (
                   <Menu>
                     {resolvedModelOptions.length > 0 ? (
-                      resolvedModelOptions.map((m) => (
-                        <MenuItem
-                          key={m.value}
-                          active={m.value === model}
-                          onClick={() => {
-                            onChangeModel(m.value)
-                            setOpenMenu(null)
-                          }}
-                        >
-                          {m.value}
-                        </MenuItem>
-                      ))
+                      <>
+                        <MenuSearch
+                          ref={modelSearchRef}
+                          value={modelQuery}
+                          onChange={setModelQuery}
+                        />
+                        {filteredModelOptions.length > 0 ? (
+                          filteredModelOptions.map((m) => (
+                            <MenuItem
+                              key={m.value}
+                              active={m.value === model}
+                              onClick={() => {
+                                onChangeModel(m.value)
+                                setOpenMenu(null)
+                              }}
+                            >
+                              {m.value}
+                            </MenuItem>
+                          ))
+                        ) : (
+                          <MenuEmpty>No models match "{modelQuery}"</MenuEmpty>
+                        )}
+                      </>
                     ) : (
                       <MenuEmpty>{modelMenuEmptyLabel}</MenuEmpty>
                     )}
@@ -270,6 +299,30 @@ function MenuEmpty({ children }: { children: React.ReactNode }) {
     </div>
   )
 }
+
+const MenuSearch = forwardRef<
+  HTMLInputElement,
+  {
+    value: string
+    onChange: (value: string) => void
+  }
+>(function MenuSearch({ value, onChange }, ref) {
+  return (
+    <div className="sticky top-0 z-10 bg-rc-elevated p-1">
+      <div className="h-8 rounded-md border border-rc-border bg-rc-bg flex items-center gap-2 px-2">
+        <Search className="w-3.5 h-3.5 text-rc-faint" strokeWidth={1.7} />
+        <input
+          ref={ref}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          onClick={(event) => event.stopPropagation()}
+          placeholder="Search models"
+          className="min-w-0 flex-1 bg-transparent border-0 outline-none text-[12.5px] text-rc-text placeholder-rc-faint"
+        />
+      </div>
+    </div>
+  )
+})
 
 function MenuItem({
   children,

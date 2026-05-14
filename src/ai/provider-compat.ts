@@ -14,6 +14,7 @@ export interface OpenAiChatCompat {
   readonly maxTokensField: "max_completion_tokens" | "max_tokens";
   readonly requiresToolResultName: boolean;
   readonly requiresAssistantAfterToolResult: boolean;
+  readonly replaysAssistantReasoningContent: boolean;
 }
 
 /**
@@ -44,7 +45,9 @@ export function getOpenAiChatCompat(model: AiModel): OpenAiChatCompat {
     supportsUsageInStreaming: readOptionalBoolean(compat, "supportsUsageInStreaming") ?? detected.supportsUsageInStreaming,
     maxTokensField: readOptionalMaxTokensField(compat, "maxTokensField") ?? detected.maxTokensField,
     requiresToolResultName: readOptionalBoolean(compat, "requiresToolResultName") ?? detected.requiresToolResultName,
-    requiresAssistantAfterToolResult: readOptionalBoolean(compat, "requiresAssistantAfterToolResult") ?? detected.requiresAssistantAfterToolResult
+    requiresAssistantAfterToolResult: readOptionalBoolean(compat, "requiresAssistantAfterToolResult") ?? detected.requiresAssistantAfterToolResult,
+    replaysAssistantReasoningContent: readOptionalBoolean(compat, "replaysAssistantReasoningContent")
+      ?? detected.replaysAssistantReasoningContent
   };
 }
 
@@ -72,11 +75,17 @@ export function getAnthropicCompat(model: AiModel): AnthropicCompat {
 
 function detectOpenAiChatCompat(model: AiModel): OpenAiChatCompat {
   const provider = model.providerId.toLowerCase();
+  const providerName = model.providerName.toLowerCase();
+  const modelId = model.modelId.toLowerCase();
   const baseUrl = (model.baseUrl ?? "").toLowerCase();
+  const isDeepSeekReasoningModel = provider.includes("deepseek")
+    || providerName.includes("deepseek")
+    || modelId.includes("deepseek")
+    || baseUrl.includes("deepseek.com");
   const isNativeOpenAi = model.provider === "openai-chat" && baseUrl.includes("api.openai.com");
   const isNonStandard = provider === "gemini"
     || provider === "groq"
-    || provider === "deepseek"
+    || isDeepSeekReasoningModel
     || provider === "z-ai"
     || provider === "z-ai-coding"
     || provider === "huggingface"
@@ -94,7 +103,8 @@ function detectOpenAiChatCompat(model: AiModel): OpenAiChatCompat {
       ? "max_tokens"
       : "max_completion_tokens",
     requiresToolResultName: false,
-    requiresAssistantAfterToolResult: false
+    requiresAssistantAfterToolResult: false,
+    replaysAssistantReasoningContent: isDeepSeekReasoningModel
   };
 }
 

@@ -128,6 +128,121 @@ describe("continuation summary serialization", () => {
     ]);
   });
 
+  it("replays DeepSeek assistant reasoning content", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    globalThis.fetch = (async (_input, init) => {
+      requestBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        status: 200,
+        headers: { "content-type": "text/event-stream" }
+      });
+    }) as typeof fetch;
+
+    await consumeStream(streamOpenAiChat(
+      {
+        provider: "deepseek",
+        providerId: "deepseek",
+        providerName: "DeepSeek",
+        modelId: "deepseek-v4-flash-free",
+        apiKey: "test",
+        baseUrl: "https://api.deepseek.com/v1",
+        api: "openai-chat-completions"
+      },
+      "",
+      [
+        {
+          role: "assistant",
+          content: "",
+          providerMetadata: {
+            reasoningContent: "I need to call the date tool."
+          },
+          toolCalls: [
+            {
+              id: "call_1",
+              name: "Bash",
+              argumentsJson: "{\"command\":\"date\"}"
+            }
+          ]
+        },
+        {
+          role: "tool",
+          toolCallId: "call_1",
+          toolName: "Bash",
+          content: "2026-05-14",
+          isError: false
+        }
+      ],
+      []
+    ));
+
+    expect(requestBody?.messages).toEqual([
+      {
+        role: "assistant",
+        content: "",
+        reasoning_content: "I need to call the date tool.",
+        tool_calls: [
+          {
+            id: "call_1",
+            type: "function",
+            function: {
+              name: "Bash",
+              arguments: "{\"command\":\"date\"}"
+            }
+          }
+        ]
+      },
+      {
+        role: "tool",
+        tool_call_id: "call_1",
+        content: "2026-05-14"
+      }
+    ]);
+  });
+
+  it("replays DeepSeek reasoning content when routed through a generic provider", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    globalThis.fetch = (async (_input, init) => {
+      requestBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        status: 200,
+        headers: { "content-type": "text/event-stream" }
+      });
+    }) as typeof fetch;
+
+    await consumeStream(streamOpenAiChat(
+      {
+        provider: "openai-chat",
+        providerId: "zen",
+        providerName: "Zen",
+        modelId: "deepseek-v4-flash-free",
+        apiKey: "test",
+        baseUrl: "https://zen.example/v1",
+        api: "openai-chat-completions"
+      },
+      "",
+      [
+        {
+          role: "assistant",
+          content: "",
+          providerMetadata: {
+            reasoningContent: "I need the current date before continuing."
+          },
+          toolCalls: [
+            {
+              id: "call_1",
+              name: "Bash",
+              argumentsJson: "{\"command\":\"date\"}"
+            }
+          ]
+        }
+      ],
+      []
+    ));
+
+    const messages = requestBody?.messages as Array<Record<string, unknown>> | undefined;
+    expect(messages?.[0]?.["reasoning_content"]).toBe("I need the current date before continuing.");
+  });
+
   it("serializes summary messages for OpenAI Responses", async () => {
     let requestBody: Record<string, unknown> | undefined;
     globalThis.fetch = (async (_input, init) => {

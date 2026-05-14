@@ -138,6 +138,31 @@ describe("recode history schema", () => {
     });
   });
 
+  it("preserves assistant provider metadata", () => {
+    const record = parseConversationRecord({
+      ...baseConversationMeta(),
+      transcript: [
+        {
+          role: "assistant",
+          content: "",
+          providerMetadata: {
+            reasoningContent: "I should call a tool."
+          },
+          toolCalls: []
+        }
+      ]
+    });
+
+    expect(record?.transcript[0]).toEqual({
+      role: "assistant",
+      content: "",
+      providerMetadata: {
+        reasoningContent: "I should call a tool."
+      },
+      toolCalls: []
+    });
+  });
+
   it("parses edit-preview tool result metadata", () => {
     const record = parseConversationRecord({
       ...baseConversationMeta(),

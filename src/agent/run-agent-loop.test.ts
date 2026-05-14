@@ -12,6 +12,7 @@ import { ToolRegistry } from "../tools/tool-registry.ts";
 
 type StreamPart =
   | { type: "text-delta"; text: string }
+  | { type: "reasoning-delta"; text: string }
   | { type: "tool-call"; toolCallId: string; toolName: string; input: Record<string, string> }
   | { type: "error"; error: unknown }
   | { type: "abort" }
@@ -222,6 +223,31 @@ describe("runAgentLoop", () => {
     expect(deltas).toEqual(["Hello", " ", "world"]);
     expect(result.finalText).toBe("Hello world");
     expect(result.steps[0]?.finishReason).toBe("stop");
+  });
+
+  it("stores provider reasoning deltas on assistant messages", async () => {
+    fakeStreamAssistantResponse.mockImplementationOnce(() => makeStreamResult([
+      { type: "reasoning-delta", text: "Need an answer. " },
+      { type: "reasoning-delta", text: "Replying now." },
+      textPart("done"),
+      ...finishParts()
+    ]));
+
+    const result = await runAgentLoop({
+      systemPrompt: "test",
+      initialUserPrompt: "reason",
+      languageModel: {} as never,
+      toolRegistry: new ToolRegistry([createEchoTool()]),
+      toolContext: { workspaceRoot: "/tmp/recode", approvalMode: "yolo" }
+    });
+
+    const assistantMessage = result.transcript.find((message) => message.role === "assistant");
+    expect(assistantMessage).toMatchObject({
+      role: "assistant",
+      providerMetadata: {
+        reasoningContent: "Need an answer. Replying now."
+      }
+    });
   });
 
   it("forwards provider status events through onProviderStatus", async () => {

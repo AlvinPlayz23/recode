@@ -164,6 +164,7 @@ export async function processAgentSessionStep(
   });
 
   let accumulatedText = "";
+  let accumulatedReasoningContent = "";
   const toolCalls: ToolCall[] = [];
   let finishReason: string | undefined;
   let tokenUsage: StepStats["tokenUsage"] | undefined;
@@ -180,6 +181,9 @@ export async function processAgentSessionStep(
           delta: part.text
         });
         options.onTextDelta?.(part.text);
+        break;
+      case "reasoning-delta":
+        accumulatedReasoningContent += part.text;
         break;
       case "error":
         throw new ModelResponseError(
@@ -240,6 +244,9 @@ export async function processAgentSessionStep(
       role: "assistant",
       content: accumulatedText,
       toolCalls,
+      ...(accumulatedReasoningContent === ""
+        ? {}
+        : { providerMetadata: { reasoningContent: accumulatedReasoningContent } }),
       stepStats
     }
   };

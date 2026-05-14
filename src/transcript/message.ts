@@ -19,6 +19,13 @@ export interface ToolCall {
 }
 
 /**
+ * Provider-specific assistant metadata needed to replay compatible histories.
+ */
+export interface AssistantProviderMetadata {
+  readonly reasoningContent?: string;
+}
+
+/**
  * User message.
  */
 export interface UserMessage {
@@ -33,6 +40,7 @@ export interface AssistantMessage {
   readonly role: "assistant";
   readonly content: string;
   readonly toolCalls: readonly ToolCall[];
+  readonly providerMetadata?: AssistantProviderMetadata;
   readonly stepStats?: StepStats;
 }
 

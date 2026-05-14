@@ -105,6 +105,11 @@ export async function* streamOpenAiChat(
 
       const delta = readOptionalRecord(choiceRecord, "delta");
       if (delta !== undefined) {
+        const reasoningContent = readOptionalString(delta, "reasoning_content");
+        if (reasoningContent !== undefined && reasoningContent !== "") {
+          yield { type: "reasoning-delta", text: reasoningContent };
+        }
+
         const content = readOptionalString(delta, "content");
         if (content !== undefined && content !== "") {
           timing.markOnce("first-text-delta");
@@ -286,6 +291,9 @@ function messagesToChatMessages(
         result.push({
           role: "assistant",
           content: message.content === "" && toolCalls.length > 0 ? "" : message.content,
+          ...(compat.replaysAssistantReasoningContent && message.providerMetadata?.reasoningContent !== undefined
+            ? { reasoning_content: message.providerMetadata.reasoningContent }
+            : {}),
           ...(toolCalls.length === 0 ? {} : { tool_calls: toolCalls })
         });
         break;

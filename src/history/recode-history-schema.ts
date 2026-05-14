@@ -258,6 +258,7 @@ function parseAssistantMessage(value: Record<string, unknown>): AssistantMessage
   const toolCalls = Array.isArray(toolCallsValue)
     ? toolCallsValue.map(parseToolCall).filter((item) => item !== undefined)
     : [];
+  const providerMetadata = parseAssistantProviderMetadata(value["providerMetadata"]);
   const stepStats = parseStepStats(value["stepStats"]);
 
   if (content === undefined) {
@@ -268,8 +269,24 @@ function parseAssistantMessage(value: Record<string, unknown>): AssistantMessage
     role: "assistant",
     content,
     toolCalls,
+    ...(providerMetadata === undefined ? {} : { providerMetadata }),
     ...(stepStats === undefined ? {} : { stepStats })
   };
+}
+
+function parseAssistantProviderMetadata(value: unknown): AssistantMessage["providerMetadata"] | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const reasoningContent = typeof value["reasoningContent"] === "string" && value["reasoningContent"] !== ""
+    ? value["reasoningContent"]
+    : undefined;
+  if (reasoningContent === undefined) {
+    return undefined;
+  }
+
+  return { reasoningContent };
 }
 
 function parseToolResultMessage(value: Record<string, unknown>): ToolResultMessage | undefined {

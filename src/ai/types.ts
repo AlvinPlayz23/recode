@@ -56,6 +56,7 @@ export interface ProviderStatusEvent {
  */
 export type AiStreamPart =
   | { readonly type: "text-delta"; readonly text: string }
+  | { readonly type: "reasoning-delta"; readonly text: string }
   | {
       readonly type: "tool-call";
       readonly toolCallId: string;

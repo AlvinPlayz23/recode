@@ -10,6 +10,7 @@ import type { ConversationMessage } from "../transcript/message.ts";
 
 type StreamPart =
   | { type: "text-delta"; text: string }
+  | { type: "reasoning-delta"; text: string }
   | { type: "tool-call"; toolCallId: string; toolName: string; input: Record<string, string> }
   | { type: "error"; error: unknown }
   | { type: "abort" }
