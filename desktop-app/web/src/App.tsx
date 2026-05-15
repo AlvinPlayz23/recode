@@ -30,6 +30,7 @@ import type {
 } from './types'
 import type {
   DesktopConfigOption,
+  DesktopMessage,
   DesktopPermissionRequest,
   DesktopQuestionRequest,
   DesktopSessionUpdate,
@@ -38,6 +39,20 @@ import type {
 } from './desktop-rpc'
 
 const THEME_STORAGE_KEY = 'recode-theme'
+
+/** Convert an incoming desktop message into the React chat message shape. */
+function toChatMessage(message: DesktopMessage): ChatMessage {
+  return {
+    id: message.id,
+    role: message.role,
+    body: message.body,
+    toolCallId: message.toolCallId,
+    toolKind: message.toolKind,
+    toolStatus: message.toolStatus,
+    toolInput: message.toolInput,
+    toolContent: message.toolContent,
+  }
+}
 
 function readStoredTheme(): ThemeMode {
   if (typeof window === 'undefined') return 'light'
@@ -135,7 +150,11 @@ export function App() {
       setProjects(snapshot.projects)
       setThreads(snapshot.threads)
       setActiveThreadId(null)
-      setMessages(snapshot.messages)
+      const converted: Record<string, ChatMessage[]> = {}
+      for (const [threadId, threadMessages] of Object.entries(snapshot.messages)) {
+        converted[threadId] = threadMessages.map(toChatMessage)
+      }
+      setMessages(converted)
       setRuntimeMode(snapshot.settings.runtimeMode)
       setRecodeRepoRoot(snapshot.settings.recodeRepoRoot)
       setDetectedRepoRoot(snapshot.settings.detectedRepoRoot)
@@ -523,15 +542,12 @@ export function App() {
       }
     }
     if (update.message && !update.appendToMessageId && !update.replaceMessageId) {
+      const incoming = toChatMessage(update.message)
       setMessages((prev) => ({
         ...prev,
         [update.message!.threadId]: [
           ...(prev[update.message!.threadId] ?? []),
-          {
-            id: update.message!.id,
-            role: update.message!.role,
-            body: update.message!.body,
-          },
+          incoming,
         ],
       }))
     }
@@ -546,10 +562,11 @@ export function App() {
       }))
     }
     if (update.replaceMessageId && update.message) {
+      const replacement = toChatMessage(update.message)
       setMessages((prev) => ({
         ...prev,
         [update.thread.id]: (prev[update.thread.id] ?? []).map((message) =>
-          message.id === update.replaceMessageId ? update.message! : message,
+          message.id === update.replaceMessageId ? replacement : message,
         ),
       }))
     }
@@ -783,6 +800,9 @@ function QuestionPromptModal({
 }) {
   const [selected, setSelected] = useState<Record<string, string[]>>({})
   const [customText, setCustomText] = useState<Record<string, string>>({})
+  const [activeIndex, setActiveIndex] = useState(0)
+
+  const activeQuestion = request.questions[activeIndex]
 
   function toggle(questionId: string, label: string, multiSelect: boolean) {
     setSelected((prev) => {
@@ -796,70 +816,133 @@ function QuestionPromptModal({
     })
   }
 
+  function handleSubmit() {
+    onSubmit(request.questions.map((question) => ({
+      questionId: question.id,
+      selectedOptionLabels: selected[question.id] ?? [],
+      customText: customText[question.id] ?? '',
+    })))
+  }
+
   return (
-    <div className="fixed inset-0 z-[130] flex items-center justify-center p-6">
-      <div className="absolute inset-0 bg-black/25 backdrop-blur-sm" onClick={onDismiss} />
-      <div className="relative w-full max-w-[560px] rounded-xl border border-rc-border bg-rc-elevated shadow-2xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-rc-border-soft">
-          <div className="text-[13px] font-semibold text-rc-text">Question</div>
-          <div className="text-[12px] text-rc-muted mt-0.5">Recode needs your input to continue.</div>
+    <div
+      className="fixed inset-0 z-[130] flex items-start justify-center px-6 pt-[15vh]"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') onDismiss()
+        if (event.key === 'ArrowLeft') setActiveIndex((i) => Math.max(0, i - 1))
+        if (event.key === 'ArrowRight')
+          setActiveIndex((i) => Math.min(request.questions.length - 1, i + 1))
+      }}
+    >
+      <div className="absolute inset-0 bg-black/45 backdrop-blur-sm" onClick={onDismiss} />
+      <div
+        className="relative w-full max-w-[600px] rounded-lg border-2 bg-rc-elevated shadow-2xl overflow-hidden"
+        style={{ borderColor: 'var(--rc-accent)' }}
+      >
+        <div className="px-4 py-2.5 border-b border-rc-border-soft flex items-center justify-between bg-rc-bg">
+          <div className="flex items-center gap-2">
+            <span className="text-rc-accent mono text-[13px]">◆</span>
+            <span className="text-[13px] font-semibold text-rc-accent mono">Questions</span>
+          </div>
+          <span className="text-[11px] text-rc-faint mono">
+            {`Question ${activeIndex + 1} of ${request.questions.length} · ←/→ switch · ESC dismiss`}
+          </span>
         </div>
-        <div className="max-h-[520px] overflow-y-auto p-4 space-y-4">
-          {request.questions.map((question) => (
-            <div key={question.id} className="rounded-lg border border-rc-border-soft bg-rc-card p-3">
-              <div className="text-[12px] font-semibold text-rc-text mb-1">{question.header}</div>
-              <div className="text-[12.5px] text-rc-muted leading-relaxed mb-3">{question.question}</div>
-              <div className="space-y-2">
-                {question.options.map((option) => {
-                  const active = (selected[question.id] ?? []).includes(option.label)
-                  return (
-                    <button
-                      key={option.label}
-                      onClick={() => toggle(question.id, option.label, question.multiSelect)}
-                      className={`w-full text-left rounded-lg border px-3 py-2 transition-colors ${
-                        active
-                          ? 'border-rc-accent bg-rc-accent-soft'
-                          : 'border-rc-border-soft hover:bg-rc-hover'
-                      }`}
-                    >
-                      <div className="flex gap-2">
-                        <span className={`mt-0.5 h-3.5 w-3.5 rounded-full border ${
-                          active ? 'border-rc-accent bg-rc-accent' : 'border-rc-faint'
-                        }`} />
-                        <span className="min-w-0">
-                          <span className="block text-[12.5px] font-medium text-rc-text">{option.label}</span>
-                          <span className="block text-[11.5px] text-rc-muted leading-relaxed">{option.description}</span>
-                        </span>
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-              {question.allowCustomText && (
-                <textarea
-                  value={customText[question.id] ?? ''}
-                  onChange={(event) => setCustomText((prev) => ({ ...prev, [question.id]: event.target.value }))}
-                  placeholder="Add custom answer"
-                  className="mt-3 w-full min-h-20 rounded-lg border border-rc-border bg-rc-bg px-3 py-2 text-[12.5px] text-rc-text outline-none placeholder-rc-faint"
-                />
-              )}
+
+        {activeQuestion && (
+          <div className="p-4 max-h-[60vh] overflow-y-auto">
+            <div className="text-[13px] font-semibold text-rc-text mb-1">
+              {activeQuestion.header}
             </div>
-          ))}
-        </div>
-        <div className="px-4 py-3 border-t border-rc-border-soft flex justify-end gap-2 bg-rc-bg">
-          <button onClick={onDismiss} className="px-3 py-1.5 text-[12px] text-rc-muted hover:text-rc-text transition-colors">
-            Dismiss
-          </button>
-          <button
-            onClick={() => onSubmit(request.questions.map((question) => ({
-              questionId: question.id,
-              selectedOptionLabels: selected[question.id] ?? [],
-              customText: customText[question.id] ?? '',
-            })))}
-            className="px-3 py-1.5 rounded-md bg-rc-text text-rc-bg text-[12px] hover:opacity-85 transition-opacity"
-          >
-            Continue
-          </button>
+            <div className="text-[12.5px] text-rc-muted leading-relaxed mb-1">
+              {activeQuestion.question}
+            </div>
+            <div className="text-[11px] text-rc-faint italic mb-3">
+              {activeQuestion.multiSelect
+                ? 'Select any answers that apply.'
+                : 'Select one answer.'}
+            </div>
+
+            <div
+              className="rounded-md border border-rc-border-soft p-2 space-y-2"
+              style={{ background: 'var(--rc-bg)' }}
+            >
+              {activeQuestion.options.map((option) => {
+                const active = (selected[activeQuestion.id] ?? []).includes(option.label)
+                return (
+                  <button
+                    key={option.label}
+                    onClick={() => toggle(activeQuestion.id, option.label, activeQuestion.multiSelect)}
+                    className={'question-option' + (active ? ' is-selected' : '')}
+                  >
+                    <span className={'question-marker' + (active ? ' is-checked' : '')}>
+                      {activeQuestion.multiSelect
+                        ? active ? '[x]' : '[ ]'
+                        : active ? '(•)' : '( )'}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[12.5px] font-medium text-rc-text">
+                        {option.label}
+                      </span>
+                      {option.description && (
+                        <span className="block text-[11.5px] text-rc-muted leading-relaxed mt-0.5">
+                          {option.description}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+
+            {activeQuestion.allowCustomText && (
+              <div className="mt-3 rounded-md border border-rc-border-soft p-2 bg-rc-bg">
+                <div className="flex items-center gap-2">
+                  <span className="text-rc-accent mono text-[12px]">✎</span>
+                  <span className="text-[11px] text-rc-faint">Custom answer</span>
+                </div>
+                <textarea
+                  value={customText[activeQuestion.id] ?? ''}
+                  onChange={(event) =>
+                    setCustomText((prev) => ({ ...prev, [activeQuestion.id]: event.target.value }))
+                  }
+                  placeholder="Optional custom answer..."
+                  className="mt-1.5 w-full min-h-16 rounded border border-rc-border bg-rc-card px-2 py-1.5 text-[12.5px] text-rc-text outline-none placeholder-rc-faint mono"
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="px-4 py-2.5 border-t border-rc-border-soft flex items-center justify-between bg-rc-bg">
+          <div className="flex gap-1">
+            {request.questions.map((_, index) => (
+              <button
+                key={index}
+                onClick={() => setActiveIndex(index)}
+                className={'h-1.5 w-5 rounded-full transition-colors ' + (
+                  index === activeIndex
+                    ? 'bg-rc-accent'
+                    : 'bg-rc-border hover:bg-rc-faint'
+                )}
+                aria-label={`Question ${index + 1}`}
+              />
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={onDismiss}
+              className="px-3 py-1.5 text-[12px] text-rc-muted hover:text-rc-text transition-colors mono"
+            >
+              ESC dismiss
+            </button>
+            <button
+              onClick={handleSubmit}
+              className="px-3 py-1.5 rounded-md bg-rc-accent text-white text-[12px] hover:opacity-90 transition-opacity mono"
+            >
+              ↵ Submit
+            </button>
+          </div>
         </div>
       </div>
     </div>

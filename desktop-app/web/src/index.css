@@ -22,6 +22,8 @@
   --rc-bubble: #ececec;
   --rc-scrollbar: #d6d6d6;
   --rc-scrollbar-hover: #c2c2c2;
+  --rc-shimmer-base: #c9c9c9;
+  --rc-shimmer-peak: #111111;
   --rc-composer-shadow:
     0 1px 2px rgba(0, 0, 0, 0.04),
     0 6px 18px rgba(0, 0, 0, 0.06);
@@ -45,6 +47,8 @@ html[data-theme='dark'] {
   --rc-bubble: #252932;
   --rc-scrollbar: #3a404a;
   --rc-scrollbar-hover: #505866;
+  --rc-shimmer-base: #4a4f59;
+  --rc-shimmer-peak: #ffffff;
   --rc-composer-shadow:
     0 1px 2px rgba(0, 0, 0, 0.28),
     0 14px 36px rgba(0, 0, 0, 0.38);
@@ -123,6 +127,310 @@ body {
   to {
     background-position: -120% 0;
   }
+}
+
+/*
+ * Text shimmer: high-contrast moving highlight clipped to glyphs.
+ * Light theme moves a near-black highlight across muted gray.
+ * Dark  theme moves a near-white highlight across muted gray.
+ */
+.tool-text-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    var(--rc-shimmer-base) 0%,
+    var(--rc-shimmer-base) 25%,
+    var(--rc-shimmer-peak) 50%,
+    var(--rc-shimmer-base) 75%,
+    var(--rc-shimmer-base) 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: toolTextShimmer 2s linear infinite;
+}
+
+@keyframes toolTextShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Chevron shimmer for running tool rows. Cycles color via animation. */
+.tool-shimmer-icon {
+  color: var(--rc-shimmer-base);
+  animation: toolShimmerIcon 2s linear infinite;
+}
+@keyframes toolShimmerIcon {
+  0%, 100% { color: var(--rc-shimmer-base); }
+  50% { color: var(--rc-shimmer-peak); }
+}
+
+/* Completed tool label color — matches the shimmer base grey
+ * so the row reads as "settled" rather than primary white text. */
+.tool-done-label {
+  color: var(--rc-shimmer-base);
+}
+
+/* Animated dot trail used after a shimmering label. */
+.tool-shimmer-dots::after {
+  content: '';
+  display: inline-block;
+  width: 1.25em;
+  text-align: left;
+  animation: toolShimmerDots 1.4s steps(4, end) infinite;
+}
+
+@keyframes toolShimmerDots {
+  0% { content: ''; }
+  25% { content: '.'; }
+  50% { content: '..'; }
+  75% { content: '...'; }
+  100% { content: ''; }
+}
+
+/* Custom circular checkbox used for TodoWrite. */
+.todo-circle {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1.5px solid var(--rc-text-faint);
+  background: transparent;
+  flex-shrink: 0;
+  transition: all 160ms ease;
+}
+.todo-circle.is-active {
+  border-color: var(--rc-accent);
+  box-shadow: 0 0 0 3px var(--rc-accent-soft);
+  animation: todoActivePulse 1.6s ease-in-out infinite;
+}
+.todo-circle.is-active::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 999px;
+  background: var(--rc-accent);
+}
+.todo-circle.is-done {
+  border-color: var(--rc-accent);
+  background: var(--rc-accent);
+}
+.todo-circle.is-done::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 6px;
+  width: 4px;
+  height: 7px;
+  border: solid var(--rc-bg);
+  border-width: 0 1.6px 1.6px 0;
+  transform: rotate(45deg);
+}
+.todo-circle.is-cancelled {
+  border-color: var(--rc-text-faint);
+  opacity: 0.6;
+}
+.todo-circle.is-cancelled::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  top: 50%;
+  height: 1.5px;
+  background: var(--rc-text-faint);
+  transform: translateY(-50%);
+}
+
+@keyframes todoActivePulse {
+  0%, 100% { box-shadow: 0 0 0 2px var(--rc-accent-soft); }
+  50% { box-shadow: 0 0 0 5px var(--rc-accent-soft); }
+}
+
+.tool-artifact {
+  border: 1px solid var(--rc-border-soft);
+  border-radius: 0.65rem;
+  background: var(--rc-card);
+  padding: 0.65rem 0.75rem;
+  font-size: 0.78rem;
+}
+
+.tool-artifact-todo {
+  border-left: 2px solid var(--rc-accent);
+}
+
+.tool-artifact-question {
+  border-left: 2px solid var(--rc-shimmer-peak);
+}
+
+.tool-artifact-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+}
+
+.tool-artifact-glyph {
+  flex-shrink: 0;
+  border: 1px solid var(--rc-border-soft);
+  border-radius: 0.35rem;
+  background: var(--rc-sidebar);
+  color: var(--rc-text-muted);
+  font-size: 0.62rem;
+  line-height: 1;
+  padding: 0.2rem 0.3rem;
+  text-transform: uppercase;
+}
+
+.question-artifact-item {
+  border: 1px solid var(--rc-border-soft);
+  border-radius: 0.55rem;
+  background: var(--rc-bg);
+  padding: 0.55rem 0.65rem;
+}
+
+.question-artifact-option {
+  border: 1px solid var(--rc-border-soft);
+  border-radius: 999px;
+  background: var(--rc-card);
+  color: var(--rc-text-muted);
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+  font-size: 0.68rem;
+  line-height: 1;
+  padding: 0.3rem 0.45rem;
+}
+
+.edit-preview {
+  border: 1px solid var(--rc-border-soft);
+  border-radius: 0.8rem;
+  background: var(--rc-card);
+  padding: 0.65rem;
+  font-size: 0.75rem;
+}
+
+.edit-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.55rem;
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+  font-size: 0.7rem;
+}
+
+.edit-preview-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--rc-border-soft);
+  border-radius: 0.7rem;
+  background: var(--rc-bg);
+}
+
+.edit-diff-pane {
+  min-width: 0;
+  overflow: hidden;
+  background: var(--rc-bg);
+}
+
+.edit-diff-pane.is-old {
+  border-right: 1px solid var(--rc-border-soft);
+}
+
+.edit-diff-pane.is-new {
+  border-left: 1px solid color-mix(in srgb, var(--rc-border-soft) 70%, transparent);
+}
+
+.edit-diff-lines {
+  max-height: 13rem;
+  overflow: auto;
+  padding: 0.4rem 0;
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+
+.edit-diff-line {
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 1fr);
+  gap: 0.25rem;
+  padding: 0.05rem 0.5rem;
+}
+
+.edit-diff-line.is-old {
+  background: color-mix(in srgb, #d35f5f 6%, transparent);
+  color: color-mix(in srgb, #d35f5f 68%, var(--rc-text));
+}
+
+.edit-diff-line.is-new {
+  background: color-mix(in srgb, #3f9d64 7%, transparent);
+  color: color-mix(in srgb, #3f9d64 70%, var(--rc-text));
+}
+
+.edit-diff-sign {
+  user-select: none;
+  opacity: 0.9;
+}
+
+.edit-diff-code {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .edit-preview-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .edit-diff-pane.is-old {
+    border-right: 0;
+    border-bottom: 1px solid var(--rc-border-soft);
+  }
+
+  .edit-diff-pane.is-new {
+    border-left: 0;
+  }
+}
+
+/* Question option card (TUI-flavored radio/checkbox). */
+.question-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--rc-border-soft);
+  background: var(--rc-card);
+  border-radius: 0.55rem;
+  padding: 0.55rem 0.7rem;
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+.question-option:hover {
+  background: var(--rc-hover);
+}
+.question-option.is-selected {
+  border-color: var(--rc-accent);
+  background: var(--rc-accent-soft);
+}
+.question-marker {
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+  color: var(--rc-text-faint);
+  font-size: 0.85rem;
+  line-height: 1.1rem;
+  user-select: none;
+}
+.question-marker.is-checked {
+  color: var(--rc-accent);
 }
 
 .markdown-body {

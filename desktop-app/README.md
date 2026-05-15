@@ -22,6 +22,22 @@ The React renderer still keeps Phase 1 mock projects, threads, and messages for 
 
 The Electrobun desktop runtime disables that mock state. In desktop mode, the app starts from the persisted desktop snapshot and waits for real workspaces, sessions, and model options from the Recode ACP server. Browser preview threads use the neutral `Recode default` model label until real ACP model options are available.
 
+## Tool Message Forwarding (`toChatMessage`)
+
+Incoming session updates from the Bun side arrive as `DesktopMessage` objects (see `web/src/desktop-rpc.ts`). The renderer keeps its own `ChatMessage` shape (`web/src/types.ts`) which extends those messages with the per-tool fields the transcript needs to render rich indicators:
+
+- `toolCallId` and `toolKind` — identify the tool call within the turn
+- `toolStatus` — `pending` / `in_progress` / `completed` / `failed`, used to drive the shimmering label and chevron color
+- `toolInput` — the structured arguments the tool was invoked with
+- `toolContent` — accumulated tool output / result body
+
+`toChatMessage` in `web/src/App.tsx` is the small adapter that copies all of those fields from a `DesktopMessage` into a renderer `ChatMessage`. It is used in two places:
+
+1. The initial `getSnapshot` load, so persisted tool calls keep their status when the app restarts.
+2. The live `onSessionUpdate` callback, for both newly appended messages and replaced messages.
+
+If a future field is added to `DesktopMessage` that the transcript needs to render, it must also be added to `toChatMessage` — otherwise the renderer will silently drop it (which is what previously caused the running-tool shimmer to never fire: `toolStatus` was being stripped on the way into React state).
+
 ## Startup Behavior
 
 On restart, the desktop app restores saved workspaces, threads, and messages into the sidebar, but it does not auto-open the most recent thread. The main pane stays on the start screen until the user picks a thread or creates a new one.

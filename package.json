@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
-    "@opentui/core": "^0.1.99",
+    "@opentui/core": "0.1.99",
     "@opentui/solid": "^0.1.99",
     "openai": "6.26.0",
     "partial-json": "^0.1.7",
