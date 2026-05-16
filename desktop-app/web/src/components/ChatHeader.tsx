@@ -52,32 +52,32 @@ export function ChatHeader({
   return (
     <header
       className={cn(
-        'h-11 px-3 flex items-center justify-between border-b border-rc-border-soft',
+        'h-12 flex items-center justify-between gap-2 px-3 border-b border-rc-border-soft',
         'bg-rc-bg/80 backdrop-blur-sm supports-[backdrop-filter]:bg-rc-bg/70',
       )}
     >
-      <div className="flex items-center gap-1.5 text-[12.5px] min-w-0">
+      <div className="flex min-w-0 items-center gap-1.5 text-[12.5px]">
         {sidebarHidden && (
           <button
             type="button"
             onClick={onShowSidebar}
             title="Show sidebar"
             className={cn(
-              'w-7 h-7 rounded-md flex items-center justify-center mr-1',
-              'text-rc-muted hover:text-rc-text hover:bg-rc-hover',
+              'mr-1 flex h-8 w-8 items-center justify-center rounded-full',
+              'text-rc-muted hover:bg-rc-hover hover:text-rc-text',
               'transition-colors focus-ring',
             )}
           >
-            <PanelLeftOpen className="w-[15px] h-[15px]" strokeWidth={1.5} />
+            <PanelLeftOpen className="h-[15px] w-[15px]" strokeWidth={1.5} />
           </button>
         )}
         {showBreadcrumb && (
           <>
-            <span className="text-rc-muted truncate max-w-[200px]">
+            <span className="max-w-[200px] truncate text-rc-muted">
               {project.name}
             </span>
-            <span className="text-rc-faint mx-0.5">/</span>
-            <span className="display text-rc-text font-medium truncate">
+            <span className="mx-0.5 text-rc-faint">/</span>
+            <span className="display truncate font-medium text-rc-text">
               {thread.title}
             </span>
             {status && (
@@ -85,7 +85,7 @@ export function ChatHeader({
                 className={cn(
                   'ml-2 inline-flex items-center gap-1.5 rounded-full border px-2 py-[1px]',
                   'text-[10.5px] font-medium uppercase tracking-wider',
-                  'before:content-[""] before:w-1.5 before:h-1.5 before:rounded-full',
+                  'before:h-1.5 before:w-1.5 before:rounded-full before:content-[""]',
                   STATUS_TONE[status],
                 )}
               >
@@ -98,13 +98,13 @@ export function ChatHeader({
       <button
         type="button"
         className={cn(
-          'w-7 h-7 rounded-md flex items-center justify-center',
-          'text-rc-faint hover:text-rc-text hover:bg-rc-hover',
+          'flex h-8 w-8 items-center justify-center rounded-full',
+          'text-rc-faint hover:bg-rc-hover hover:text-rc-text',
           'transition-colors focus-ring',
         )}
         title="More"
       >
-        <MoreHorizontal className="w-4 h-4" strokeWidth={1.5} />
+        <MoreHorizontal className="h-4 w-4" strokeWidth={1.5} />
       </button>
     </header>
   )

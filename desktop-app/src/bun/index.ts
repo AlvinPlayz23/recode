@@ -27,6 +27,7 @@ const rpc = BrowserView.defineRPC<RecodeDesktopRPC>({
   handlers: {
     requests: {
       getSnapshot: () => sessions.snapshot(),
+      getThreadMessages: (params) => sessions.getThreadMessages(params.threadId),
       setRuntimeMode: (params) => sessions.setRuntimeMode(params.runtimeMode),
       setRecodeRepoRoot: (params) => sessions.setRecodeRepoRoot(params.path),
       setGpuAccelerationDisabled: (params) => sessions.setGpuAccelerationDisabled(params.disabled),

@@ -5,17 +5,127 @@
 
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Check, ChevronDown, ChevronRight, Copy, FileText, Terminal, XCircle } from 'lucide-react'
-import { useState } from 'react'
+import {
+  ArrowDown,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  FileText,
+  HelpCircle,
+  ListChecks,
+  Terminal,
+  XCircle,
+} from 'lucide-react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChatMessage, Thread } from '../types'
 import { TextShimmer } from './TextShimmer'
+
+/**
+ * If the user is within this many pixels of the bottom of the transcript, we
+ * consider them "pinned" and will keep auto-scrolling as new content streams
+ * in. If they've scrolled further up, we leave them where they are.
+ */
+const STICK_TO_BOTTOM_THRESHOLD = 96
 
 interface TranscriptProps {
   thread: Thread | null
   messages: ChatMessage[]
 }
 
+const VIRTUALIZE_AFTER_MESSAGES = 120
+const ESTIMATED_MESSAGE_HEIGHT = 96
+const VIRTUAL_OVERSCAN_ROWS = 12
+
 export function Transcript({ thread, messages }: TranscriptProps) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [viewport, setViewport] = useState({ scrollTop: 0, height: 0 })
+  const [showJumpToBottom, setShowJumpToBottom] = useState(false)
+  const shouldVirtualize = messages.length > VIRTUALIZE_AFTER_MESSAGES
+
+  // Track "is the user pinned to the bottom" so we only auto-scroll when they
+  // haven't intentionally scrolled up to read history.
+  const stickToBottom = useRef(true)
+  const previousMessageCount = useRef(messages.length)
+  const previousThreadId = useRef(thread?.id ?? null)
+  const previousLastMessageId = useRef(messages[messages.length - 1]?.id ?? null)
+  // Tracks the body length of whichever message was the *last* one in the
+  // array on the previous render. We use it to detect token-by-token streaming
+  // (id unchanged, but body grew) so we can keep the viewport pinned.
+  const previousLastMessageBodyLength = useRef(messages[messages.length - 1]?.body.length ?? 0)
+
+  // When switching threads, jump to the bottom instantly without animating —
+  // smooth-scroll on a thread change feels janky.
+  useLayoutEffect(() => {
+    if (previousThreadId.current === (thread?.id ?? null)) return
+    previousThreadId.current = thread?.id ?? null
+    stickToBottom.current = true
+    const el = scrollRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [thread?.id])
+
+  // After messages change, smoothly scroll if the user is pinned to the bottom
+  // OR if a brand-new message just arrived (typically the user's own send).
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+
+    const lastMessage = messages[messages.length - 1]
+    const justAddedMessage = messages.length > previousMessageCount.current
+    const lastIdChanged = (lastMessage?.id ?? null) !== previousLastMessageId.current
+    const lastBodyGrew =
+      lastMessage !== undefined && lastMessage.body.length > previousLastMessageBodyLength.current
+    const lastIsUser = lastMessage?.role === 'user'
+
+    previousMessageCount.current = messages.length
+    previousLastMessageId.current = lastMessage?.id ?? null
+    previousLastMessageBodyLength.current = lastMessage?.body.length ?? 0
+
+    // A user just hit send — always glide to the bottom, even if they were
+    // scrolled up reading earlier history.
+    if (justAddedMessage && lastIsUser) {
+      stickToBottom.current = true
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+      return
+    }
+
+    if (!stickToBottom.current) return
+    if (!justAddedMessage && !lastIdChanged && !lastBodyGrew) return
+
+    // For streaming token-by-token updates use 'auto' to avoid janky animation
+    // queueing; for fresh assistant messages, animate softly.
+    el.scrollTo({
+      top: el.scrollHeight,
+      behavior: justAddedMessage || lastIdChanged ? 'smooth' : 'auto',
+    })
+  }, [messages])
+
+  const virtualWindow = useMemo(() => {
+    if (!shouldVirtualize) {
+      return {
+        startIndex: 0,
+        endIndex: messages.length,
+        topSpacer: 0,
+        bottomSpacer: 0,
+        visibleMessages: messages,
+      }
+    }
+
+    const viewportHeight = viewport.height || scrollRef.current?.clientHeight || 720
+    const rawStart = Math.floor(viewport.scrollTop / ESTIMATED_MESSAGE_HEIGHT) - VIRTUAL_OVERSCAN_ROWS
+    const visibleCount = Math.ceil(viewportHeight / ESTIMATED_MESSAGE_HEIGHT) + VIRTUAL_OVERSCAN_ROWS * 2
+    const startIndex = Math.max(0, rawStart)
+    const endIndex = Math.min(messages.length, startIndex + visibleCount)
+
+    return {
+      startIndex,
+      endIndex,
+      topSpacer: startIndex * ESTIMATED_MESSAGE_HEIGHT,
+      bottomSpacer: Math.max(0, (messages.length - endIndex) * ESTIMATED_MESSAGE_HEIGHT),
+      visibleMessages: messages.slice(startIndex, endIndex),
+    }
+  }, [messages, shouldVirtualize, viewport])
+
   if (!thread) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-10 text-center">
@@ -40,25 +150,77 @@ export function Transcript({ thread, messages }: TranscriptProps) {
     )
   }
 
+  function jumpToBottom() {
+    const el = scrollRef.current
+    if (!el) return
+    stickToBottom.current = true
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+  }
+
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="max-w-[760px] mx-auto px-8 py-8">
-        {messages.map((msg, index) => (
-          <div key={msg.id} className={getTranscriptSpacing(msg, messages[index - 1])}>
-            <TranscriptMessage message={msg} />
-          </div>
-        ))}
+    <div className="relative flex-1 min-h-0 flex flex-col">
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto"
+        onScroll={(event) => {
+          const target = event.currentTarget
+          setViewport({ scrollTop: target.scrollTop, height: target.clientHeight })
+          const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight
+          stickToBottom.current = distanceFromBottom <= STICK_TO_BOTTOM_THRESHOLD
+          // The jump-to-bottom pill should appear once the user has scrolled
+          // up enough that they’d miss new messages — a bit further than the
+          // "stick" threshold so it doesn’t flicker on tiny scrolls.
+          setShowJumpToBottom(distanceFromBottom > STICK_TO_BOTTOM_THRESHOLD * 3)
+        }}
+      >
+        <div className="max-w-[760px] mx-auto px-8 py-8">
+        {virtualWindow.topSpacer > 0 && (
+          <div style={{ height: virtualWindow.topSpacer }} aria-hidden="true" />
+        )}
+        {virtualWindow.visibleMessages.map((msg, index) => {
+          const absoluteIndex = virtualWindow.startIndex + index
+          return (
+            <div key={msg.id} className={getTranscriptSpacing(msg, messages[absoluteIndex - 1])}>
+              <TranscriptMessage message={msg} />
+            </div>
+          )
+        })}
+        {virtualWindow.bottomSpacer > 0 && (
+          <div style={{ height: virtualWindow.bottomSpacer }} aria-hidden="true" />
+        )}
+        </div>
       </div>
+      {/* Floating jump-to-bottom pill: appears when the user has scrolled up
+          while new content is arriving, anchored just above the composer. */}
+      <button
+        type="button"
+        onClick={jumpToBottom}
+        aria-label="Scroll to latest"
+        className={
+          'jump-to-bottom-pill ' + (showJumpToBottom ? 'is-visible' : 'is-hidden')
+        }
+        tabIndex={showJumpToBottom ? 0 : -1}
+      >
+        <ArrowDown className="h-3.5 w-3.5" strokeWidth={1.9} />
+        <span>Jump to latest</span>
+      </button>
     </div>
   )
 }
 
 function TranscriptMessage({ message }: { message: ChatMessage }) {
   if (message.role === 'user') {
+    // The copy button is absolutely positioned just below the bubble so its
+    // hover-only appearance doesn't permanently push surrounding messages
+    // apart. The wrapper uses pb-7 only on hover to ensure the button has
+    // breathing room while it's actually visible.
     return (
-      <div className="flex justify-end">
+      <div className="group relative flex justify-end">
         <div className="bg-rc-bubble text-rc-text rounded-2xl px-4 py-2.5 text-[13.5px] max-w-[85%] leading-relaxed whitespace-pre-wrap">
           {message.body}
+        </div>
+        <div className="absolute right-0 top-full mt-1 z-10 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-150 pointer-events-none group-hover:pointer-events-auto focus-within:pointer-events-auto">
+          <MessageCopyButton value={message.body} />
         </div>
       </div>
     )
@@ -77,13 +239,43 @@ function TranscriptMessage({ message }: { message: ChatMessage }) {
   }
 
   return (
-    <div className="text-[13.5px] text-rc-text leading-[1.65]">
-      <div className="markdown-body">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-          {message.body}
-        </ReactMarkdown>
+    <div className="group relative">
+      <div className="text-[13.5px] text-rc-text leading-[1.65]">
+        <div className="markdown-body">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {message.body}
+          </ReactMarkdown>
+        </div>
+      </div>
+      <div className="absolute left-0 top-full mt-1 z-10 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-150 pointer-events-none group-hover:pointer-events-auto focus-within:pointer-events-auto">
+        <MessageCopyButton value={message.body} />
       </div>
     </div>
+  )
+}
+
+function MessageCopyButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false)
+
+  return (
+    <button
+      type="button"
+      className="tool-action-button"
+      onClick={() => {
+        void navigator.clipboard.writeText(value).then(() => {
+          setCopied(true)
+          window.setTimeout(() => setCopied(false), 1200)
+        })
+      }}
+      title={copied ? 'Copied' : 'Copy message'}
+      aria-label={copied ? 'Copied' : 'Copy message'}
+    >
+      {copied ? (
+        <Check className="h-3.5 w-3.5" strokeWidth={2} />
+      ) : (
+        <Copy className="h-3.5 w-3.5" strokeWidth={1.8} />
+      )}
+    </button>
   )
 }
 
@@ -186,8 +378,10 @@ function ExpandableToolRow({
             <EditToolDetails input={message.toolInput} content={content} fallback={message.body} />
           ) : toolName === 'Bash' ? (
             <BashToolDetails command={command} content={content || message.body} failed={failed} running={running} />
-          ) : isFileTool(toolName) && filePath ? (
-            <FileToolDetails path={filePath} content={content || message.body} />
+          ) : toolName === 'Write' && filePath ? (
+            <WriteToolDetails path={filePath} content={getWriteContent(message.toolInput, content || message.body)} />
+          ) : toolName === 'Read' && filePath ? (
+            <ReadToolDetails path={filePath} content={content || message.body} />
           ) : isTask ? (
             <TaskBody input={message.toolInput} content={content || message.body} />
           ) : (
@@ -201,23 +395,112 @@ function ExpandableToolRow({
   )
 }
 
-function FileToolDetails({
+function ReadToolDetails({
   path,
   content,
 }: {
   path: string
   content: string
 }) {
+  const lines = useMemo(() => splitContentLines(content), [content])
   return (
     <div className="file-tool-card">
-      <div className="file-tool-header">
-        <span className="min-w-0 flex items-center gap-2">
-          <FileText className="h-3.5 w-3.5 shrink-0 text-rc-faint" strokeWidth={1.7} />
-          <span className="truncate text-rc-text">{path}</span>
+      <FileToolHeader path={path} kind="read" lineCount={lines.length} content={content} />
+      <NumberedCodeBlock lines={lines} kind="read" />
+    </div>
+  )
+}
+
+function WriteToolDetails({
+  path,
+  content,
+}: {
+  path: string
+  content: string
+}) {
+  const lines = useMemo(() => splitContentLines(content), [content])
+  return (
+    <div className="file-tool-card">
+      <FileToolHeader path={path} kind="write" lineCount={lines.length} content={content} />
+      <NumberedCodeBlock lines={lines} kind="write" />
+    </div>
+  )
+}
+
+function FileToolHeader({
+  path,
+  kind,
+  lineCount,
+  content,
+}: {
+  path: string
+  kind: 'read' | 'write' | 'edit'
+  lineCount?: number
+  content?: string
+}) {
+  const fileName = getFileName(path)
+  const directory = getDirectory(path)
+  const kindLabel = kind === 'read' ? 'read' : kind === 'write' ? 'created' : 'edited'
+  const kindClass = `file-tool-kind file-tool-kind--${kind}`
+  return (
+    <div className="file-tool-header">
+      <div className="min-w-0 flex items-center gap-2">
+        <span className={'file-tool-icon file-tool-icon--' + kind} aria-hidden="true">
+          <FileText className="h-3.5 w-3.5" strokeWidth={1.7} />
         </span>
+        <span className="min-w-0 truncate">
+          <span className="text-rc-text font-medium">{fileName}</span>
+          {directory && <span className="text-rc-faint">{`  ${directory}`}</span>}
+        </span>
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5">
+        <span className={kindClass}>{kindLabel}</span>
+        {typeof lineCount === 'number' && lineCount > 0 && (
+          <span className="file-tool-lines">{lineCount === 1 ? '1 line' : `${lineCount} lines`}</span>
+        )}
+        {content !== undefined && content.length > 0 && (
+          <CopyButton value={content} label="Copy contents" />
+        )}
         <CopyButton value={path} label="Copy path" />
       </div>
-      <pre className="file-tool-body">{content}</pre>
+    </div>
+  )
+}
+
+function NumberedCodeBlock({
+  lines,
+  kind,
+}: {
+  lines: string[]
+  kind: 'read' | 'write'
+}) {
+  if (lines.length === 0) {
+    return <div className="file-tool-empty">empty file</div>
+  }
+  const { displayLines, hiddenCount } = clipDisplayLines(lines, 400)
+  const gutterWidth = String(displayLines.length).length
+  return (
+    <div className={'file-tool-body file-tool-body--' + kind}>
+      {displayLines.map((line, index) => (
+        <div
+          key={index}
+          className={
+            'file-tool-line file-tool-line--' + kind + (kind === 'read' ? ' file-tool-line--no-sign' : '')
+          }
+        >
+          <span
+            className="file-tool-line-number"
+            style={{ minWidth: `${gutterWidth}ch` }}
+          >
+            {index + 1}
+          </span>
+          {kind === 'write' && <span className="file-tool-line-sign">+</span>}
+          <span className="file-tool-line-code">{line.length === 0 ? '\u00A0' : line}</span>
+        </div>
+      ))}
+      {hiddenCount > 0 && (
+        <div className="file-tool-overflow">… {hiddenCount} more {hiddenCount === 1 ? 'line' : 'lines'} hidden</div>
+      )}
     </div>
   )
 }
@@ -290,26 +573,54 @@ function TodoToolCard({
   const completed = todos.filter((todo) => todo.status === 'completed').length
   const active = todos.filter((todo) => todo.status === 'in_progress').length
   const pending = todos.filter((todo) => todo.status === 'pending').length
+  const progress = todos.length === 0 ? 0 : Math.round((completed / todos.length) * 100)
 
   return (
     <div className="tool-artifact tool-artifact-todo">
       <div className="tool-artifact-header">
         <div className="min-w-0 flex items-center gap-2">
-          <span className="tool-artifact-glyph">todo</span>
-          <span className="font-medium text-rc-text">Plan</span>
+          <span className="tool-artifact-icon tool-artifact-icon--todo" aria-hidden="true">
+            <ListChecks className="h-3.5 w-3.5" strokeWidth={1.8} />
+          </span>
+          <span className="font-medium text-rc-text text-[12.5px]">Task plan</span>
           {running && (
-            <TextShimmer as="span" className="text-[12px]" duration={2}>
-              updating...
+            <TextShimmer as="span" className="text-[11.5px]" duration={2}>
+              updating…
             </TextShimmer>
           )}
-          {failed && <span className="text-[11px] text-red-500">failed</span>}
+          {failed && (
+            <span className="tool-artifact-badge tool-artifact-badge--error">failed</span>
+          )}
         </div>
-        <div className="flex shrink-0 items-center gap-1.5 text-[10.5px] text-rc-faint">
-          <span>{completed}/{todos.length} done</span>
-          {active > 0 && <span>{active} active</span>}
-          {pending > 0 && <span>{pending} pending</span>}
+        <div className="flex shrink-0 items-center gap-1.5 text-[10.5px]">
+          <span className="tool-artifact-count">
+            <span className="tool-artifact-count-value">{completed}</span>
+            <span className="tool-artifact-count-divider">/</span>
+            <span className="tool-artifact-count-total">{todos.length}</span>
+          </span>
+          {active > 0 && (
+            <span className="tool-artifact-pill tool-artifact-pill--active">{active} active</span>
+          )}
+          {pending > 0 && (
+            <span className="tool-artifact-pill tool-artifact-pill--pending">{pending} pending</span>
+          )}
         </div>
       </div>
+      {todos.length > 0 && (
+        <div
+          className="tool-artifact-progress"
+          role="progressbar"
+          aria-valuenow={progress}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={`${completed} of ${todos.length} tasks completed`}
+        >
+          <div
+            className="tool-artifact-progress-fill"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      )}
       <TodoList todos={todos} />
     </div>
   )
@@ -329,22 +640,39 @@ function QuestionToolCard({
   const payload = readQuestionPayload(input, content)
   const questions = payload?.questions ?? []
 
+  const title = running
+    ? 'Needs your input'
+    : failed
+      ? 'Question failed'
+      : payload?.dismissed
+        ? 'Question dismissed'
+        : 'Your answer'
+
   return (
-    <div className="tool-artifact tool-artifact-question">
+    <div
+      className={
+        'tool-artifact tool-artifact-question' +
+        (running ? ' is-waiting' : '') +
+        (failed ? ' is-failed' : '')
+      }
+    >
       <div className="tool-artifact-header">
         <div className="min-w-0 flex items-center gap-2">
-          <span className="tool-artifact-glyph">ask</span>
-          <span className="font-medium text-rc-text">
-            {running ? 'Waiting for answer' : failed ? 'Question failed' : 'Question answered'}
+          <span className="tool-artifact-icon tool-artifact-icon--question" aria-hidden="true">
+            <HelpCircle className="h-3.5 w-3.5" strokeWidth={1.8} />
           </span>
+          <span className="font-medium text-rc-text text-[12.5px]">{title}</span>
           {running && (
-            <TextShimmer as="span" className="text-[12px]" duration={2}>
-              waiting...
+            <TextShimmer as="span" className="text-[11.5px]" duration={2}>
+              waiting…
             </TextShimmer>
           )}
         </div>
-        <span className="text-[10.5px] text-rc-faint">
-          {questions.length} {questions.length === 1 ? 'question' : 'questions'}
+        <span className="tool-artifact-count">
+          <span className="tool-artifact-count-value">{questions.length}</span>
+          <span className="tool-artifact-count-label">
+            {questions.length === 1 ? 'question' : 'questions'}
+          </span>
         </span>
       </div>
       <div className="space-y-2">
@@ -407,65 +735,92 @@ function EditToolDetails({
   const preview = readEditPreview(input)
   const path = preview.path || getPathFromDiff(content) || 'file'
   const edits = preview.edits
-  const replacementLabel = edits.length === 1 ? '1 replacement' : `${edits.length} replacements`
+
+  const stats = useMemo(() => {
+    let added = 0
+    let removed = 0
+    for (const edit of edits) {
+      removed += countNonEmptyLines(edit.oldText)
+      added += countNonEmptyLines(edit.newText)
+    }
+    return { added, removed }
+  }, [edits])
 
   if (edits.length === 0) {
     return (
-      <pre className="mono max-h-[360px] overflow-auto whitespace-pre-wrap text-[11.5px] leading-relaxed text-rc-muted">
-        {content || fallback}
-      </pre>
+      <div className="file-tool-card">
+        <FileToolHeader path={path} kind="edit" />
+        <pre className="mono max-h-[360px] m-0 overflow-auto whitespace-pre-wrap text-[11.5px] leading-relaxed text-rc-muted px-3 py-2.5">
+          {content || fallback}
+        </pre>
+      </div>
     )
   }
 
   return (
-    <div className="edit-preview">
-      <div className="edit-preview-header">
-        <span className="min-w-0 truncate text-rc-text">{path}</span>
-        <span className="flex shrink-0 items-center gap-2">
-          <span className="text-rc-faint">{replacementLabel}</span>
-          <CopyButton value={path} label="Copy path" />
-        </span>
-      </div>
-      <div className="space-y-2">
-        {edits.slice(0, 4).map((edit, index) => (
-          <div key={`${edit.oldText}-${index}`} className="edit-preview-pair">
-            <div className="edit-diff-pane is-old">
-              <DiffLines prefix="-" text={edit.oldText} kind="old" />
-            </div>
-            <div className="edit-diff-pane is-new">
-              <DiffLines prefix="+" text={edit.newText} kind="new" />
-            </div>
-          </div>
-        ))}
-      </div>
-      {edits.length > 4 && (
-        <div className="mt-2 text-[11px] text-rc-faint">
-          {edits.length - 4} more replacements hidden
+    <div className="file-tool-card edit-preview-card">
+      <div className="file-tool-header">
+        <div className="min-w-0 flex items-center gap-2">
+          <span className="file-tool-icon file-tool-icon--edit" aria-hidden="true">
+            <FileText className="h-3.5 w-3.5" strokeWidth={1.7} />
+          </span>
+          <span className="min-w-0 truncate">
+            <span className="text-rc-text font-medium">{getFileName(path)}</span>
+            {getDirectory(path) && (
+              <span className="text-rc-faint">{`  ${getDirectory(path)}`}</span>
+            )}
+          </span>
         </div>
-      )}
+        <div className="flex shrink-0 items-center gap-1.5">
+          <span className="file-tool-kind file-tool-kind--edit">edited</span>
+          <span className="diff-stat diff-stat--added">+{stats.added}</span>
+          <span className="diff-stat diff-stat--removed">-{stats.removed}</span>
+          <CopyButton value={path} label="Copy path" />
+        </div>
+      </div>
+      <div className="edit-preview-body">
+        {edits.slice(0, 4).map((edit, index) => (
+          <UnifiedDiffHunk key={`${index}-${edit.oldText.slice(0, 20)}`} edit={edit} index={index} />
+        ))}
+        {edits.length > 4 && (
+          <div className="edit-preview-overflow">
+            {edits.length - 4} more {edits.length - 4 === 1 ? 'replacement' : 'replacements'} hidden
+          </div>
+        )}
+      </div>
     </div>
   )
 }
 
-function DiffLines({
-  prefix,
-  text,
-  kind,
+function UnifiedDiffHunk({
+  edit,
+  index,
 }: {
-  prefix: '-' | '+'
-  text: string
-  kind: 'old' | 'new'
+  edit: { oldText: string; newText: string }
+  index: number
 }) {
-  const lines = createDiffPreviewLines(text)
-
+  const oldLines = createDiffPreviewLines(edit.oldText)
+  const newLines = createDiffPreviewLines(edit.newText)
   return (
-    <div className="edit-diff-lines">
-      {lines.map((line, index) => (
-        <div key={`${index}-${line}`} className={`edit-diff-line is-${kind}`}>
-          <span className="edit-diff-sign">{prefix}</span>
-          <span className="edit-diff-code">{line}</span>
-        </div>
-      ))}
+    <div className="diff-hunk">
+      <div className="diff-hunk-header">
+        <span className="diff-hunk-marker">@@</span>
+        <span className="diff-hunk-label">Hunk {index + 1}</span>
+      </div>
+      <div className="diff-hunk-body">
+        {oldLines.map((line, i) => (
+          <div key={`o-${i}`} className="diff-line diff-line--removed">
+            <span className="diff-line-sign">-</span>
+            <span className="diff-line-code">{line.length === 0 ? '\u00A0' : line}</span>
+          </div>
+        ))}
+        {newLines.map((line, i) => (
+          <div key={`n-${i}`} className="diff-line diff-line--added">
+            <span className="diff-line-sign">+</span>
+            <span className="diff-line-code">{line.length === 0 ? '\u00A0' : line}</span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -522,12 +877,47 @@ function readableToolName(toolName: string): string {
   }
 }
 
-function isFileTool(toolName: string): boolean {
-  return toolName === 'Read' || toolName === 'Write'
-}
-
 function getToolPath(input: Record<string, unknown> | undefined): string {
   return typeof input?.path === 'string' ? input.path : ''
+}
+
+function getWriteContent(
+  input: Record<string, unknown> | undefined,
+  fallback: string,
+): string {
+  if (typeof input?.content === 'string' && input.content.length > 0) return input.content
+  return fallback
+}
+
+function getFileName(path: string): string {
+  if (!path) return ''
+  const normalized = path.replace(/\\/g, '/')
+  const idx = normalized.lastIndexOf('/')
+  return idx === -1 ? normalized : normalized.slice(idx + 1)
+}
+
+function getDirectory(path: string): string {
+  if (!path) return ''
+  const normalized = path.replace(/\\/g, '/')
+  const idx = normalized.lastIndexOf('/')
+  return idx === -1 ? '' : normalized.slice(0, idx)
+}
+
+function splitContentLines(content: string): string[] {
+  if (!content) return []
+  const trimmed = content.replace(/\n$/u, '')
+  if (trimmed.length === 0) return []
+  return trimmed.split('\n')
+}
+
+function clipDisplayLines(lines: string[], max: number): { displayLines: string[]; hiddenCount: number } {
+  if (lines.length <= max) return { displayLines: lines, hiddenCount: 0 }
+  return { displayLines: lines.slice(0, max), hiddenCount: lines.length - max }
+}
+
+function countNonEmptyLines(value: string): number {
+  if (!value) return 0
+  return value.split('\n').filter((line) => line.trim().length > 0).length
 }
 
 function TaskBody({

@@ -65,6 +65,11 @@ const CommandPalette = lazy(() =>
     default: module.CommandPalette,
   })),
 )
+const ShortcutsOverlay = lazy(() =>
+  import('./components/ShortcutsOverlay').then((module) => ({
+    default: module.ShortcutsOverlay,
+  })),
+)
 
 /** Convert an incoming desktop message into the React chat message shape. */
 function toChatMessage(message: DesktopMessage): ChatMessage {
@@ -141,6 +146,7 @@ export function App() {
   const [configOptions, setConfigOptions] = useState<DesktopConfigOption[]>([])
   const configOptionsByThread = useRef<Map<string, DesktopConfigOption[]>>(new Map())
   const [configOptionsLoading, setConfigOptionsLoading] = useState(false)
+  const [messagesLoading, setMessagesLoading] = useState(false)
   const [permissionRequest, setPermissionRequest] =
     useState<DesktopPermissionRequest | null>(null)
   const [questionRequest, setQuestionRequest] =
@@ -152,6 +158,7 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [composerFocusKey, setComposerFocusKey] = useState(0)
 
   useEffect(() => {
@@ -199,11 +206,7 @@ export function App() {
       setProjects(snapshot.projects)
       setThreads(snapshot.threads)
       setActiveThreadId(null)
-      const converted: Record<string, ChatMessage[]> = {}
-      for (const [threadId, threadMessages] of Object.entries(snapshot.messages)) {
-        converted[threadId] = threadMessages.map(toChatMessage)
-      }
-      setMessages(converted)
+      setMessages({})
       setRuntimeMode(snapshot.settings.runtimeMode)
       setRecodeRepoRoot(snapshot.settings.recodeRepoRoot)
       setDetectedRepoRoot(snapshot.settings.detectedRepoRoot)
@@ -236,8 +239,17 @@ export function App() {
         return
       }
 
+      // `?` opens the keyboard shortcut cheatsheet — only when the user isn't
+      // typing into a text field.
+      if (!editable && !event.metaKey && !event.ctrlKey && !event.altKey && event.key === '?') {
+        event.preventDefault()
+        setShortcutsOpen((open) => !open)
+        return
+      }
+
       if (event.key === 'Escape' && !editable) {
         setCommandPaletteOpen(false)
+        setShortcutsOpen(false)
         setSettingsOpen(false)
         setModalOpen(false)
         setWorkspaceError(null)
@@ -365,10 +377,10 @@ export function App() {
     if (cachedConfigOptions !== undefined) {
       setConfigOptions(cachedConfigOptions)
       setConfigOptionsLoading(false)
-      return
+    } else {
+      setConfigOptions([])
     }
 
-    setConfigOptions([])
     if (!bridge) return
 
     let cancelled = false
@@ -399,6 +411,44 @@ export function App() {
     }
   }, [activeThreadId, bridge])
 
+  useEffect(() => {
+    if (!activeThreadId) {
+      setMessagesLoading(false)
+      return
+    }
+    if (Object.prototype.hasOwnProperty.call(messages, activeThreadId)) {
+      setMessagesLoading(false)
+      return
+    }
+    if (!bridge) {
+      setMessages((prev) => ({ ...prev, [activeThreadId]: [] }))
+      setMessagesLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setMessagesLoading(true)
+    void bridge.rpc.request
+      .getThreadMessages({ threadId: activeThreadId })
+      .then((result) => {
+        if (cancelled) return
+        setMessages((prev) => ({
+          ...prev,
+          [activeThreadId]: result.messages.map(toChatMessage),
+        }))
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) showWorkspaceError(error)
+      })
+      .finally(() => {
+        if (!cancelled) setMessagesLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeThreadId, bridge, messages])
+
   function toggleProjectCollapsed(id: string) {
     setCollapsedProjects((prev) => {
       const next = new Set(prev)
@@ -424,8 +474,8 @@ export function App() {
    */
   function switchHeroProject(projectId: string) {
     const current = activeThread
-    const currentMessages = current ? (messages[current.id] ?? []) : []
-    if (current && currentMessages.length === 0) {
+    const currentMessages = current ? messages[current.id] : undefined
+    if (current && currentMessages !== undefined && currentMessages.length === 0) {
       setThreads((prev) =>
         prev.map((t) => (t.id === current.id ? { ...t, projectId } : t)),
       )
@@ -457,6 +507,7 @@ export function App() {
               : [...prev, created.project],
           )
           setThreads((prev) => [created.thread, ...prev])
+          setMessages((prev) => ({ ...prev, [created.thread.id]: [] }))
           setActiveThreadId(created.thread.id)
           configOptionsByThread.current.set(created.thread.id, created.configOptions)
           setConfigOptions(created.configOptions)
@@ -476,6 +527,7 @@ export function App() {
       age: 'now',
     }
     setThreads((prev) => [t, ...prev])
+    setMessages((prev) => ({ ...prev, [id]: [] }))
     setActiveThreadId(id)
     // ensure the project folder is expanded so the new thread is visible
     expandProject(projectId)
@@ -571,6 +623,7 @@ export function App() {
           created.thread,
           ...prev.filter((thread) => thread.id !== created.thread.id),
         ])
+        setMessages((prev) => ({ ...prev, [created.thread.id]: [] }))
         setActiveThreadId(created.thread.id)
         configOptionsByThread.current.set(created.thread.id, created.configOptions)
         setConfigOptions(created.configOptions)
@@ -828,16 +881,17 @@ export function App() {
             onCloseThread={handleCloseThread}
             onCollapse={() => setSidebarOpen(false)}
             onOpenSettings={() => setSettingsOpen(true)}
+            onOpenSearch={() => setCommandPaletteOpen(true)}
           />
         </Suspense>
       </div>
 
         <main className="flex-1 flex flex-col min-w-0 bg-rc-bg">
           {(() => {
-            const threadMessages = activeThread
-              ? (messages[activeThread.id] ?? [])
-              : []
-            const showHero = threadMessages.length === 0
+            const loadedThreadMessages = activeThread ? messages[activeThread.id] : undefined
+            const threadMessages = loadedThreadMessages ?? []
+            const messagesLoaded = !activeThread || loadedThreadMessages !== undefined
+            const showHero = messagesLoaded && threadMessages.length === 0
             const isAgentWorking =
               activeThread?.status === 'running'
               || activeThread?.status === 'requires_action'
@@ -916,9 +970,13 @@ export function App() {
                         </div>
                       </div>
                     )}
-                    <Suspense fallback={<TranscriptLoading />}>
-                      <Transcript thread={activeThread} messages={threadMessages} />
-                    </Suspense>
+                    {messagesLoading && !messagesLoaded ? (
+                      <TranscriptLoading />
+                    ) : (
+                      <Suspense fallback={<TranscriptLoading />}>
+                        <Transcript thread={activeThread} messages={threadMessages} />
+                      </Suspense>
+                    )}
                     <div key="docked" className="composer-fade-in">{composer}</div>
                   </>
                 )}
@@ -928,7 +986,7 @@ export function App() {
         </main>
 
       <Suspense fallback={null}>
-        {(modalOpen || settingsOpen || commandPaletteOpen) && (
+        {(modalOpen || settingsOpen || commandPaletteOpen || shortcutsOpen) && (
           <>
             <ProjectModal
               open={modalOpen}
@@ -968,6 +1026,11 @@ export function App() {
               open={commandPaletteOpen}
               items={commandItems}
               onClose={() => setCommandPaletteOpen(false)}
+            />
+
+            <ShortcutsOverlay
+              open={shortcutsOpen}
+              onClose={() => setShortcutsOpen(false)}
             />
           </>
         )}

@@ -140,6 +140,14 @@ export type RecodeDesktopRPC = {
         params: Record<string, never>
         response: DesktopSnapshot
       }
+      getThreadMessages: {
+        params: {
+          threadId: string
+        }
+        response: {
+          messages: DesktopMessage[]
+        }
+      }
       setRuntimeMode: {
         params: {
           runtimeMode: RecodeRuntimeMode

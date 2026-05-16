@@ -1,14 +1,28 @@
 /**
- * Polished sidebar with pinned-thread hero rotator + Codex-style threads tree.
+ * Sidebar — adopts the ref-src visual language:
  *
- * Visual upgrades:
- *  - rounded, soft surfaces with motion-based reordering
- *  - pinned-thread shuffle hero at the top (BS-Chat style)
- *  - pill thread rows with subtle hover affordances
- *  - pin/close right-side affordances revealed on hover
+ *   ┌───────────────────────────────┐
+ *   │  [logo]  Recode      [⇤]      │ header
+ *   │                               │
+ *   │  [✎] New chat            ⌘N   │
+ *   │  [+] New folder          ⌘O   │
+ *   │  [⌕] Search              ⌘K   │
+ *   │  ───────────────────────────  │
+ *   │  [PINNED HERO ROTATOR]        │ (kept)
+ *   │  PROJECTS                     │
+ *   │   ▸ folder                    │
+ *   │     ▸ thread                  │
+ *   │  CHATS                        │
+ *   │   ▸ orphaned thread           │
+ *   │                               │
+ *   │  [⚙] Settings                 │ footer (kept here per spec)
+ *   └───────────────────────────────┘
  *
- * The pinned set is persisted to localStorage so it survives reloads. The
- * sidebar still consumes the same prop surface the App already passes in.
+ * Implementation notes:
+ *  - We keep the pinned-thread hero rotator with shuffle, hover pin/close.
+ *  - We keep our existing prop surface and motion behavior.
+ *  - The new look uses subtler borders, slightly larger hit-targets, and
+ *    a refined typographic rhythm reminiscent of the reference.
  */
 
 import {
@@ -16,20 +30,19 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronsUpDown,
-  Clock,
-  Diamond,
   FolderPlus,
   GitBranch,
   ListFilter,
+  MessageCircleMore,
   PanelLeftClose,
   Pin,
   Plus,
   Radio,
+  Search,
   Settings,
   SquarePen,
   X,
 } from 'lucide-react'
-import { BsChatFill } from 'react-icons/bs'
 import {
   AnimatePresence,
   motion,
@@ -39,6 +52,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Project, Thread } from '../types'
 import { cn } from '../lib/cn'
+import { Kbd, KbdGroup } from './ui/kbd'
 
 interface SidebarProps {
   projects: Project[]
@@ -53,6 +67,7 @@ interface SidebarProps {
   onCloseThread: (threadId: string) => void
   onCollapse: () => void
   onOpenSettings: () => void
+  onOpenSearch?: () => void
 }
 
 const PIN_STORAGE_KEY = 'recode-pinned-threads'
@@ -89,6 +104,7 @@ export function Sidebar({
   onCloseThread,
   onCollapse,
   onOpenSettings,
+  onOpenSearch,
 }: SidebarProps) {
   const [pinned, setPinned] = useState<Set<string>>(readPinnedFromStorage)
   const [heroIndex, setHeroIndex] = useState(0)
@@ -106,6 +122,11 @@ export function Sidebar({
     () => threads.filter((thread) => pinned.has(thread.id)),
     [threads, pinned],
   )
+
+  const orphanThreads = useMemo(() => {
+    const projectIds = new Set(projects.map((p) => p.id))
+    return threads.filter((t) => !projectIds.has(t.projectId))
+  }, [projects, threads])
 
   useEffect(() => {
     if (pinnedThreads.length === 0) {
@@ -153,37 +174,58 @@ export function Sidebar({
   }, [projects, threads, pinnedThreads.length])
 
   return (
-    <aside className="w-[260px] shrink-0 h-full bg-rc-sidebar border-r border-rc-border flex flex-col select-none">
-      {/* Sidebar chrome */}
-      <div className="h-9 px-2 flex items-center justify-end">
+    <aside className="flex h-full w-[260px] shrink-0 flex-col select-none border-r border-rc-border bg-rc-sidebar">
+      {/* Header — wordmark-ish placeholder + collapse */}
+      <div className="flex h-11 items-center justify-between gap-1 px-2.5">
+        <div className="flex min-w-0 items-center gap-2 pl-1">
+          <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-foreground/90 text-background shadow-sm">
+            <span className="display text-[12px] font-semibold leading-none">R</span>
+          </div>
+          <span className="display truncate text-[13.5px] font-semibold tracking-tight text-rc-text">
+            Recode
+          </span>
+        </div>
         <button
           onClick={onCollapse}
           title="Hide sidebar"
-          className="w-7 h-7 rounded-md flex items-center justify-center text-rc-faint hover:text-rc-text hover:bg-rc-hover transition-colors"
+          className="flex h-7 w-7 items-center justify-center rounded-md text-rc-faint transition-colors hover:bg-rc-hover hover:text-rc-text"
         >
-          <PanelLeftClose className="w-[15px] h-[15px]" strokeWidth={1.5} />
+          <PanelLeftClose className="h-[15px] w-[15px]" strokeWidth={1.5} />
         </button>
       </div>
 
-      {/* Top action group */}
-      <div className="px-2 pb-2 space-y-0.5">
-        <NavItem
-          icon={<SquarePen className="w-[15px] h-[15px]" strokeWidth={1.5} />}
-          label="New thread"
+      {/* NavMain — clean rows with kbd hints, ref-src style */}
+      <div className="space-y-0.5 px-2 pt-1 pb-2">
+        <NavRow
+          icon={<MessageCircleMore className="h-[15px] w-[15px]" strokeWidth={1.5} />}
+          label="New chat"
           onClick={onNewThread}
-          accent
+          shortcut={
+            <KbdGroup className="ml-auto scale-90 gap-0">
+              <Kbd className="size-3 bg-transparent">⌘</Kbd>
+              <Kbd className="size-3 bg-transparent uppercase">N</Kbd>
+            </KbdGroup>
+          }
         />
-        <NavItem
-          icon={<Clock className="w-[15px] h-[15px]" strokeWidth={1.5} />}
-          label="Automations"
+        <NavRow
+          icon={<FolderPlus className="h-[15px] w-[15px]" strokeWidth={1.5} />}
+          label="New project"
+          onClick={onNewFolder}
         />
-        <NavItem
-          icon={<Diamond className="w-[15px] h-[15px]" strokeWidth={1.5} />}
-          label="Skills"
+        <NavRow
+          icon={<Search className="h-[15px] w-[15px]" strokeWidth={1.5} />}
+          label="Search"
+          onClick={onOpenSearch}
+          shortcut={
+            <KbdGroup className="ml-auto scale-90 gap-0">
+              <Kbd className="size-3 bg-transparent">⌘</Kbd>
+              <Kbd className="size-3 bg-transparent uppercase">K</Kbd>
+            </KbdGroup>
+          }
         />
       </div>
 
-      {/* Pinned hero rotator */}
+      {/* Pinned hero rotator (kept) */}
       <MotionConfig transition={springConfig}>
         <div className="px-2.5">
           <motion.div layout className="overflow-hidden">
@@ -196,10 +238,8 @@ export function Sidebar({
                   initial={{ opacity: 0, scale: 0.92, y: -10 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.92, y: -10 }}
-                  onClick={() => {
-                    onSelectThread(currentHeroThread.id)
-                  }}
-                  className="group/hero w-full flex cursor-pointer items-center justify-between rounded-2xl bg-primary text-primary-foreground shadow-sm p-2 pr-2.5"
+                  onClick={() => onSelectThread(currentHeroThread.id)}
+                  className="group/hero flex w-full cursor-pointer items-center justify-between rounded-2xl bg-primary p-2 pr-2.5 text-primary-foreground shadow-sm"
                 >
                   <div className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary-foreground/20">
@@ -208,26 +248,10 @@ export function Sidebar({
                     <AnimatePresence mode="popLayout">
                       <motion.span
                         key={currentHeroThread.id}
-                        initial={{
-                          opacity: 0,
-                          scale: 0.85,
-                          filter: 'blur(6px)',
-                        }}
-                        animate={{
-                          opacity: 1,
-                          scale: 1,
-                          filter: 'blur(0px)',
-                        }}
-                        exit={{
-                          opacity: 0,
-                          scale: 0.85,
-                          filter: 'blur(6px)',
-                        }}
-                        transition={{
-                          duration: 0.45,
-                          type: 'spring',
-                          bounce: 0,
-                        }}
+                        initial={{ opacity: 0, scale: 0.85, filter: 'blur(6px)' }}
+                        animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
+                        exit={{ opacity: 0, scale: 0.85, filter: 'blur(6px)' }}
+                        transition={{ duration: 0.45, type: 'spring', bounce: 0 }}
                         className="truncate text-[13px] font-semibold"
                       >
                         {currentHeroThread.title}
@@ -242,7 +266,7 @@ export function Sidebar({
                         event.stopPropagation()
                         shuffleHero()
                       }}
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary-foreground/20 hover:bg-primary-foreground/30 transition-colors"
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary-foreground/20 transition-colors hover:bg-primary-foreground/30"
                     >
                       <ChevronsUpDown className="h-3.5 w-3.5" />
                     </motion.span>
@@ -253,127 +277,161 @@ export function Sidebar({
           </motion.div>
         </div>
 
-        {/* Threads section header */}
-        <div className="px-3 pt-3 pb-1 flex items-center justify-between">
-          <span className="text-[11px] font-semibold text-rc-muted uppercase tracking-wider">
-            Threads
-          </span>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={onNewFolder}
-              title="New folder"
-              className="w-6 h-6 rounded-md flex items-center justify-center text-rc-faint hover:text-rc-text hover:bg-rc-hover transition-colors"
-            >
-              <FolderPlus className="w-[13px] h-[13px]" strokeWidth={1.5} />
-            </button>
-            <button
-              title="Filter / sort"
-              className="w-6 h-6 rounded-md flex items-center justify-center text-rc-faint hover:text-rc-text hover:bg-rc-hover transition-colors"
-            >
-              <ListFilter className="w-[13px] h-[13px]" strokeWidth={1.5} />
-            </button>
-          </div>
-        </div>
-
-        {/* Threads tree */}
+        {/* Scrollable region: Projects + Chats */}
         <div
           ref={scrollRef}
-          className="relative flex-1 overflow-y-auto px-2 pb-2"
+          className="relative flex-1 overflow-y-auto px-2 pt-2 pb-2"
         >
-          <AnimatePresence initial={false}>
-            {projects.map((project) => {
-              const isCollapsed = collapsedProjects.has(project.id)
-              const projectThreads = threads.filter(
-                (t) => t.projectId === project.id,
-              )
-              return (
-                <motion.div
-                  layout
-                  key={project.id}
-                  initial={{ opacity: 0, y: -6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -6 }}
-                  className="mb-1"
-                >
-                  <div
-                    className="group relative flex items-center px-2 py-1.5 rounded-lg hover:bg-rc-hover"
-                    title={project.path}
+          {/* PROJECTS section header */}
+          <div className="flex items-center justify-between px-2 pb-1">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-rc-faint">
+              Projects
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={onNewFolder}
+                title="New project"
+                className="flex h-6 w-6 items-center justify-center rounded-md text-rc-faint transition-colors hover:bg-rc-hover hover:text-rc-text"
+              >
+                <FolderPlus className="h-[13px] w-[13px]" strokeWidth={1.5} />
+              </button>
+              <button
+                title="Filter / sort"
+                className="flex h-6 w-6 items-center justify-center rounded-md text-rc-faint transition-colors hover:bg-rc-hover hover:text-rc-text"
+              >
+                <ListFilter className="h-[13px] w-[13px]" strokeWidth={1.5} />
+              </button>
+            </div>
+          </div>
+
+          {projects.length === 0 ? (
+            <div className="px-2 py-1.5 text-[11.5px] italic text-rc-faint">
+              No projects yet
+            </div>
+          ) : (
+            <AnimatePresence initial={false}>
+              {projects.map((project) => {
+                const isCollapsed = collapsedProjects.has(project.id)
+                const projectThreads = threads.filter(
+                  (t) => t.projectId === project.id,
+                )
+                return (
+                  <motion.div
+                    layout
+                    key={project.id}
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    className="mb-0.5"
                   >
-                    <button
-                      onClick={() => onToggleProject(project.id)}
-                      className="flex-1 flex items-center gap-1.5 min-w-0 text-left"
+                    <div
+                      className="group relative flex items-center rounded-lg px-2 py-1.5 hover:bg-rc-hover"
+                      title={project.path}
                     >
-                      {isCollapsed ? (
-                        <ChevronRight
-                          className="w-3 h-3 text-rc-faint shrink-0"
-                          strokeWidth={2}
-                        />
-                      ) : (
-                        <ChevronDown
-                          className="w-3 h-3 text-rc-faint shrink-0"
-                          strokeWidth={2}
-                        />
-                      )}
-                      <span className="text-[12.5px] font-semibold text-rc-text truncate">
-                        {project.name}
-                      </span>
-                    </button>
-
-                    <span className="text-[10px] text-rc-faint mono ml-2 group-hover:opacity-0 transition-opacity duration-150">
-                      {projectThreads.length}
-                    </span>
-
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onNewThreadInProject(project.id)
-                      }}
-                      title={`New thread in ${project.name}`}
-                      className="absolute right-1.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-md flex items-center justify-center text-rc-muted opacity-0 group-hover:opacity-100 hover:bg-rc-hover-strong hover:text-rc-text transition-opacity duration-150"
-                    >
-                      <Plus className="w-3 h-3" strokeWidth={2} />
-                    </button>
-                  </div>
-
-                  <AnimatePresence initial={false}>
-                    {!isCollapsed && (
-                      <motion.div
-                        key="children"
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="ml-3 border-l border-rc-border pl-1 overflow-hidden"
+                      <button
+                        onClick={() => onToggleProject(project.id)}
+                        className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
                       >
-                        {projectThreads.length === 0 ? (
-                          <div className="px-2 py-1 text-[11px] text-rc-faint italic">
-                            No threads
-                          </div>
+                        {isCollapsed ? (
+                          <ChevronRight
+                            className="h-3 w-3 shrink-0 text-rc-faint"
+                            strokeWidth={2}
+                          />
                         ) : (
-                          <AnimatePresence initial={false} mode="popLayout">
-                            {projectThreads.map((thread) => {
-                              const isHero = currentHeroThread?.id === thread.id
-                              return (
-                                <ThreadRow
-                                  key={thread.id}
-                                  thread={thread}
-                                  active={thread.id === activeThreadId}
-                                  isPinned={pinned.has(thread.id)}
-                                  isHero={isHero}
-                                  onSelect={() => onSelectThread(thread.id)}
-                                  onClose={() => onCloseThread(thread.id)}
-                                  onTogglePin={() => togglePin(thread.id)}
-                                />
-                              )
-                            })}
-                          </AnimatePresence>
+                          <ChevronDown
+                            className="h-3 w-3 shrink-0 text-rc-faint"
+                            strokeWidth={2}
+                          />
                         )}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </motion.div>
-              )
-            })}
-          </AnimatePresence>
+                        <span className="truncate text-[12.5px] font-medium text-rc-text">
+                          {project.name}
+                        </span>
+                      </button>
+
+                      <span className="mono ml-2 text-[10px] text-rc-faint transition-opacity duration-150 group-hover:opacity-0">
+                        {projectThreads.length}
+                      </span>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onNewThreadInProject(project.id)
+                        }}
+                        title={`New thread in ${project.name}`}
+                        className="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-rc-muted opacity-0 transition-opacity duration-150 hover:bg-rc-hover-strong hover:text-rc-text group-hover:opacity-100"
+                      >
+                        <Plus className="h-3 w-3" strokeWidth={2} />
+                      </button>
+                    </div>
+
+                    <AnimatePresence initial={false}>
+                      {!isCollapsed && (
+                        <motion.div
+                          key="children"
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="ml-3 overflow-hidden border-l border-rc-border-soft pl-1"
+                        >
+                          {projectThreads.length === 0 ? (
+                            <div className="px-2 py-1 text-[11px] italic text-rc-faint">
+                              No threads
+                            </div>
+                          ) : (
+                            <AnimatePresence initial={false} mode="popLayout">
+                              {projectThreads.map((thread) => {
+                                const isHero = currentHeroThread?.id === thread.id
+                                return (
+                                  <ThreadRow
+                                    key={thread.id}
+                                    thread={thread}
+                                    active={thread.id === activeThreadId}
+                                    isPinned={pinned.has(thread.id)}
+                                    isHero={isHero}
+                                    onSelect={() => onSelectThread(thread.id)}
+                                    onClose={() => onCloseThread(thread.id)}
+                                    onTogglePin={() => togglePin(thread.id)}
+                                  />
+                                )
+                              })}
+                            </AnimatePresence>
+                          )}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
+                )
+              })}
+            </AnimatePresence>
+          )}
+
+          {/* CHATS section — orphaned threads (no parent project) */}
+          {orphanThreads.length > 0 && (
+            <>
+              <div className="mt-3 flex items-center justify-between px-2 pb-1">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-rc-faint">
+                  Chats
+                </span>
+              </div>
+              <AnimatePresence initial={false} mode="popLayout">
+                {orphanThreads.map((thread) => {
+                  const isHero = currentHeroThread?.id === thread.id
+                  return (
+                    <ThreadRow
+                      key={thread.id}
+                      thread={thread}
+                      active={thread.id === activeThreadId}
+                      isPinned={pinned.has(thread.id)}
+                      isHero={isHero}
+                      onSelect={() => onSelectThread(thread.id)}
+                      onClose={() => onCloseThread(thread.id)}
+                      onTogglePin={() => togglePin(thread.id)}
+                    />
+                  )
+                })}
+              </AnimatePresence>
+            </>
+          )}
 
           <AnimatePresence>
             {showFade && (
@@ -388,10 +446,10 @@ export function Sidebar({
         </div>
       </MotionConfig>
 
-      {/* Footer: settings */}
-      <div className="px-2 pb-3 pt-2 border-t border-rc-border-soft">
-        <NavItem
-          icon={<Settings className="w-[15px] h-[15px]" strokeWidth={1.5} />}
+      {/* Footer — Settings stays here per user spec */}
+      <div className="border-t border-rc-border-soft px-2 pt-2 pb-3">
+        <NavRow
+          icon={<Settings className="h-[15px] w-[15px]" strokeWidth={1.5} />}
           label="Settings"
           onClick={onOpenSettings}
         />
@@ -400,35 +458,33 @@ export function Sidebar({
   )
 }
 
-function NavItem({
+function NavRow({
   icon,
   label,
   onClick,
-  accent,
+  shortcut,
 }: {
   icon: React.ReactNode
   label: string
   onClick?: () => void
-  accent?: boolean
+  shortcut?: React.ReactNode
 }) {
   return (
     <button
       onClick={onClick}
       className={cn(
-        'w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[13px] transition-colors',
-        accent
-          ? 'text-rc-text hover:bg-rc-accent-soft hover:text-rc-accent'
-          : 'text-rc-text hover:bg-rc-hover',
+        'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] transition-colors',
+        'text-rc-text hover:bg-rc-hover',
       )}
     >
-      <span className={cn(accent ? 'text-rc-accent' : 'text-rc-muted')}>
-        {icon}
-      </span>
+      <span className="text-rc-muted">{icon}</span>
       <span className="font-medium">{label}</span>
+      {shortcut}
     </button>
   )
 }
 
+// Re-uses the original ThreadRow look (pin/close hover, status, age) verbatim.
 function ThreadRow({
   thread,
   active,
@@ -462,7 +518,7 @@ function ThreadRow({
         scale: { duration: 0.35 },
       }}
       className={cn(
-        'thread-row group relative flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-left transition-colors overflow-hidden',
+        'thread-row group relative flex items-center gap-1.5 overflow-hidden rounded-lg px-2 py-1.5 text-left transition-colors',
         active ? 'active' : 'text-rc-text hover:bg-rc-hover',
       )}
     >
@@ -478,31 +534,26 @@ function ThreadRow({
       <button
         onClick={onSelect}
         title={thread.title}
-        className="relative z-10 min-w-0 flex-1 flex items-center gap-2 text-left"
+        className="relative z-10 flex min-w-0 flex-1 items-center gap-2 text-left"
       >
-        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-rc-hover text-rc-faint group-hover:text-rc-muted transition-colors">
-          <BsChatFill className="h-2.5 w-2.5" />
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-rc-hover text-rc-faint transition-colors group-hover:text-rc-muted">
+          <SquarePen className="h-2.5 w-2.5" strokeWidth={2} />
         </span>
-        <span className="min-w-0 block text-[12.5px] truncate leading-snug">
+        <span className="block min-w-0 truncate text-[12.5px] leading-snug">
           {thread.title}
         </span>
       </button>
 
-      <span className="relative z-10 flex items-center gap-1 shrink-0">
+      <span className="relative z-10 flex shrink-0 items-center gap-1">
         {thread.badge === 'branch' && (
-          <GitBranch
-            className="w-3 h-3 text-rc-faint"
-            strokeWidth={1.5}
-          />
+          <GitBranch className="h-3 w-3 text-rc-faint" strokeWidth={1.5} />
         )}
         <ThreadStatusIndicator status={thread.status ?? 'idle'} />
 
-        {/* Age (default) → hides on hover */}
-        <span className="text-[10.5px] text-rc-faint mono group-hover:hidden">
+        <span className="mono text-[10.5px] text-rc-faint group-hover:hidden">
           {thread.age}
         </span>
 
-        {/* Pin button: always visible if pinned, fades in on hover otherwise */}
         <button
           onClick={(event) => {
             event.stopPropagation()
@@ -510,20 +561,20 @@ function ThreadRow({
           }}
           title={isPinned ? 'Unpin thread' : 'Pin thread'}
           className={cn(
-            'hidden group-hover:flex w-5 h-5 rounded-md items-center justify-center transition-colors',
+            'hidden h-5 w-5 items-center justify-center rounded-md transition-colors group-hover:flex',
             isPinned
               ? 'text-rc-accent hover:bg-rc-accent-soft'
-              : 'text-rc-faint hover:text-rc-text hover:bg-rc-hover-strong',
+              : 'text-rc-faint hover:bg-rc-hover-strong hover:text-rc-text',
           )}
         >
-          <Pin className="w-3 h-3" fill={isPinned ? 'currentColor' : 'none'} />
+          <Pin className="h-3 w-3" fill={isPinned ? 'currentColor' : 'none'} />
         </button>
         {isPinned && (
           <span
             title="Pinned"
-            className="group-hover:hidden inline-flex w-3.5 h-3.5 items-center justify-center text-rc-accent"
+            className="inline-flex h-3.5 w-3.5 items-center justify-center text-rc-accent group-hover:hidden"
           >
-            <Pin className="w-3 h-3" fill="currentColor" />
+            <Pin className="h-3 w-3" fill="currentColor" />
           </span>
         )}
 
@@ -533,9 +584,9 @@ function ThreadRow({
             onClose()
           }}
           title="Close thread"
-          className="hidden group-hover:flex w-5 h-5 rounded-md items-center justify-center text-rc-faint hover:text-rc-text hover:bg-rc-hover-strong"
+          className="hidden h-5 w-5 items-center justify-center rounded-md text-rc-faint hover:bg-rc-hover-strong hover:text-rc-text group-hover:flex"
         >
-          <X className="w-3 h-3" strokeWidth={2} />
+          <X className="h-3 w-3" strokeWidth={2} />
         </button>
       </span>
     </motion.div>
@@ -550,7 +601,7 @@ function ThreadStatusIndicator({
   if (status === 'running') {
     return (
       <span title="Running" className="thread-status-dot is-running">
-        <Radio className="w-2.5 h-2.5" strokeWidth={2.2} />
+        <Radio className="h-2.5 w-2.5" strokeWidth={2.2} />
       </span>
     )
   }
@@ -564,7 +615,7 @@ function ThreadStatusIndicator({
   if (status === 'error') {
     return (
       <span title="Error" className="thread-status-dot is-error">
-        <AlertCircle className="w-3 h-3" strokeWidth={2} />
+        <AlertCircle className="h-3 w-3" strokeWidth={2} />
       </span>
     )
   }

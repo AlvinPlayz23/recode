@@ -66,7 +66,17 @@ export class DesktopSessionManager {
   }
 
   snapshot(): DesktopSnapshot {
-    return this.#state;
+    return {
+      projects: this.#state.projects,
+      threads: this.#state.threads,
+      messages: {},
+      settings: this.#state.settings,
+    };
+  }
+
+  getThreadMessages(threadId: string): { messages: DesktopMessage[] } {
+    this.#getThread(threadId);
+    return { messages: [...(this.#state.messages[threadId] ?? [])] };
   }
 
   setRuntimeMode(runtimeMode: RecodeRuntimeMode): DesktopSettings {
@@ -249,15 +259,7 @@ export class DesktopSessionManager {
   }
 
   async closeSession(threadId: string): Promise<void> {
-    const session = this.#active.get(threadId);
-    if (session !== undefined) {
-      try {
-        await session.client.request("session/close", { sessionId: session.acpSessionId });
-      } finally {
-        session.client.close();
-        this.#active.delete(threadId);
-      }
-    }
+    await this.#deactivateSession(threadId, { deleteThread: true });
     this.#state.threads = this.#state.threads.filter((thread) => thread.id !== threadId);
     delete this.#state.messages[threadId];
     this.#save();
@@ -316,6 +318,41 @@ export class DesktopSessionManager {
     if (session === undefined) return;
     const update = expectRecord(params.update, "session/update update");
     this.#applySessionUpdate(session, update);
+  }
+
+  async #deactivateSession(
+    threadId: string,
+    options: { deleteThread: boolean }
+  ): Promise<void> {
+    const session = this.#active.get(threadId);
+    if (session === undefined) return;
+
+    for (const respond of session.pendingPermissions.values()) {
+      respond({ outcome: { outcome: "cancelled" } });
+    }
+    session.pendingPermissions.clear();
+    for (const respond of session.pendingQuestions.values()) {
+      respond({ dismissed: true });
+    }
+    session.pendingQuestions.clear();
+
+    try {
+      await session.client.request("session/close", { sessionId: session.acpSessionId });
+    } catch {
+      // Closing is best-effort; the local client process is still torn down below.
+    } finally {
+      session.client.close();
+      this.#active.delete(threadId);
+    }
+
+    if (!options.deleteThread) {
+      const thread = this.#state.threads.find((item) => item.id === threadId);
+      if (thread !== undefined && (thread.status === "running" || thread.status === "requires_action")) {
+        thread.status = "idle";
+        this.#options.sendSessionUpdate({ thread: { ...thread } });
+        this.#save();
+      }
+    }
   }
 
   #handleClientRequest(request: JsonRpcRequest, respond: (result: unknown) => void): void {

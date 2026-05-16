@@ -3,6 +3,7 @@ import type {
   DesktopConfigOption,
   DesktopDirectoryListing,
   DesktopErrorUpdate,
+  DesktopMessage,
   DesktopProject,
   DesktopPermissionRequest,
   DesktopQuestionRequest,
@@ -21,6 +22,7 @@ export interface DesktopBridge {
   rpc: {
     request: {
       getSnapshot: (params: Record<string, never>) => Promise<DesktopSnapshot>
+      getThreadMessages: (params: { threadId: string }) => Promise<{ messages: DesktopMessage[] }>
       setRuntimeMode: (params: { runtimeMode: RecodeRuntimeMode }) => Promise<DesktopSettings>
       setRecodeRepoRoot: (params: { path: string }) => Promise<DesktopSettings>
       setGpuAccelerationDisabled: (params: { disabled: boolean }) => Promise<DesktopSettings>
