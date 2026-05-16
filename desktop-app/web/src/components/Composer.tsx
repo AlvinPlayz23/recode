@@ -25,6 +25,7 @@ interface ComposerProps {
   modelOptions?: DesktopConfigOptionValue[]
   modelMenuEmptyLabel?: string
   isGenerating?: boolean
+  focusKey?: number
   onChangeModel: (model: string) => void
   onChangeMode: (mode: SessionMode) => void
   onChangeReasoning: (level: ReasoningLevel) => void
@@ -45,6 +46,7 @@ export function Composer({
   modelOptions,
   modelMenuEmptyLabel = 'Select a workspace to load models',
   isGenerating = false,
+  focusKey = 0,
   onChangeModel,
   onChangeMode,
   onChangeReasoning,
@@ -63,6 +65,10 @@ export function Composer({
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, 220)}px`
   }, [text])
+
+  useEffect(() => {
+    textareaRef.current?.focus()
+  }, [focusKey])
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {

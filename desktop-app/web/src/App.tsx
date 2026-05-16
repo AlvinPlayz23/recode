@@ -15,6 +15,7 @@ import { Composer } from './components/Composer'
 import { ProjectModal } from './components/ProjectModal'
 import { ProjectThreadPicker } from './components/ProjectThreadPicker'
 import { SettingsModal } from './components/SettingsModal'
+import { CommandPalette, type CommandPaletteItem } from './components/CommandPalette'
 import { initialProjects, initialThreads, type PickerEntry } from './mock-data'
 import {
   createDesktopBridge,
@@ -117,6 +118,8 @@ export function App() {
   const [folderPickerMode, setFolderPickerMode] = useState<'workspace' | 'recode-repo'>('workspace')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
+  const [composerFocusKey, setComposerFocusKey] = useState(0)
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -131,6 +134,11 @@ export function App() {
       onSessionError: (error) => {
         const targetThreadId = error.threadId ?? activeThreadId
         if (!targetThreadId) return
+        setThreads((prev) =>
+          prev.map((thread) =>
+            thread.id === targetThreadId ? { ...thread, status: 'error' } : thread,
+          ),
+        )
         setMessages((prev) => ({
           ...prev,
           [targetThreadId]: [
@@ -161,6 +169,43 @@ export function App() {
     })
   }, [])
 
+  useEffect(() => {
+    function handleGlobalKeyDown(event: KeyboardEvent) {
+      const target = event.target instanceof HTMLElement ? event.target : null
+      const editable = target?.tagName === 'INPUT'
+        || target?.tagName === 'TEXTAREA'
+        || target?.isContentEditable === true
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setCommandPaletteOpen((open) => !open)
+        return
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'n') {
+        event.preventDefault()
+        handleNewThread()
+        return
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'l') {
+        event.preventDefault()
+        setComposerFocusKey((value) => value + 1)
+        return
+      }
+
+      if (event.key === 'Escape' && !editable) {
+        setCommandPaletteOpen(false)
+        setSettingsOpen(false)
+        setModalOpen(false)
+        setWorkspaceError(null)
+      }
+    }
+
+    window.addEventListener('keydown', handleGlobalKeyDown)
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown)
+  })
+
   const activeThread = useMemo(
     () => threads.find((t) => t.id === activeThreadId) ?? null,
     [threads, activeThreadId],
@@ -173,6 +218,91 @@ export function App() {
         : null,
     [projects, activeThread],
   )
+
+  const commandItems = useMemo<CommandPaletteItem[]>(() => {
+    const items: CommandPaletteItem[] = [
+      {
+        id: 'new-thread',
+        title: 'New thread',
+        detail: 'Create a thread in the current workspace',
+        section: 'Action',
+        keywords: 'ctrl n',
+        run: handleNewThread,
+      },
+      {
+        id: 'open-workspace',
+        title: 'Open workspace',
+        detail: 'Add a folder to the sidebar',
+        section: 'Action',
+        run: handleNewFolder,
+      },
+      {
+        id: 'focus-composer',
+        title: 'Focus composer',
+        detail: 'Jump to the prompt input',
+        section: 'Action',
+        keywords: 'ctrl l prompt input',
+        run: () => setComposerFocusKey((value) => value + 1),
+      },
+      {
+        id: 'toggle-sidebar',
+        title: sidebarOpen ? 'Hide sidebar' : 'Show sidebar',
+        section: 'View',
+        run: () => setSidebarOpen((open) => !open),
+      },
+      {
+        id: 'settings',
+        title: 'Open settings',
+        detail: runtimeMode === 'dev' ? 'Runtime mode: dev' : 'Runtime mode: prod',
+        section: 'View',
+        run: () => setSettingsOpen(true),
+      },
+      {
+        id: 'mode-build',
+        title: 'Switch to Build mode',
+        section: 'Mode',
+        run: () => handleChangeMode('build'),
+      },
+      {
+        id: 'mode-plan',
+        title: 'Switch to Plan mode',
+        section: 'Mode',
+        run: () => handleChangeMode('plan'),
+      },
+    ]
+
+    for (const project of projects) {
+      items.push({
+        id: `workspace-${project.id}`,
+        title: project.name,
+        detail: project.path,
+        section: 'Workspace',
+        run: () => {
+          const firstThread = threads.find((thread) => thread.projectId === project.id)
+          if (firstThread) setActiveThreadId(firstThread.id)
+          else createThreadInProject(project.id)
+          expandProject(project.id)
+        },
+      })
+    }
+
+    for (const thread of threads) {
+      const project = projects.find((item) => item.id === thread.projectId)
+      items.push({
+        id: `thread-${thread.id}`,
+        title: thread.title,
+        detail: project ? `${project.name} · ${thread.model}` : thread.model,
+        section: 'Thread',
+        keywords: thread.status,
+        run: () => {
+          setActiveThreadId(thread.id)
+          expandProject(thread.projectId)
+        },
+      })
+    }
+
+    return items
+  }, [projects, runtimeMode, sidebarOpen, threads])
 
   useEffect(() => {
     const selectedThread = activeThreadId
@@ -430,6 +560,11 @@ export function App() {
       setWorkspaceError(message)
       return
     }
+    setThreads((prev) =>
+      prev.map((thread) =>
+        thread.id === targetThreadId ? { ...thread, status: 'error' } : thread,
+      ),
+    )
     setMessages((prev) => ({
       ...prev,
       [targetThreadId]: [
@@ -441,6 +576,31 @@ export function App() {
         },
       ],
     }))
+  }
+
+  function handleReconnectThread(threadId: string) {
+    if (!bridge) return
+    setConfigOptionsLoading(true)
+    void bridge.rpc.request
+      .activateSession({ threadId })
+      .then((result) => {
+        configOptionsByThread.current.set(result.thread.id, result.configOptions)
+        setThreads((prev) =>
+          prev.map((thread) =>
+            thread.id === result.thread.id
+              ? { ...thread, ...result.thread, status: result.thread.status ?? 'idle' }
+              : thread,
+          ),
+        )
+        if (result.thread.id === activeThreadId) {
+          setConfigOptions(result.configOptions)
+          setModel(result.thread.model)
+          setMode(result.thread.mode ?? 'build')
+        }
+        setWorkspaceError(null)
+      })
+      .catch((error: unknown) => showWorkspaceError(error))
+      .finally(() => setConfigOptionsLoading(false))
   }
 
   function handleSubmit(text: string) {
@@ -465,6 +625,11 @@ export function App() {
       return
     }
     if (bridge) {
+      setThreads((prev) =>
+        prev.map((thread) =>
+          thread.id === activeThread.id ? { ...thread, status: 'running' } : thread,
+        ),
+      )
       void bridge.rpc.request.sendPrompt({ threadId: activeThread.id, text })
       return
     }
@@ -634,6 +799,7 @@ export function App() {
                 onChangeReasoning={setReasoning}
                 onSubmit={handleSubmit}
                 onCancel={handleCancelGeneration}
+                focusKey={composerFocusKey}
                 isGenerating={
                   activeThread?.status === 'running'
                   || activeThread?.status === 'requires_action'
@@ -677,6 +843,21 @@ export function App() {
                   </div>
                 ) : (
                   <>
+                    {activeThread?.status === 'error' && (
+                      <div className="mx-auto mt-3 w-full max-w-[760px] px-8">
+                        <div className="flex items-center justify-between gap-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2">
+                          <span className="text-[12.5px] text-rc-text">
+                            This thread hit a workspace error.
+                          </span>
+                          <button
+                            onClick={() => handleReconnectThread(activeThread.id)}
+                            className="shrink-0 rounded-md border border-rc-border px-2.5 py-1 text-[12px] text-rc-text hover:bg-rc-hover"
+                          >
+                            Reconnect
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     <Transcript thread={activeThread} messages={threadMessages} />
                     <div key="docked" className="composer-fade-in">{composer}</div>
                   </>
@@ -716,6 +897,12 @@ export function App() {
         onChangeTheme={setTheme}
         onChangeRuntimeMode={handleChangeRuntimeMode}
         onChooseRecodeRepo={handleChooseRecodeRepo}
+      />
+
+      <CommandPalette
+        open={commandPaletteOpen}
+        items={commandItems}
+        onClose={() => setCommandPaletteOpen(false)}
       />
 
       {permissionRequest && (
@@ -776,6 +963,14 @@ export function App() {
             {workspaceError}
           </div>
           <div className="flex justify-end">
+            {activeThread && (
+              <button
+                onClick={() => handleReconnectThread(activeThread.id)}
+                className="mr-2 px-3 py-1.5 rounded-md border border-rc-border text-[12px] text-rc-text hover:bg-rc-hover transition-colors"
+              >
+                Reconnect
+              </button>
+            )}
             <button
               onClick={() => setWorkspaceError(null)}
               className="px-3 py-1.5 rounded-md border border-rc-border text-[12px] text-rc-text hover:bg-rc-hover transition-colors"

@@ -109,6 +109,44 @@ body {
   color: var(--rc-text);
 }
 
+.thread-status-dot {
+  width: 0.72rem;
+  height: 0.72rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--rc-text-faint);
+}
+
+.thread-status-dot.is-idle::before,
+.thread-status-dot.is-waiting::before {
+  content: '';
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: var(--rc-text-faint);
+  opacity: 0.45;
+}
+
+.thread-status-dot.is-running {
+  color: var(--rc-accent);
+  animation: threadStatusPulse 1.4s ease-in-out infinite;
+}
+
+.thread-status-dot.is-waiting::before {
+  background: #d89b32;
+  opacity: 1;
+}
+
+.thread-status-dot.is-error {
+  color: #e16d6d;
+}
+
+@keyframes threadStatusPulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
 .tool-shimmer {
   background: linear-gradient(
     90deg,
@@ -313,6 +351,93 @@ body {
   background: var(--rc-card);
   padding: 0.65rem;
   font-size: 0.75rem;
+}
+
+.file-tool-card,
+.bash-tool-card {
+  overflow: hidden;
+  border: 1px solid var(--rc-border-soft);
+  border-radius: 0.7rem;
+  background: var(--rc-card);
+}
+
+.file-tool-header,
+.bash-tool-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--rc-border-soft);
+  background: var(--rc-sidebar);
+  padding: 0.45rem 0.6rem;
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+  font-size: 0.72rem;
+}
+
+.file-tool-body,
+.bash-tool-output {
+  max-height: 18rem;
+  margin: 0;
+  overflow: auto;
+  padding: 0.6rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--rc-text-muted);
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+
+.bash-tool-card {
+  background: #0d0f12;
+  border-color: color-mix(in srgb, var(--rc-border-soft) 70%, #000);
+}
+
+.bash-tool-header {
+  background: #14171c;
+}
+
+.bash-tool-output {
+  color: #d6dae3;
+  background: #0d0f12;
+}
+
+.bash-status {
+  border: 1px solid var(--rc-border-soft);
+  border-radius: 999px;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+}
+
+.bash-status.is-running {
+  border-color: var(--rc-accent);
+  color: var(--rc-accent);
+}
+
+.bash-status.is-done {
+  color: #61b37b;
+}
+
+.bash-status.is-error {
+  color: #e16d6d;
+}
+
+.tool-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  flex-shrink: 0;
+  border-radius: 0.4rem;
+  color: var(--rc-text-faint);
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.tool-action-button:hover {
+  background: var(--rc-hover);
+  color: var(--rc-text);
 }
 
 .edit-preview-header {

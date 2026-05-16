@@ -5,7 +5,7 @@
 
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { ChevronDown, ChevronRight, Terminal, XCircle } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Copy, FileText, Terminal, XCircle } from 'lucide-react'
 import { useState } from 'react'
 import type { ChatMessage, Thread } from '../types'
 import { TextShimmer } from './TextShimmer'
@@ -146,6 +146,8 @@ function ExpandableToolRow({
   const [open, setOpen] = useState(false)
   const content = message.toolContent ?? formatToolInput(message.toolInput)
   const isTask = toolName === 'Task'
+  const filePath = getToolPath(message.toolInput)
+  const command = typeof message.toolInput?.command === 'string' ? message.toolInput.command : subject
   const labelText = running
     ? `${runningVerb(toolName)}${subject ? ` ${subject}` : ''}`
     : `${readableToolName(toolName).toLowerCase()}${subject ? ` ${subject}` : ''}`
@@ -182,6 +184,10 @@ function ExpandableToolRow({
         <div className="ml-5 mt-1.5 pl-3 border-l border-rc-border-soft">
           {toolName === 'Edit' ? (
             <EditToolDetails input={message.toolInput} content={content} fallback={message.body} />
+          ) : toolName === 'Bash' ? (
+            <BashToolDetails command={command} content={content || message.body} failed={failed} running={running} />
+          ) : isFileTool(toolName) && filePath ? (
+            <FileToolDetails path={filePath} content={content || message.body} />
           ) : isTask ? (
             <TaskBody input={message.toolInput} content={content || message.body} />
           ) : (
@@ -192,6 +198,83 @@ function ExpandableToolRow({
         </div>
       )}
     </div>
+  )
+}
+
+function FileToolDetails({
+  path,
+  content,
+}: {
+  path: string
+  content: string
+}) {
+  return (
+    <div className="file-tool-card">
+      <div className="file-tool-header">
+        <span className="min-w-0 flex items-center gap-2">
+          <FileText className="h-3.5 w-3.5 shrink-0 text-rc-faint" strokeWidth={1.7} />
+          <span className="truncate text-rc-text">{path}</span>
+        </span>
+        <CopyButton value={path} label="Copy path" />
+      </div>
+      <pre className="file-tool-body">{content}</pre>
+    </div>
+  )
+}
+
+function BashToolDetails({
+  command,
+  content,
+  running,
+  failed,
+}: {
+  command: string
+  content: string
+  running: boolean
+  failed: boolean
+}) {
+  return (
+    <div className="bash-tool-card">
+      <div className="bash-tool-header">
+        <span className="min-w-0 truncate">
+          <span className="text-rc-faint">$ </span>
+          <span className="text-rc-text">{command || 'bash'}</span>
+        </span>
+        <span className={'bash-status ' + (failed ? 'is-error' : running ? 'is-running' : 'is-done')}>
+          {failed ? 'failed' : running ? 'running' : 'done'}
+        </span>
+      </div>
+      <pre className="bash-tool-output">{content}</pre>
+    </div>
+  )
+}
+
+function CopyButton({
+  value,
+  label,
+}: {
+  value: string
+  label: string
+}) {
+  const [copied, setCopied] = useState(false)
+
+  return (
+    <button
+      className="tool-action-button"
+      onClick={() => {
+        void navigator.clipboard.writeText(value).then(() => {
+          setCopied(true)
+          window.setTimeout(() => setCopied(false), 1200)
+        })
+      }}
+      title={label}
+    >
+      {copied ? (
+        <Check className="h-3.5 w-3.5" strokeWidth={2} />
+      ) : (
+        <Copy className="h-3.5 w-3.5" strokeWidth={1.8} />
+      )}
+    </button>
   )
 }
 
@@ -338,7 +421,10 @@ function EditToolDetails({
     <div className="edit-preview">
       <div className="edit-preview-header">
         <span className="min-w-0 truncate text-rc-text">{path}</span>
-        <span className="shrink-0 text-rc-faint">{replacementLabel}</span>
+        <span className="flex shrink-0 items-center gap-2">
+          <span className="text-rc-faint">{replacementLabel}</span>
+          <CopyButton value={path} label="Copy path" />
+        </span>
       </div>
       <div className="space-y-2">
         {edits.slice(0, 4).map((edit, index) => (
@@ -434,6 +520,14 @@ function readableToolName(toolName: string): string {
     default:
       return toolName
   }
+}
+
+function isFileTool(toolName: string): boolean {
+  return toolName === 'Read' || toolName === 'Write'
+}
+
+function getToolPath(input: Record<string, unknown> | undefined): string {
+  return typeof input?.path === 'string' ? input.path : ''
 }
 
 function TaskBody({

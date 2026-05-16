@@ -7,6 +7,7 @@
  */
 
 import {
+  AlertCircle,
   ChevronDown,
   ChevronRight,
   Clock,
@@ -16,6 +17,7 @@ import {
   ListFilter,
   PanelLeftClose,
   Plus,
+  Radio,
   Settings,
   SquarePen,
   X,
@@ -228,6 +230,7 @@ function ThreadRow({
         {thread.badge === 'branch' && (
           <GitBranch className="w-3 h-3 text-rc-faint" strokeWidth={1.5} />
         )}
+        <ThreadStatusIndicator status={thread.status ?? 'idle'} />
         <span className="text-[10.5px] text-rc-faint mono group-hover:hidden">{thread.age}</span>
         <button
           onClick={(event) => {
@@ -242,4 +245,32 @@ function ThreadRow({
       </span>
     </div>
   )
+}
+
+function ThreadStatusIndicator({
+  status,
+}: {
+  status: NonNullable<Thread['status']>
+}) {
+  if (status === 'running') {
+    return (
+      <span title="Running" className="thread-status-dot is-running">
+        <Radio className="w-2.5 h-2.5" strokeWidth={2.2} />
+      </span>
+    )
+  }
+
+  if (status === 'requires_action') {
+    return <span title="Waiting for input" className="thread-status-dot is-waiting" />
+  }
+
+  if (status === 'error') {
+    return (
+      <span title="Error" className="thread-status-dot is-error">
+        <AlertCircle className="w-3 h-3" strokeWidth={2} />
+      </span>
+    )
+  }
+
+  return <span title="Idle" className="thread-status-dot is-idle" />
 }
