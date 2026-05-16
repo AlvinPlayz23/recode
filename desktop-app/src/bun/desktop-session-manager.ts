@@ -91,6 +91,15 @@ export class DesktopSessionManager {
     return this.#state.settings;
   }
 
+  setGpuAccelerationDisabled(disabled: boolean): DesktopSettings {
+    this.#state.settings = withDetectedRepoRoot({
+      ...this.#state.settings,
+      gpuAccelerationDisabled: disabled,
+    });
+    this.#save();
+    return this.#state.settings;
+  }
+
   addWorkspace(workspacePath: string): DesktopProject {
     const project = this.#upsertProject(workspacePath);
     this.#save();
@@ -544,22 +553,26 @@ function readSettings(value: unknown): DesktopSettings {
   if (!isRecord(value)) {
     // Keep dev as the default while the desktop app is developed from this repo.
     // When publishing a built Recode binary, switch the default to prod.
-    return { runtimeMode: "dev" };
+    return withDetectedRepoRoot({ runtimeMode: "dev" });
   }
   return {
     ...withDetectedRepoRoot({
       runtimeMode: value.runtimeMode === "prod" ? "prod" : "dev",
       ...(typeof value.recodeRepoRoot === "string" ? { recodeRepoRoot: value.recodeRepoRoot } : {}),
+      ...(value.gpuAccelerationDisabled === true ? { gpuAccelerationDisabled: true } : {}),
     }),
   };
 }
 
-function withDetectedRepoRoot(settings: Pick<DesktopSettings, "runtimeMode" | "recodeRepoRoot">): DesktopSettings {
+function withDetectedRepoRoot(
+  settings: Pick<DesktopSettings, "runtimeMode" | "recodeRepoRoot" | "gpuAccelerationDisabled">
+): DesktopSettings {
   const detectedRepoRoot = findRecodeRepoRoot();
   return {
     runtimeMode: settings.runtimeMode,
     ...(settings.recodeRepoRoot === undefined ? {} : { recodeRepoRoot: settings.recodeRepoRoot }),
     ...(detectedRepoRoot === undefined ? {} : { detectedRepoRoot }),
+    ...(settings.gpuAccelerationDisabled === true ? { gpuAccelerationDisabled: true } : {}),
   };
 }
 

@@ -26,8 +26,19 @@ function TextShimmerComponent({
   const MotionComponent = motion.create(
     Component as keyof JSX.IntrinsicElements,
   )
+  const animationsPaused =
+    typeof document !== 'undefined'
+    && document.documentElement.dataset.animations === 'paused'
 
   const dynamicSpread = useMemo(() => children.length * spread, [children, spread])
+
+  if (animationsPaused) {
+    return (
+      <Component className={cn('relative inline-block text-rc-muted', className)}>
+        {children}
+      </Component>
+    )
+  }
 
   return (
     <MotionComponent

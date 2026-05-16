@@ -23,6 +23,7 @@ export interface DesktopBridge {
       getSnapshot: (params: Record<string, never>) => Promise<DesktopSnapshot>
       setRuntimeMode: (params: { runtimeMode: RecodeRuntimeMode }) => Promise<DesktopSettings>
       setRecodeRepoRoot: (params: { path: string }) => Promise<DesktopSettings>
+      setGpuAccelerationDisabled: (params: { disabled: boolean }) => Promise<DesktopSettings>
       listDirectory: (params: { path?: string }) => Promise<DesktopDirectoryListing>
       addWorkspace: (params: { workspacePath: string }) => Promise<DesktopProject>
       createSession: (params: {

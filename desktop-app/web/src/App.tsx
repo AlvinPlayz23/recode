@@ -7,15 +7,13 @@
  * Phase 1: state-only mock, no real ACP/CLI wiring.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Sidebar } from './components/Sidebar'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { MotionConfig } from 'motion/react'
 import { ChatHeader } from './components/ChatHeader'
-import { Transcript } from './components/Transcript'
 import { Composer } from './components/Composer'
-import { ProjectModal } from './components/ProjectModal'
 import { ProjectThreadPicker } from './components/ProjectThreadPicker'
-import { SettingsModal } from './components/SettingsModal'
-import { CommandPalette, type CommandPaletteItem } from './components/CommandPalette'
+import type { CommandPaletteItem } from './components/CommandPalette'
+import { DotmSquare18 } from './components/ui/dotm-square-18'
 import { initialProjects, initialThreads, type PickerEntry } from './mock-data'
 import {
   createDesktopBridge,
@@ -40,6 +38,33 @@ import type {
 } from './desktop-rpc'
 
 const THEME_STORAGE_KEY = 'recode-theme'
+const GPU_ACCELERATION_DISABLED_STORAGE_KEY = 'recode-gpu-acceleration-disabled'
+
+const ProjectModal = lazy(() =>
+  import('./components/ProjectModal').then((module) => ({
+    default: module.ProjectModal,
+  })),
+)
+const Sidebar = lazy(() =>
+  import('./components/Sidebar').then((module) => ({
+    default: module.Sidebar,
+  })),
+)
+const Transcript = lazy(() =>
+  import('./components/Transcript').then((module) => ({
+    default: module.Transcript,
+  })),
+)
+const SettingsModal = lazy(() =>
+  import('./components/SettingsModal').then((module) => ({
+    default: module.SettingsModal,
+  })),
+)
+const CommandPalette = lazy(() =>
+  import('./components/CommandPalette').then((module) => ({
+    default: module.CommandPalette,
+  })),
+)
 
 /** Convert an incoming desktop message into the React chat message shape. */
 function toChatMessage(message: DesktopMessage): ChatMessage {
@@ -60,6 +85,11 @@ function readStoredTheme(): ThemeMode {
   return window.localStorage.getItem(THEME_STORAGE_KEY) === 'dark'
     ? 'dark'
     : 'light'
+}
+
+function readStoredGpuAccelerationDisabled(): boolean {
+  if (typeof window === 'undefined') return false
+  return window.localStorage.getItem(GPU_ACCELERATION_DISABLED_STORAGE_KEY) === 'true'
 }
 
 function createMockMessages(): Record<string, ChatMessage[]> {
@@ -101,6 +131,9 @@ export function App() {
   const [mode, setMode] = useState<SessionMode>('build')
   const [reasoning, setReasoning] = useState<ReasoningLevel>('Med')
   const [theme, setTheme] = useState<ThemeMode>(readStoredTheme)
+  const [gpuAccelerationDisabled, setGpuAccelerationDisabled] = useState(
+    readStoredGpuAccelerationDisabled,
+  )
   const [runtimeMode, setRuntimeMode] = useState<RecodeRuntimeMode>('dev')
   const [recodeRepoRoot, setRecodeRepoRoot] = useState<string | undefined>()
   const [detectedRepoRoot, setDetectedRepoRoot] = useState<string | undefined>()
@@ -125,6 +158,14 @@ export function App() {
     document.documentElement.dataset.theme = theme
     window.localStorage.setItem(THEME_STORAGE_KEY, theme)
   }, [theme])
+
+  useEffect(() => {
+    document.documentElement.dataset.animations = gpuAccelerationDisabled ? 'paused' : 'running'
+    window.localStorage.setItem(
+      GPU_ACCELERATION_DISABLED_STORAGE_KEY,
+      String(gpuAccelerationDisabled),
+    )
+  }, [gpuAccelerationDisabled])
 
   useEffect(() => {
     const desktopBridge = createDesktopBridge({
@@ -166,6 +207,7 @@ export function App() {
       setRuntimeMode(snapshot.settings.runtimeMode)
       setRecodeRepoRoot(snapshot.settings.recodeRepoRoot)
       setDetectedRepoRoot(snapshot.settings.detectedRepoRoot)
+      setGpuAccelerationDisabled(snapshot.settings.gpuAccelerationDisabled === true)
     })
   }, [])
 
@@ -694,6 +736,16 @@ export function App() {
       .catch((error: unknown) => showWorkspaceError(error))
   }
 
+  function handleChangeGpuAccelerationDisabled(disabled: boolean) {
+    setGpuAccelerationDisabled(disabled)
+    void bridge?.rpc.request
+      .setGpuAccelerationDisabled({ disabled })
+      .then((settings) => {
+        setGpuAccelerationDisabled(settings.gpuAccelerationDisabled === true)
+      })
+      .catch((error: unknown) => showWorkspaceError(error))
+  }
+
   function applyDesktopSessionUpdate(update: DesktopSessionUpdate) {
     setThreads((prev) =>
       prev.map((thread) =>
@@ -755,26 +807,29 @@ export function App() {
   }
 
   return (
+    <MotionConfig reducedMotion={gpuAccelerationDisabled ? 'always' : 'never'}>
     <div className="h-screen flex bg-rc-bg overflow-hidden">
       <div
         className={`h-full shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out ${
           sidebarOpen ? 'w-[260px]' : 'w-0'
         }`}
       >
-        <Sidebar
-          projects={projects}
-          threads={threads}
-          activeThreadId={activeThreadId}
-          collapsedProjects={collapsedProjects}
-          onToggleProject={toggleProjectCollapsed}
-          onSelectThread={setActiveThreadId}
-          onNewThread={handleNewThread}
-          onNewFolder={handleNewFolder}
-          onNewThreadInProject={createThreadInProject}
-          onCloseThread={handleCloseThread}
-          onCollapse={() => setSidebarOpen(false)}
-          onOpenSettings={() => setSettingsOpen(true)}
-        />
+        <Suspense fallback={<SidebarLoading />}>
+          <Sidebar
+            projects={projects}
+            threads={threads}
+            activeThreadId={activeThreadId}
+            collapsedProjects={collapsedProjects}
+            onToggleProject={toggleProjectCollapsed}
+            onSelectThread={setActiveThreadId}
+            onNewThread={handleNewThread}
+            onNewFolder={handleNewFolder}
+            onNewThreadInProject={createThreadInProject}
+            onCloseThread={handleCloseThread}
+            onCollapse={() => setSidebarOpen(false)}
+            onOpenSettings={() => setSettingsOpen(true)}
+          />
+        </Suspense>
       </div>
 
         <main className="flex-1 flex flex-col min-w-0 bg-rc-bg">
@@ -783,28 +838,31 @@ export function App() {
               ? (messages[activeThread.id] ?? [])
               : []
             const showHero = threadMessages.length === 0
+            const isAgentWorking =
+              activeThread?.status === 'running'
+              || activeThread?.status === 'requires_action'
             const composer = (
-              <Composer
-                model={model}
-                mode={mode}
-                reasoning={reasoning}
-                modelOptions={configOptions.find((item) => item.id === 'model')?.options}
-                modelMenuEmptyLabel={
-                  configOptionsLoading
-                    ? 'Loading models...'
-                    : 'Select a workspace to load models'
-                }
-                onChangeModel={handleChangeModel}
-                onChangeMode={handleChangeMode}
-                onChangeReasoning={setReasoning}
-                onSubmit={handleSubmit}
-                onCancel={handleCancelGeneration}
-                focusKey={composerFocusKey}
-                isGenerating={
-                  activeThread?.status === 'running'
-                  || activeThread?.status === 'requires_action'
-                }
-              />
+              <>
+                {isAgentWorking && <AgentWorkingIndicator />}
+                <Composer
+                  model={model}
+                  mode={mode}
+                  reasoning={reasoning}
+                  modelOptions={configOptions.find((item) => item.id === 'model')?.options}
+                  modelMenuEmptyLabel={
+                    configOptionsLoading
+                      ? 'Loading models...'
+                      : 'Select a workspace to load models'
+                  }
+                  onChangeModel={handleChangeModel}
+                  onChangeMode={handleChangeMode}
+                  onChangeReasoning={setReasoning}
+                  onSubmit={handleSubmit}
+                  onCancel={handleCancelGeneration}
+                  focusKey={composerFocusKey}
+                  isGenerating={isAgentWorking}
+                />
+              </>
             )
             return (
               <>
@@ -858,7 +916,9 @@ export function App() {
                         </div>
                       </div>
                     )}
-                    <Transcript thread={activeThread} messages={threadMessages} />
+                    <Suspense fallback={<TranscriptLoading />}>
+                      <Transcript thread={activeThread} messages={threadMessages} />
+                    </Suspense>
                     <div key="docked" className="composer-fade-in">{composer}</div>
                   </>
                 )}
@@ -867,56 +927,80 @@ export function App() {
           })()}
         </main>
 
-      <ProjectModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onSelect={handlePickProject}
-        onOpenDirectory={
-          bridge
-            ? (path) => bridge.rpc.request.listDirectory({ path })
-            : undefined
-        }
-        onSelectDirectory={handleSelectDirectory}
-        showMockProjects={!desktopRuntime && !bridge}
-        title={folderPickerMode === 'recode-repo' ? 'Choose Recode repo' : 'Open workspace'}
-        description={
-          folderPickerMode === 'recode-repo'
-            ? 'Pick the folder that contains Recode package.json and src/index.ts.'
-            : 'Pick a folder for Recode to operate inside.'
-        }
-        useLabel={folderPickerMode === 'recode-repo' ? 'Use repo' : 'Use folder'}
-      />
+      <Suspense fallback={null}>
+        {(modalOpen || settingsOpen || commandPaletteOpen) && (
+          <>
+            <ProjectModal
+              open={modalOpen}
+              onClose={() => setModalOpen(false)}
+              onSelect={handlePickProject}
+              onOpenDirectory={
+                bridge
+                  ? (path) => bridge.rpc.request.listDirectory({ path })
+                  : undefined
+              }
+              onSelectDirectory={handleSelectDirectory}
+              showMockProjects={!desktopRuntime && !bridge}
+              title={folderPickerMode === 'recode-repo' ? 'Choose Recode repo' : 'Open workspace'}
+              description={
+                folderPickerMode === 'recode-repo'
+                  ? 'Pick the folder that contains Recode package.json and src/index.ts.'
+                  : 'Pick a folder for Recode to operate inside.'
+              }
+              useLabel={folderPickerMode === 'recode-repo' ? 'Use repo' : 'Use folder'}
+            />
 
-      <SettingsModal
-        open={settingsOpen}
-        theme={theme}
-        runtimeMode={runtimeMode}
-        recodeRepoRoot={recodeRepoRoot}
-        detectedRepoRoot={detectedRepoRoot}
-        onClose={() => setSettingsOpen(false)}
-        onChangeTheme={setTheme}
-        onChangeRuntimeMode={handleChangeRuntimeMode}
-        onChooseRecodeRepo={handleChooseRecodeRepo}
-      />
+            <SettingsModal
+              open={settingsOpen}
+              theme={theme}
+              gpuAccelerationDisabled={gpuAccelerationDisabled}
+              runtimeMode={runtimeMode}
+              recodeRepoRoot={recodeRepoRoot}
+              detectedRepoRoot={detectedRepoRoot}
+              onClose={() => setSettingsOpen(false)}
+              onChangeTheme={setTheme}
+              onChangeGpuAccelerationDisabled={handleChangeGpuAccelerationDisabled}
+              onChangeRuntimeMode={handleChangeRuntimeMode}
+              onChooseRecodeRepo={handleChooseRecodeRepo}
+            />
 
-      <CommandPalette
-        open={commandPaletteOpen}
-        items={commandItems}
-        onClose={() => setCommandPaletteOpen(false)}
-      />
+            <CommandPalette
+              open={commandPaletteOpen}
+              items={commandItems}
+              onClose={() => setCommandPaletteOpen(false)}
+            />
+          </>
+        )}
+      </Suspense>
 
       {permissionRequest && (
-        <div className="fixed bottom-5 right-5 z-[120] w-[360px] rounded-xl border border-rc-border bg-rc-elevated shadow-2xl p-4">
-          <div className="text-[12px] font-semibold text-rc-text mb-1">
-            Tool approval requested
+        <div
+          role="dialog"
+          aria-label="Tool approval requested"
+          className="fixed bottom-5 right-5 z-[120] w-[380px] rounded-xl border border-rc-border bg-rc-elevated shadow-2xl overflow-hidden"
+          style={{ boxShadow: 'var(--rc-composer-shadow)' }}
+        >
+          <div className="px-4 py-3 border-b border-rc-border-soft flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-md bg-warning/15 flex items-center justify-center text-[color:var(--warning)]">
+              <span className="text-[13px] font-semibold">!</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="display text-[12.5px] font-semibold text-rc-text">
+                Tool approval
+              </div>
+              <div className="text-[10.5px] text-rc-faint mono uppercase tracking-wider">
+                Awaiting decision
+              </div>
+            </div>
           </div>
-          <div className="text-[12px] text-rc-muted mb-3 leading-relaxed">
+          <div className="px-4 py-3 text-[12.5px] text-rc-muted leading-relaxed">
             {permissionRequest.title}
           </div>
-          <div className="flex justify-end gap-2">
+          <div className="px-4 pb-3 flex justify-end gap-2">
             {permissionRequest.options.map((option) => (
               <button
                 key={option.optionId}
+                type="button"
                 onClick={() => {
                   void bridge?.rpc.request.answerPermission({
                     requestId: permissionRequest.id,
@@ -924,7 +1008,7 @@ export function App() {
                   })
                   setPermissionRequest(null)
                 }}
-                className="px-3 py-1.5 rounded-md border border-rc-border text-[12px] text-rc-text hover:bg-rc-hover transition-colors"
+                className="px-3 py-1.5 rounded-md border border-rc-border bg-rc-card text-[12px] text-rc-text hover:bg-rc-hover transition-colors focus-ring"
               >
                 {option.name}
               </button>
@@ -955,25 +1039,41 @@ export function App() {
       )}
 
       {workspaceError && (
-        <div className="fixed bottom-5 right-5 z-[120] w-[360px] rounded-xl border border-rc-border bg-rc-elevated shadow-2xl p-4">
-          <div className="text-[12px] font-semibold text-rc-text mb-1">
-            Workspace error
+        <div
+          role="alert"
+          className="fixed bottom-5 right-5 z-[120] w-[380px] rounded-xl border border-destructive/30 bg-rc-elevated shadow-2xl overflow-hidden"
+          style={{ boxShadow: 'var(--rc-composer-shadow)' }}
+        >
+          <div className="px-4 py-3 border-b border-rc-border-soft flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-md bg-destructive/15 flex items-center justify-center text-[color:var(--destructive)]">
+              <span className="text-[13px] font-semibold">×</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="display text-[12.5px] font-semibold text-rc-text">
+                Workspace error
+              </div>
+              <div className="text-[10.5px] text-rc-faint mono uppercase tracking-wider">
+                Something went wrong
+              </div>
+            </div>
           </div>
-          <div className="text-[12px] text-rc-muted mb-3 leading-relaxed">
+          <div className="px-4 py-3 text-[12.5px] text-rc-muted leading-relaxed break-words">
             {workspaceError}
           </div>
-          <div className="flex justify-end">
+          <div className="px-4 pb-3 flex justify-end gap-2">
             {activeThread && (
               <button
+                type="button"
                 onClick={() => handleReconnectThread(activeThread.id)}
-                className="mr-2 px-3 py-1.5 rounded-md border border-rc-border text-[12px] text-rc-text hover:bg-rc-hover transition-colors"
+                className="px-3 py-1.5 rounded-md border border-rc-border bg-rc-card text-[12px] text-rc-text hover:bg-rc-hover transition-colors focus-ring"
               >
                 Reconnect
               </button>
             )}
             <button
+              type="button"
               onClick={() => setWorkspaceError(null)}
-              className="px-3 py-1.5 rounded-md border border-rc-border text-[12px] text-rc-text hover:bg-rc-hover transition-colors"
+              className="px-3 py-1.5 rounded-md border border-rc-border bg-rc-card text-[12px] text-rc-text hover:bg-rc-hover transition-colors focus-ring"
             >
               Dismiss
             </button>
@@ -981,6 +1081,46 @@ export function App() {
         </div>
       )}
     </div>
+    </MotionConfig>
+  )
+}
+
+function AgentWorkingIndicator() {
+  return (
+    <div className="px-6 pt-1">
+      <div className="mx-auto flex max-w-[760px] items-center gap-2 px-1.5 text-[12px] font-medium text-rc-muted">
+        <DotmSquare18
+          size={18}
+          dotSize={2.6}
+          speed={1.25}
+          pattern="full"
+          color="var(--rc-accent)"
+          ariaLabel="Agent working"
+        />
+        <span>Working...</span>
+      </div>
+    </div>
+  )
+}
+
+function TranscriptLoading() {
+  return (
+    <div className="flex-1 px-8 py-8">
+      <div className="mx-auto h-6 max-w-[760px] rounded-md bg-rc-hover" />
+    </div>
+  )
+}
+
+function SidebarLoading() {
+  return (
+    <aside className="h-full w-[260px] shrink-0 border-r border-rc-border bg-rc-sidebar p-3">
+      <div className="mb-4 h-6 rounded-md bg-rc-hover" />
+      <div className="space-y-2">
+        <div className="h-7 rounded-md bg-rc-hover" />
+        <div className="h-7 rounded-md bg-rc-hover" />
+        <div className="h-7 rounded-md bg-rc-hover" />
+      </div>
+    </aside>
   )
 }
 
@@ -1133,7 +1273,7 @@ function QuestionPromptModal({
             </button>
             <button
               onClick={handleSubmit}
-              className="px-3 py-1.5 rounded-md bg-rc-accent text-white text-[12px] hover:opacity-90 transition-opacity mono"
+              className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-[12px] hover:opacity-90 transition-opacity mono"
             >
               ↵ Submit
             </button>

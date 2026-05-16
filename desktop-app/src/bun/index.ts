@@ -29,6 +29,7 @@ const rpc = BrowserView.defineRPC<RecodeDesktopRPC>({
       getSnapshot: () => sessions.snapshot(),
       setRuntimeMode: (params) => sessions.setRuntimeMode(params.runtimeMode),
       setRecodeRepoRoot: (params) => sessions.setRecodeRepoRoot(params.path),
+      setGpuAccelerationDisabled: (params) => sessions.setGpuAccelerationDisabled(params.disabled),
       listDirectory: (params) => listDirectory(params.path),
       addWorkspace: (params) => sessions.addWorkspace(params.workspacePath),
       createSession: async (params) => await sessions.createSession(params),

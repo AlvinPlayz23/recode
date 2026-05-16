@@ -95,6 +95,7 @@ export interface DesktopSettings {
   runtimeMode: RecodeRuntimeMode
   recodeRepoRoot?: string
   detectedRepoRoot?: string
+  gpuAccelerationDisabled?: boolean
 }
 
 export interface DesktopSessionCreated {
@@ -148,6 +149,12 @@ export type RecodeDesktopRPC = {
       setRecodeRepoRoot: {
         params: {
           path: string
+        }
+        response: DesktopSettings
+      }
+      setGpuAccelerationDisabled: {
+        params: {
+          disabled: boolean
         }
         response: DesktopSettings
       }
