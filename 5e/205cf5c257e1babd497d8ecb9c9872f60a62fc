@@ -1,0 +1,34 @@
+desktop-app/web/src/components/CommandPalette.tsx
+  s_bf9fc71f3305db::t_3ddf36700e0bfb 1-129
+desktop-app/web/src/components/Transcript.tsx
+  s_bf9fc71f3305db::t_9d920c5f40a591 424-427
+  s_bf9fc71f3305db::t_94943c5c97ddaa 8,149-150,187-190,204-280,525-530
+desktop-app/web/src/App.tsx
+  s_bf9fc71f3305db::t_43d6ac29e624f9 222-306
+  s_bf9fc71f3305db::t_4ea3e9cd8a656f 18,121-122,137-141,172-207
+  s_bf9fc71f3305db::t_cf785689eca450 563-567,581-605,628-632
+  s_bf9fc71f3305db::t_d4758b760e6736 802,846-860,902-907,966-973
+desktop-app/web/src/index.css
+  s_bf9fc71f3305db::t_b59fa773481a62 112-149
+  s_bf9fc71f3305db::t_f1efdeb33daae5 356-442
+desktop-app/web/src/components/Sidebar.tsx
+  s_bf9fc71f3305db::t_828c8922f27420 10,20,233,249-275
+desktop-app/web/src/components/Composer.tsx
+  s_bf9fc71f3305db::t_f691fd16b826a9 28,49,69-71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "5e205cf5c257e1babd497d8ecb9c9872f60a62fc",
+  "prompts": {},
+  "sessions": {
+    "s_bf9fc71f3305db": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e1e33-d83e-79b1-b0a9-73c94d50c01b",
+        "model": "gpt-5.5"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    }
+  }
+}
