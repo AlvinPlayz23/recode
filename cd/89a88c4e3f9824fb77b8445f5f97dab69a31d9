@@ -1,0 +1,61 @@
+desktop-app/src/bun/desktop-session-manager.ts
+  s_bf9fc71f3305db::t_fea502ddaf689f 94-102,556,562,567-569,575
+desktop-app/web/src/index.css
+  s_bf9fc71f3305db::t_bc54e87fea062a 239
+  s_bf9fc71f3305db::t_2ec799f3ddd6d8 235-238,240-244
+desktop-app/web/src/components/dotmatrix-loader.css
+  s_bf9fc71f3305db::t_0e41ed87cd4d5d 49
+  s_bf9fc71f3305db::t_3fc9a5dd991855 47-48,50-51,60-63,65-68,70-73,75-78,80-82
+  s_bf9fc71f3305db::t_eb0f78ef78a391 52-59,64,69,74,79
+  s_bf9fc71f3305db::t_d575677f5b81ca 1-46,83-88
+desktop-app/web/src/components/ui/dotmatrix-core.tsx
+  s_bf9fc71f3305db::t_29b51ca7b161bd 198
+  s_bf9fc71f3305db::t_cde09477e563fd 1-197,199-273
+desktop-app/web/src/lib/desktop-bridge.ts
+  s_bf9fc71f3305db::t_f777d0e05eca36 26
+desktop-app/web/src/App.tsx
+  s_bf9fc71f3305db::t_569786759e49e8 1106-1113
+  s_bf9fc71f3305db::t_87008bf652fd18 1114-1123
+  s_bf9fc71f3305db::t_d2dd37aa2893fa 16,841-843,845-865
+  s_bf9fc71f3305db::t_7bde36d06f758e 919-921
+  s_bf9fc71f3305db::t_d6e8b79094b75f 10,15,42-45,56-67
+  s_bf9fc71f3305db::t_575dd0a3f64c90 11,810,1084
+  s_bf9fc71f3305db::t_abc343f3003432 41,90-94,134-136,162-169,210,739-744
+  s_bf9fc71f3305db::t_305f1ac20c39d5 51-55
+  s_bf9fc71f3305db::t_d32190ef90670a 817-832
+  s_bf9fc71f3305db::t_99ff8995c9e162 930-974
+  s_bf9fc71f3305db::t_8ec691050c02ee 1088-1105
+  s_bf9fc71f3305db::t_42af470fbfa07b 46-50
+desktop-app/web/src/components/ui/dotm-square-18.tsx
+  s_bf9fc71f3305db::t_40f9179288a5df 1-68
+desktop-app/web/src/components/ui/dotmatrix-hooks.ts
+  s_bf9fc71f3305db::t_5fb389011b4f08 1-107
+desktop-app/src/bun/index.ts
+  s_bf9fc71f3305db::t_cbf335fda9635f 32
+desktop-app/web/src/components/SettingsModal.tsx
+  s_bf9fc71f3305db::t_db3f1a8f10bae5 31,37,42-49,54,60,198-201
+  s_bf9fc71f3305db::t_37d928fb547202 388-411
+  s_bf9fc71f3305db::t_1b1bd672790a2b 68
+desktop-app/web/src/components/TextShimmer.tsx
+  s_bf9fc71f3305db::t_ca0ad159d3c429 29-31,35-41
+desktop-app/web/src/desktop-rpc.ts
+  s_bf9fc71f3305db::t_c1b5bc38bd296a 98,155-157
+desktop-app/web/src/components/ProjectModal.tsx
+  s_bf9fc71f3305db::t_cff272d222a483 70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "cd89a88c4e3f9824fb77b8445f5f97dab69a31d9",
+  "prompts": {},
+  "sessions": {
+    "s_bf9fc71f3305db": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e1e33-d83e-79b1-b0a9-73c94d50c01b",
+        "model": "gpt-5.5"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    }
+  }
+}
