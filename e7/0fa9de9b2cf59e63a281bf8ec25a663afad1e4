@@ -1,0 +1,164 @@
+package.json
+  s_bf9fc71f3305db::t_de91cb552a4c6c 16
+  s_bf9fc71f3305db::t_bc8457ec2d43a5 15
+  s_bf9fc71f3305db::t_6eae44db2f3e93 14
+  s_bf9fc71f3305db::t_62290b617bd188 13
+  s_bf9fc71f3305db::t_af714009222963 18-19
+  s_bf9fc71f3305db::t_bff13775714d92 25
+desktop-app/web/src/index.css
+  s_bf9fc71f3305db::t_25d129cebeab27 235-303
+desktop-app/src/bun/acp-json-rpc-client.ts
+  s_bf9fc71f3305db::t_a3065ab90aa8d5 226-228
+  s_bf9fc71f3305db::t_ad2e1cc534b201 64,201-202,204,215-218
+  s_bf9fc71f3305db::t_2311621c27af4b 56-58,61-62,79-81,140-143,145,153-160,163-165,174,176-188,191-193
+  s_bf9fc71f3305db::t_610de30fd0e353 137
+  s_bf9fc71f3305db::t_70e46f601d10a2 2,44-50,55,59-60,63,70-73,95,118-124,128-134,139,148,175,189,200,210-214,219-225,229-249,297-299,301,308-335
+cmd/recode-acp-go/main_test.go
+  s_bf9fc71f3305db::t_4e640a6ab3aea1 140-163,350-374
+  s_bf9fc71f3305db::t_ed824c44250ad5 198-202
+  s_bf9fc71f3305db::t_07b7239aa08403 139,164-185,187-197,203-349,375
+  s_bf9fc71f3305db::t_69472a8bc4ebad 1-3,7,10-11,15,17-103
+  s_bf9fc71f3305db::t_8286b357a45b20 186
+  s_bf9fc71f3305db::t_41c0e980580eac 4,6,8-9,12,16
+  s_bf9fc71f3305db::t_78f497e41b87fb 13
+  s_bf9fc71f3305db::t_8889b35465745f 14
+  s_bf9fc71f3305db::t_5c26b9e30170ab 5
+  s_bf9fc71f3305db::t_3c0c85437aa396 105-123
+  s_bf9fc71f3305db::t_d234e530a4ebf3 104,124-138
+docs/acp-server/go-broker.md
+  s_bf9fc71f3305db::t_d822c608544f6d 99-105
+  s_bf9fc71f3305db::t_e9ce478a745746 1-2,4-9,11,13-15,17-22,24-25,39-40,42-43,46-52,55-62,67-73,106-109
+  s_bf9fc71f3305db::t_2bc1c19c725612 32-37
+  s_bf9fc71f3305db::t_f7b42831639f63 26-28,30-31
+  s_bf9fc71f3305db::t_adbed2a543404b 41,53
+  s_bf9fc71f3305db::t_602be9890c952c 23,29
+  s_bf9fc71f3305db::t_c21714faeb3a36 93-98
+  s_bf9fc71f3305db::t_d3059239707abe 44-45
+  s_bf9fc71f3305db::t_a101e58716648d 38
+  s_bf9fc71f3305db::t_c5df6360ff959e 3,12,16,54,110
+  s_bf9fc71f3305db::t_04336255f0b280 63
+  s_bf9fc71f3305db::t_8d38aa86b5ea33 74-75
+  s_bf9fc71f3305db::t_7f0452c6331670 10,64-66,76-77
+  s_bf9fc71f3305db::t_93be37aecf5e08 78-92
+desktop-app/web/src/components/Transcript.tsx
+  s_bf9fc71f3305db::t_5a9882e8866577 20,226,270,325,357,359,410-418,423-469
+  s_bf9fc71f3305db::t_71769b868d5a85 471-497
+  s_bf9fc71f3305db::t_508d707814ea93 37
+  s_bf9fc71f3305db::t_5834c6ebd8f069 34,41,45-51,114,117,125,131-132,134,160-167,198
+  s_bf9fc71f3305db::t_e9ad0951743d40 306-316,318-324
+  s_bf9fc71f3305db::t_81b86809096bb0 317
+desktop-app/src/bun/index.ts
+  s_bf9fc71f3305db::t_cb2ec6f97e1c02 34
+desktop-app/README.md
+  s_bf9fc71f3305db::t_a2dc0d0057a04a 71-76
+  s_bf9fc71f3305db::t_6fa49d3985b620 5,69,77
+  s_bf9fc71f3305db::t_2db6b088163ed3 68
+docs/acp-server/README.md
+  s_bf9fc71f3305db::t_85cfc3e9d8ad3e 9-10
+  s_bf9fc71f3305db::t_eccf637b4cfb8a 8
+  s_bf9fc71f3305db::t_e981d00edc2ee7 7
+desktop-app/web/src/lib/desktop-bridge.ts
+  s_bf9fc71f3305db::t_acfa316a6440ab 29
+go.mod
+  s_bf9fc71f3305db::t_c96a82037889d9 3
+  s_bf9fc71f3305db::t_e9ce478a745746 1-2,4-7
+desktop-app/scripts/smoke-acp-sessions.ts
+  s_bf9fc71f3305db::t_0c5d51d099c5bb 21
+desktop-app/web/src/components/SettingsModal.tsx
+  s_bf9fc71f3305db::t_5cc4e50dcc4176 32,39,57,64,185-188,420-438
+desktop-app/web/src/desktop-rpc.ts
+  s_bf9fc71f3305db::t_df3178a425350f 99,167-172
+desktop-app/src/bun/desktop-session-manager.ts
+  s_bf9fc71f3305db::t_c1c38779c2dd07 113-121,609,615-618,626
+  s_bf9fc71f3305db::t_134ddee5d1155f 353
+scripts/run-recode.cjs
+  s_bf9fc71f3305db::t_ec3d39b9f83454 17-19
+  s_bf9fc71f3305db::t_2e066d85fd9e4b 1-16,20-55
+scripts/run-build.cjs
+  s_bf9fc71f3305db::t_2431639a9878c3 11,108-109,113-136
+  s_bf9fc71f3305db::t_59067413a9d1c3 21,101-107,110-112
+  s_bf9fc71f3305db::t_06197604a55331 14,20,22,55-90,92-95,100
+  s_bf9fc71f3305db::t_19a280c39e955f 91,96-99
+  s_bf9fc71f3305db::t_2c4778f5fce6e0 1-10,12-13,15-19,23-54,137
+desktop-app/src/bun/child-process.ts
+  s_bf9fc71f3305db::t_740b87136fa981 53-54
+  s_bf9fc71f3305db::t_9c38775165872f 68-69,92-93
+  s_bf9fc71f3305db::t_3c75e1c9e65cb5 25,33,41,48,58-67,76,81-91,94,97
+scripts/build.ts
+  s_bf9fc71f3305db::t_6d0362ec53802a 190,195-198
+  s_bf9fc71f3305db::t_52b7e4a01f5ea5 56,111-116,147-178
+desktop-app/web/index.html
+  s_bf9fc71f3305db::t_819ba731c72e45 5,48-52
+  s_bf9fc71f3305db::t_f74acd300b8522 8-45
+src/acp/acp-worker-server.ts
+  s_bf9fc71f3305db::t_ce96fc21d51bfb 1-234,250-273
+  s_bf9fc71f3305db::t_8a6da6c6b721ed 235-236,238,247
+  s_bf9fc71f3305db::t_728074460d20aa 237,239-246,248-249
+src/acp/acp-worker-server.test.ts
+  s_bf9fc71f3305db::t_69767e1eadb2b4 1-54,56-89
+  s_bf9fc71f3305db::t_40ae8f512d8236 55
+desktop-app/web/src/components/Sidebar.tsx
+  s_bf9fc71f3305db::t_9ad6ac2c7f99ef 58,96,180,183-185,187-188
+  s_bf9fc71f3305db::t_91a2cb85154cc8 181-182,186
+cmd/recode-acp-go/main.go
+  s_bf9fc71f3305db::t_414e60c119db3f 258-260
+  s_bf9fc71f3305db::t_499f76b26f5b73 512-514,747-749
+  s_bf9fc71f3305db::t_6e58a205fe4493 425-428,701-704
+  s_bf9fc71f3305db::t_b8657e62259e9d 295-321,327-328,330-334,336-337,342-345,348-352,354-360,362-364,370-373,375-394,396-400,402-407,409-419,421-424,429-443,445-448,451-452,454-475,477-481,483-484,486-511,515-525,540-545,547-548,550,557-558,562,576-577,585-586,588-589,592-598,603-604,606-607,609-610,615-639,644-645,651,656,679,681-685,696-700,705-709,717,719-725,737,739-746,750-773,775
+  s_bf9fc71f3305db::t_7cf7f3a9f4ec5f 110-114
+  s_bf9fc71f3305db::t_2ae8cd9592f965 730-732
+  s_bf9fc71f3305db::t_7aa17fdfe9a8a1 205
+  s_bf9fc71f3305db::t_0ddd6e53c442bf 2,4-7
+  s_bf9fc71f3305db::t_653217c382461e 420
+  s_bf9fc71f3305db::t_cf4efe8a959a6e 338-341
+  s_bf9fc71f3305db::t_30e035a197997c 640-642,646-650,652-655,657-678,680
+  s_bf9fc71f3305db::t_d5d9781a8f4009 811
+  s_bf9fc71f3305db::t_6b6afe3744d457 41-42,69-71,74-76,80-81,91,104-108,115-116,133-136
+  s_bf9fc71f3305db::t_a380ae7b6bc80a 869-879
+  s_bf9fc71f3305db::t_a6c11728c06dac 485,526-539
+  s_bf9fc71f3305db::t_3162efa3d97c4b 476,482
+  s_bf9fc71f3305db::t_6e36b1390caba5 687,718,727-729,733-736
+  s_bf9fc71f3305db::t_14db742877f629 57-65,189-191
+  s_bf9fc71f3305db::t_1fe03ee8dfc42b 552-556,559-561,563-575,579,587,590-591,605,608
+  s_bf9fc71f3305db::t_5ed798a77b7854 270,272-285
+  s_bf9fc71f3305db::t_6b32fa7d942315 323,329,335,347,353,361,368,374,918-934
+  s_bf9fc71f3305db::t_1b986d02929538 580-584
+  s_bf9fc71f3305db::t_e6f6172ca93868 77,782,793-795,797,800,803
+  s_bf9fc71f3305db::t_64cebe9a95bff2 686,688-695,710-716
+  s_bf9fc71f3305db::t_bc0108475478ed 815,819,821-823,827,830,845,856-867,880,882-901,903-909,911
+  s_bf9fc71f3305db::t_d2caddd8c9b661 322,324-326,365-367,369,776-778,780-781,783-786,791-792,796,798-799,801-802
+  s_bf9fc71f3305db::t_7794a1a3ac6105 82-90,109
+  s_bf9fc71f3305db::t_1759c629d323fd 346,578,779,787-790
+  s_bf9fc71f3305db::t_8286b357a45b20 92-103
+  s_bf9fc71f3305db::t_1582e9717a84d3 78-79,551,611-614
+  s_bf9fc71f3305db::t_0310f8b5f8b8e5 395,401,444,449-450,453
+  s_bf9fc71f3305db::t_e9ce478a745746 1,3,8-40,43-56,66-68,72-73,117-132,137-188,192-204,206-257,261-269,271,286-294,408,546,549,643,726,738,774,804-810,812-814,816-818,820,824-826,828-829,831-844,846-855,868,881,902,910,912-917,935-1104
+  s_bf9fc71f3305db::t_00628ce8489f23 599-602
+desktop-app/web/src/App.tsx
+  s_bf9fc71f3305db::t_dcb7b3594c8f5c 42,900
+  s_bf9fc71f3305db::t_aa5be9d31e67f0 76,81,145,227,455,820-829,1006-1010,1048,1055
+  s_bf9fc71f3305db::t_8c5d77067a1134 121,182-184,213-218,228-231
+scripts/run-acp-worker.cjs
+  s_bf9fc71f3305db::t_3d52d42d7db146 13,16-17,35-49
+  s_bf9fc71f3305db::t_1e6620ba48fd36 1-12,14-15,18-34
+.github/workflows/acp-go.yml
+  s_bf9fc71f3305db::t_d094e5ef40abe9 1-26
+desktop-app/web/src/types.ts
+  s_bf9fc71f3305db::t_734314086ebbd9 35-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.9",
+  "base_commit_sha": "e70fa9de9b2cf59e63a281bf8ec25a663afad1e4",
+  "prompts": {},
+  "sessions": {
+    "s_bf9fc71f3305db": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e1e33-d83e-79b1-b0a9-73c94d50c01b",
+        "model": "gpt-5.5"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    }
+  }
+}
