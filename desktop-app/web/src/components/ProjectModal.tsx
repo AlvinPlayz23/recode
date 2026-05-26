@@ -1,11 +1,14 @@
 /**
  * Workspace picker. In the desktop app this navigates folders through Bun RPC.
  *
- * Refined surface: rounded card with breadcrumb header, polished search input,
- * folder rows with hover affordance, sticky footer.
+ * Polished surface: rounded glassy card with display-font header, breadcrumb
+ * pill, search field, hoverable folder rows and a footer with key hints.
+ * Visual language mirrors the CommandPalette so picker surfaces feel
+ * consistent across the app.
  */
 
 import { useEffect, useRef, useState } from 'react'
+import * as ReactDOM from 'react-dom'
 import {
   ArrowUp,
   Check,
@@ -15,7 +18,7 @@ import {
   Loader2,
   Search,
 } from 'lucide-react'
-import gsap from 'gsap'
+import { AnimatePresence, motion } from 'motion/react'
 import { cn } from '../lib/cn'
 import { pickerProjects, type PickerEntry } from '../mock-data'
 import type { DesktopDirectoryListing } from '../desktop-rpc'
@@ -43,7 +46,6 @@ export function ProjectModal({
   description = 'Pick a folder for Recode to operate inside.',
   useLabel = 'Use folder',
 }: ProjectModalProps) {
-  const cardRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const [listing, setListing] = useState<DesktopDirectoryListing | null>(null)
   const [loading, setLoading] = useState(false)
@@ -65,17 +67,6 @@ export function ProjectModal({
       entry.name.toLowerCase().includes(normalizedQuery) ||
       entry.path.toLowerCase().includes(normalizedQuery),
   )
-
-  useEffect(() => {
-    if (document.documentElement.dataset.animations === 'paused') return
-    if (open && cardRef.current) {
-      gsap.fromTo(
-        cardRef.current,
-        { scale: 0.96, opacity: 0, y: 10 },
-        { scale: 1, opacity: 1, y: 0, duration: 0.25, ease: 'expo.out' },
-      )
-    }
-  }, [open])
 
   useEffect(() => {
     if (!open || !onOpenDirectory) return
@@ -112,194 +103,218 @@ export function ProjectModal({
     }
   }
 
-  if (!open) return null
+  if (typeof document === 'undefined') return null
 
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-      <div
-        className="absolute inset-0 bg-black/35 backdrop-blur-sm"
-        onClick={onClose}
-      />
-      <div
-        ref={cardRef}
-        className={cn(
-          'relative bg-rc-elevated border border-rc-border w-full max-w-md',
-          'rounded-2xl shadow-2xl overflow-hidden flex flex-col',
-        )}
-      >
-        {/* Header */}
-        <div className="px-5 py-4 border-b border-rc-border-soft flex items-start gap-3">
-          <div className="w-9 h-9 shrink-0 rounded-lg bg-rc-accent-soft flex items-center justify-center">
-            <FolderOpen
-              className="w-[18px] h-[18px] text-rc-accent"
-              strokeWidth={1.8}
-            />
-          </div>
-          <div className="min-w-0">
-            <h3 className="display text-[14px] font-semibold text-rc-text leading-tight">
-              {title}
-            </h3>
-            <p className="text-[12px] text-rc-muted mt-0.5 leading-snug">
-              {description}
-            </p>
-          </div>
-        </div>
-
-        {/* Breadcrumb / parent */}
-        {desktopPicker && listing && (
-          <div className="px-3 pt-3 pb-2 flex items-center gap-2 border-b border-rc-border-soft">
-            <button
-              type="button"
-              onClick={() => void openDirectory(listing.parentPath)}
-              disabled={!listing.parentPath || loading}
-              title="Parent folder"
-              className={cn(
-                'w-7 h-7 shrink-0 rounded-md flex items-center justify-center',
-                'text-rc-muted hover:text-rc-text hover:bg-rc-hover',
-                'disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-rc-muted',
-                'transition-colors focus-ring',
-              )}
-            >
-              <ArrowUp className="w-4 h-4" strokeWidth={1.7} />
-            </button>
-            <div
-              className={cn(
-                'min-w-0 flex-1 text-[11.5px] mono text-rc-muted truncate',
-                'rounded-md bg-rc-bg border border-rc-border-soft px-2.5 py-1',
-              )}
-              title={listing.path}
-            >
-              {listing.path}
-            </div>
-            <button
-              type="button"
-              onClick={() => onSelectDirectory?.(listing.path)}
-              disabled={loading}
-              className={cn(
-                'h-7 px-2.5 rounded-md flex items-center gap-1.5',
-                'bg-rc-text text-rc-bg text-[12px] font-medium',
-                'hover:opacity-85 disabled:opacity-50 transition-opacity focus-ring',
-              )}
-            >
-              <Check className="w-3.5 h-3.5" strokeWidth={2.2} />
-              {useLabel}
-            </button>
-          </div>
-        )}
-
-        {/* Search */}
-        {(desktopPicker || (!desktopPicker && showMockProjects)) && (
-          <div className="px-3 pt-2.5 pb-2">
-            <div
-              className={cn(
-                'h-9 rounded-lg border border-rc-border bg-rc-bg flex items-center gap-2 px-3',
-                'focus-within:border-rc-accent focus-within:ring-2 focus-within:ring-rc-accent-soft',
-                'transition-[border,box-shadow]',
-              )}
-            >
-              <Search
-                className="w-3.5 h-3.5 text-rc-faint shrink-0"
-                strokeWidth={1.8}
-              />
-              <input
-                ref={inputRef}
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder={
-                  desktopPicker ? 'Search folders' : 'Search workspaces'
-                }
-                className={cn(
-                  'min-w-0 flex-1 bg-transparent border-0 outline-none',
-                  'text-[12.5px] text-rc-text placeholder-rc-faint',
-                )}
-              />
-              {query && (
-                <button
-                  type="button"
-                  onClick={() => setQuery('')}
-                  className="text-[10.5px] text-rc-faint hover:text-rc-text mono"
-                >
-                  CLEAR
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Body */}
-        <div className="flex-1 min-h-0 px-1.5 pb-1.5 max-h-[360px] overflow-y-auto">
-          {loading && (
-            <div className="flex items-center gap-2 px-3 py-3 text-[12px] text-rc-muted">
-              <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.7} />
-              Loading folders
-            </div>
-          )}
-          {error && (
-            <div
-              className={cn(
-                'mx-1.5 my-1.5 rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2',
-                'text-[12px] text-[color:var(--destructive)]',
-              )}
-            >
-              {error}
-            </div>
-          )}
-          {desktopPicker && !loading && listing?.entries.length === 0 && (
-            <EmptyState message="No folders here." />
-          )}
-          {desktopPicker &&
-            !loading &&
-            listing &&
-            listing.entries.length > 0 &&
-            filteredEntries.length === 0 && (
-              <EmptyState message={`No folders match "${query}".`} />
-            )}
-          {desktopPicker &&
-            filteredEntries.map((entry) => (
-              <FolderRow
-                key={entry.path}
-                name={entry.name}
-                path={entry.path}
-                onClick={() => void openDirectory(entry.path)}
-              />
-            ))}
-          {!desktopPicker &&
-            showMockProjects &&
-            filteredMockProjects.length === 0 && (
-              <EmptyState message={`No workspaces match "${query}".`} />
-            )}
-          {!desktopPicker &&
-            showMockProjects &&
-            filteredMockProjects.map((entry) => (
-              <FolderRow
-                key={entry.id}
-                name={entry.name}
-                path={entry.path}
-                onClick={() => onSelect(entry)}
-              />
-            ))}
-        </div>
-
-        {/* Footer */}
-        <div className="px-4 py-3 border-t border-rc-border-soft flex justify-between items-center bg-rc-bg/60">
-          <span className="text-[10.5px] text-rc-faint mono uppercase tracking-wider">
-            {desktopPicker
-              ? 'Navigate folders to find your project'
-              : 'Recent workspaces'}
-          </span>
-          <button
-            type="button"
+  return ReactDOM.createPortal(
+    <AnimatePresence>
+      {open && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-[100] bg-black/45 backdrop-blur-sm"
             onClick={onClose}
-            className={cn(
-              'px-3 py-1.5 rounded-md text-[12px] text-rc-muted',
-              'hover:text-rc-text hover:bg-rc-hover transition-colors focus-ring',
-            )}
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: 8 }}
+            transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
+            className="fixed left-1/2 top-1/2 z-[110] w-full max-w-[520px] -translate-x-1/2 -translate-y-1/2 px-4"
           >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
+            <div
+              className={cn(
+                'relative flex flex-col overflow-hidden',
+                'rounded-3xl border border-rc-border bg-rc-elevated/95 backdrop-blur-xl',
+                'shadow-[0_30px_80px_-20px_rgba(0,0,0,0.45)]',
+              )}
+            >
+              {/* Header */}
+              <div className="flex items-start gap-3 px-5 pt-5 pb-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-rc-accent-soft">
+                  <FolderOpen
+                    className="h-[18px] w-[18px] text-rc-accent"
+                    strokeWidth={1.8}
+                  />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="display text-[16px] font-semibold leading-tight text-rc-text">
+                    {title}
+                  </h3>
+                  <p className="mt-0.5 text-[12.5px] leading-snug text-rc-muted">
+                    {description}
+                  </p>
+                </div>
+              </div>
+
+              {/* Breadcrumb / parent */}
+              {desktopPicker && listing && (
+                <div className="flex items-center gap-2 px-4 pb-3">
+                  <button
+                    type="button"
+                    onClick={() => void openDirectory(listing.parentPath)}
+                    disabled={!listing.parentPath || loading}
+                    title="Parent folder"
+                    className={cn(
+                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-xl',
+                      'border border-rc-border-soft bg-rc-card text-rc-muted',
+                      'hover:border-rc-border hover:bg-rc-hover hover:text-rc-text',
+                      'disabled:opacity-35 disabled:hover:border-rc-border-soft disabled:hover:bg-rc-card disabled:hover:text-rc-muted',
+                      'transition-colors focus-ring',
+                    )}
+                  >
+                    <ArrowUp className="h-4 w-4" strokeWidth={1.7} />
+                  </button>
+                  <div
+                    className={cn(
+                      'min-w-0 flex-1 truncate rounded-xl border border-rc-border-soft bg-rc-card px-3 py-1.5',
+                      'mono text-[11.5px] text-rc-muted',
+                    )}
+                    title={listing.path}
+                  >
+                    {listing.path}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onSelectDirectory?.(listing.path)}
+                    disabled={loading}
+                    className={cn(
+                      'flex h-8 items-center gap-1.5 rounded-xl px-3',
+                      'display bg-rc-text text-[12.5px] font-medium text-rc-bg',
+                      'hover:opacity-85 disabled:opacity-50 transition-opacity focus-ring',
+                    )}
+                  >
+                    <Check className="h-3.5 w-3.5" strokeWidth={2.2} />
+                    {useLabel}
+                  </button>
+                </div>
+              )}
+
+              {/* Search */}
+              {(desktopPicker || (!desktopPicker && showMockProjects)) && (
+                <div className="px-4 pb-3">
+                  <div
+                    className={cn(
+                      'flex h-10 items-center gap-2.5 rounded-2xl border border-rc-border-soft bg-rc-card px-3.5',
+                      'focus-within:border-rc-accent/40 focus-within:bg-rc-elevated',
+                      'focus-within:ring-2 focus-within:ring-rc-accent-soft',
+                      'transition-[border,box-shadow,background]',
+                    )}
+                  >
+                    <Search
+                      className="h-4 w-4 shrink-0 text-rc-faint"
+                      strokeWidth={1.8}
+                    />
+                    <input
+                      ref={inputRef}
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder={
+                        desktopPicker ? 'Search folders' : 'Search workspaces'
+                      }
+                      className={cn(
+                        'min-w-0 flex-1 border-0 bg-transparent outline-none',
+                        'text-[13px] text-rc-text placeholder-rc-faint',
+                      )}
+                    />
+                    {query && (
+                      <button
+                        type="button"
+                        onClick={() => setQuery('')}
+                        className="rounded-md px-1.5 py-0.5 text-[11px] text-rc-muted hover:bg-rc-hover hover:text-rc-text transition-colors"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Body */}
+              <div className="max-h-[360px] min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+                {loading && (
+                  <div className="flex items-center gap-2 px-3 py-3 text-[12.5px] text-rc-muted">
+                    <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.7} />
+                    Loading folders
+                  </div>
+                )}
+                {error && (
+                  <div
+                    className={cn(
+                      'mx-2 my-2 rounded-2xl border border-destructive/30 bg-destructive/8 px-3 py-2',
+                      'text-[12px] text-[color:var(--destructive)]',
+                    )}
+                  >
+                    {error}
+                  </div>
+                )}
+                {desktopPicker && !loading && listing?.entries.length === 0 && (
+                  <EmptyState message="No folders here." />
+                )}
+                {desktopPicker &&
+                  !loading &&
+                  listing &&
+                  listing.entries.length > 0 &&
+                  filteredEntries.length === 0 && (
+                    <EmptyState message={`No folders match "${query}".`} />
+                  )}
+                {desktopPicker &&
+                  filteredEntries.map((entry) => (
+                    <FolderRow
+                      key={entry.path}
+                      name={entry.name}
+                      path={entry.path}
+                      onClick={() => void openDirectory(entry.path)}
+                    />
+                  ))}
+                {!desktopPicker &&
+                  showMockProjects &&
+                  filteredMockProjects.length === 0 && (
+                    <EmptyState message={`No workspaces match "${query}".`} />
+                  )}
+                {!desktopPicker &&
+                  showMockProjects &&
+                  filteredMockProjects.map((entry) => (
+                    <FolderRow
+                      key={entry.id}
+                      name={entry.name}
+                      path={entry.path}
+                      onClick={() => onSelect(entry)}
+                    />
+                  ))}
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-between border-t border-rc-border-soft bg-rc-sidebar/60 px-4 py-2.5">
+                <span className="display text-[11.5px] text-rc-muted">
+                  {desktopPicker
+                    ? 'Navigate folders to find your project'
+                    : 'Recent workspaces'}
+                </span>
+                <div className="flex items-center gap-2">
+                  <kbd className="mono inline-flex h-6 items-center gap-1 rounded-md border border-rc-border-soft bg-rc-card px-2 text-[10px] font-medium text-rc-faint">
+                    ESC
+                  </kbd>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className={cn(
+                      'display rounded-lg px-2.5 py-1 text-[12px] text-rc-muted',
+                      'hover:bg-rc-hover hover:text-rc-text transition-colors focus-ring',
+                    )}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>,
+    document.body,
   )
 }
 
@@ -317,29 +332,29 @@ function FolderRow({
       type="button"
       onClick={onClick}
       className={cn(
-        'group w-full flex items-center gap-3 px-3 py-2.5 rounded-lg',
-        'hover:bg-rc-hover transition-colors text-left focus-ring',
+        'group flex w-full items-center gap-3 rounded-2xl px-3 py-2.5',
+        'text-left transition-colors hover:bg-rc-hover focus-ring',
       )}
     >
       <div
         className={cn(
-          'w-8 h-8 rounded-md border border-rc-border-soft bg-rc-card',
-          'flex items-center justify-center text-rc-muted',
-          'group-hover:border-rc-border group-hover:text-rc-text transition-colors',
+          'flex h-9 w-9 items-center justify-center rounded-xl',
+          'border border-rc-border-soft bg-rc-card text-rc-muted',
+          'transition-colors group-hover:border-rc-border group-hover:bg-rc-accent-soft group-hover:text-rc-accent',
         )}
       >
-        <Folder className="w-4 h-4" strokeWidth={1.6} />
+        <Folder className="h-4 w-4" strokeWidth={1.6} />
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-[13px] font-medium text-rc-text truncate">
+      <div className="min-w-0 flex-1">
+        <div className="display truncate text-[13.5px] font-medium text-rc-text">
           {name}
         </div>
-        <div className="text-[11px] mono text-rc-faint truncate">{path}</div>
+        <div className="mono truncate text-[11px] text-rc-faint">{path}</div>
       </div>
       <ChevronRight
         className={cn(
-          'w-4 h-4 text-rc-faint shrink-0',
-          'group-hover:text-rc-muted group-hover:translate-x-0.5 transition-all',
+          'h-4 w-4 shrink-0 -translate-x-1 text-rc-faint opacity-60',
+          'transition-all group-hover:translate-x-0 group-hover:text-rc-muted group-hover:opacity-100',
         )}
         strokeWidth={1.6}
       />
@@ -349,11 +364,11 @@ function FolderRow({
 
 function EmptyState({ message }: { message: string }) {
   return (
-    <div className="flex flex-col items-center justify-center py-10 text-center">
-      <div className="mb-2 w-10 h-10 rounded-full bg-rc-hover flex items-center justify-center">
-        <Folder className="w-4 h-4 text-rc-faint" strokeWidth={1.6} />
+    <div className="flex flex-col items-center justify-center py-12 text-center">
+      <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-rc-hover">
+        <Folder className="h-5 w-5 text-rc-faint" strokeWidth={1.6} />
       </div>
-      <p className="text-[12px] text-rc-muted">{message}</p>
+      <p className="display text-[12.5px] text-rc-muted">{message}</p>
     </div>
   )
 }
