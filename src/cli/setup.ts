@@ -1,6 +1,10 @@
 /**
  * Interactive CLI setup for providers and models.
  *
+ * Interactive terminals get a themed OpenTUI wizard (see `setup-tui.tsx`).
+ * Non-TTY environments fall back to the readline-based prompt loop below so
+ * scripted setups still work.
+ *
  * @author dev
  */
 
@@ -42,8 +46,21 @@ interface SelectOption<TValue> {
 
 /**
  * Run the interactive setup flow.
+ *
+ * On a TTY we hand off to the OpenTUI wizard for a richer multi-step UI. In
+ * non-interactive environments we keep the original readline-based prompt
+ * loop so piped setup scripts still work.
  */
 export async function runSetupWizard(workspaceRoot: string): Promise<void> {
+  if (stdin.isTTY && stdout.isTTY) {
+    const { runSetupTui } = await import("./setup-tui.tsx");
+    const outcome = await runSetupTui(workspaceRoot);
+    if (outcome.savedCount > 0) {
+      console.log(`Saved provider config to ${outcome.configPath}`);
+    }
+    return;
+  }
+
   const configPath = resolveConfigPath(workspaceRoot, Bun.env.RECODE_CONFIG_PATH?.trim());
   const existingConfig = loadRecodeConfigFile(configPath);
   const rl = createInterface({ input: stdin, output: stdout });

@@ -18,6 +18,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import type { ChatMessage, Thread } from '../types'
 import { TextShimmer } from './TextShimmer'
 
@@ -33,15 +34,27 @@ interface TranscriptProps {
   messages: ChatMessage[]
 }
 
-const VIRTUALIZE_AFTER_MESSAGES = 120
-const ESTIMATED_MESSAGE_HEIGHT = 96
-const VIRTUAL_OVERSCAN_ROWS = 12
+/**
+ * Initial guess for a row's pixel height before it gets measured. The exact
+ * value doesn't matter for correctness — TanStack swaps it for the real
+ * measured height as soon as each row mounts via `measureElement`.
+ */
+const ESTIMATED_MESSAGE_HEIGHT = 120
+
+/**
+ * Returns a single number that grows when an in-flight message's *visible*
+ * content grows. We watch both `body` (assistant streaming text) and
+ * `toolContent` (tool output streaming back) so the stick-to-bottom effect
+ * fires for either kind of update.
+ */
+function getMessageStreamingSize(message: ChatMessage | undefined): number {
+  if (!message) return 0
+  return message.body.length + (message.toolContent?.length ?? 0)
+}
 
 export function Transcript({ thread, messages }: TranscriptProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
-  const [viewport, setViewport] = useState({ scrollTop: 0, height: 0 })
   const [showJumpToBottom, setShowJumpToBottom] = useState(false)
-  const shouldVirtualize = messages.length > VIRTUALIZE_AFTER_MESSAGES
 
   // Track "is the user pinned to the bottom" so we only auto-scroll when they
   // haven't intentionally scrolled up to read history.
@@ -49,10 +62,26 @@ export function Transcript({ thread, messages }: TranscriptProps) {
   const previousMessageCount = useRef(messages.length)
   const previousThreadId = useRef(thread?.id ?? null)
   const previousLastMessageId = useRef(messages[messages.length - 1]?.id ?? null)
-  // Tracks the body length of whichever message was the *last* one in the
-  // array on the previous render. We use it to detect token-by-token streaming
-  // (id unchanged, but body grew) so we can keep the viewport pinned.
-  const previousLastMessageBodyLength = useRef(messages[messages.length - 1]?.body.length ?? 0)
+  // Tracks the *visible* content size (body + tool output) of whichever
+  // message was the last one in the array on the previous render. Used to
+  // detect token-by-token streaming (id unchanged, but content grew) so we
+  // can keep the viewport pinned.
+  const previousLastMessageSize = useRef(getMessageStreamingSize(messages[messages.length - 1]))
+
+  // Variable-height virtualization. Every message row mounts with a stable
+  // `data-index` and the virtualizer's `measureElement` ref, so the real
+  // pixel height is recorded after layout and the total scroll size always
+  // matches what the user sees — no more fixed 96px-per-row guesses.
+  const virtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => ESTIMATED_MESSAGE_HEIGHT,
+    overscan: 8,
+    getItemKey: (index) => messages[index]?.id ?? index,
+  })
+
+  const totalSize = virtualizer.getTotalSize()
+  const virtualItems = virtualizer.getVirtualItems()
 
   // When switching threads, jump to the bottom instantly without animating —
   // smooth-scroll on a thread change feels janky.
@@ -73,13 +102,13 @@ export function Transcript({ thread, messages }: TranscriptProps) {
     const lastMessage = messages[messages.length - 1]
     const justAddedMessage = messages.length > previousMessageCount.current
     const lastIdChanged = (lastMessage?.id ?? null) !== previousLastMessageId.current
-    const lastBodyGrew =
-      lastMessage !== undefined && lastMessage.body.length > previousLastMessageBodyLength.current
+    const currentSize = getMessageStreamingSize(lastMessage)
+    const lastBodyGrew = currentSize > previousLastMessageSize.current
     const lastIsUser = lastMessage?.role === 'user'
 
     previousMessageCount.current = messages.length
     previousLastMessageId.current = lastMessage?.id ?? null
-    previousLastMessageBodyLength.current = lastMessage?.body.length ?? 0
+    previousLastMessageSize.current = currentSize
 
     // A user just hit send — always glide to the bottom, even if they were
     // scrolled up reading earlier history.
@@ -100,31 +129,16 @@ export function Transcript({ thread, messages }: TranscriptProps) {
     })
   }, [messages])
 
-  const virtualWindow = useMemo(() => {
-    if (!shouldVirtualize) {
-      return {
-        startIndex: 0,
-        endIndex: messages.length,
-        topSpacer: 0,
-        bottomSpacer: 0,
-        visibleMessages: messages,
-      }
-    }
-
-    const viewportHeight = viewport.height || scrollRef.current?.clientHeight || 720
-    const rawStart = Math.floor(viewport.scrollTop / ESTIMATED_MESSAGE_HEIGHT) - VIRTUAL_OVERSCAN_ROWS
-    const visibleCount = Math.ceil(viewportHeight / ESTIMATED_MESSAGE_HEIGHT) + VIRTUAL_OVERSCAN_ROWS * 2
-    const startIndex = Math.max(0, rawStart)
-    const endIndex = Math.min(messages.length, startIndex + visibleCount)
-
-    return {
-      startIndex,
-      endIndex,
-      topSpacer: startIndex * ESTIMATED_MESSAGE_HEIGHT,
-      bottomSpacer: Math.max(0, (messages.length - endIndex) * ESTIMATED_MESSAGE_HEIGHT),
-      visibleMessages: messages.slice(startIndex, endIndex),
-    }
-  }, [messages, shouldVirtualize, viewport])
+  // The virtualizer re-measures rows as they mount and as their content grows
+  // (streaming tokens, expanded tool output, image loads, etc.). Whenever the
+  // resulting total content size changes and the user is pinned, snap the
+  // viewport back to the bottom so streaming output stays visible.
+  useLayoutEffect(() => {
+    if (!stickToBottom.current) return
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+  }, [totalSize])
 
   if (!thread) {
     return (
@@ -164,7 +178,6 @@ export function Transcript({ thread, messages }: TranscriptProps) {
         className="flex-1 overflow-y-auto"
         onScroll={(event) => {
           const target = event.currentTarget
-          setViewport({ scrollTop: target.scrollTop, height: target.clientHeight })
           const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight
           stickToBottom.current = distanceFromBottom <= STICK_TO_BOTTOM_THRESHOLD
           // The jump-to-bottom pill should appear once the user has scrolled
@@ -174,20 +187,36 @@ export function Transcript({ thread, messages }: TranscriptProps) {
         }}
       >
         <div className="max-w-[760px] mx-auto px-8 py-8">
-        {virtualWindow.topSpacer > 0 && (
-          <div style={{ height: virtualWindow.topSpacer }} aria-hidden="true" />
-        )}
-        {virtualWindow.visibleMessages.map((msg, index) => {
-          const absoluteIndex = virtualWindow.startIndex + index
-          return (
-            <div key={msg.id} className={getTranscriptSpacing(msg, messages[absoluteIndex - 1])}>
-              <TranscriptMessage message={msg} />
-            </div>
-          )
-        })}
-        {virtualWindow.bottomSpacer > 0 && (
-          <div style={{ height: virtualWindow.bottomSpacer }} aria-hidden="true" />
-        )}
+          <div
+            style={{
+              height: `${totalSize}px`,
+              width: '100%',
+              position: 'relative',
+            }}
+          >
+            {virtualItems.map((virtualRow) => {
+              const msg = messages[virtualRow.index]
+              if (!msg) return null
+              return (
+                <div
+                  key={virtualRow.key}
+                  data-index={virtualRow.index}
+                  ref={virtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  <div className={getTranscriptSpacing(msg, messages[virtualRow.index - 1])}>
+                    <TranscriptMessage message={msg} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </div>
       </div>
       {/* Floating jump-to-bottom pill: appears when the user has scrolled up
