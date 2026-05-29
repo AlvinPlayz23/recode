@@ -760,6 +760,20 @@ function Footer(props: FooterProps) {
   );
 }
 
+function themedSelectProps(theme: ThemeColors) {
+  return {
+    backgroundColor: theme.inverseText,
+    textColor: theme.text,
+    focusedBackgroundColor: theme.inverseText,
+    focusedTextColor: theme.text,
+    selectedBackgroundColor: theme.selectionBg,
+    selectedTextColor: theme.brandShimmer,
+    descriptionColor: theme.hintText,
+    selectedDescriptionColor: theme.hintText,
+    showScrollIndicator: true
+  };
+}
+
 interface WelcomeStepProps {
   readonly theme: ThemeColors;
   readonly configPath: string;
@@ -853,6 +867,7 @@ function WelcomeStep(props: WelcomeStepProps) {
         <select
           height={Math.min(6, options().length * 2 + 1)}
           options={options()}
+          {...themedSelectProps(props.theme)}
           focused
           onSelect={(_index, option) => {
             if (option === null) {
@@ -908,6 +923,7 @@ function TargetStep(props: TargetStepProps) {
         <select
           height={Math.min(12, options().length * 2 + 1)}
           options={options()}
+          {...themedSelectProps(props.theme)}
           focused
           onSelect={(_index, option) => {
             if (option !== null && typeof option.value === "string") {
@@ -947,6 +963,7 @@ function KindStep(props: KindStepProps) {
         <select
           height={Math.min(14, options().length * 2 + 1)}
           options={options()}
+          {...themedSelectProps(props.theme)}
           selectedIndex={Math.max(
             0,
             options().findIndex((option) => option.value === props.draft.kind)
@@ -1083,6 +1100,7 @@ function ModelsModeStep(props: ModelsModeStepProps) {
         <select
           height={Math.min(6, options.length * 2 + 1)}
           options={options.map((option) => ({ ...option }))}
+          {...themedSelectProps(props.theme)}
           focused
           onSelect={(_index, option) => {
             if (option !== null && typeof option.value === "string") {
@@ -1154,6 +1172,7 @@ function ModelsSelectStep(props: ModelsSelectStepProps) {
         <select
           height={Math.min(14, options().length * 2 + 1)}
           options={options()}
+          {...themedSelectProps(props.theme)}
           selectedIndex={initialIndex()}
           focused
           onSelect={(_index, option) => {
@@ -1295,6 +1314,7 @@ function AdvancedAskStep(props: AdvancedAskStepProps) {
         <select
           height={Math.min(6, options.length * 2 + 1)}
           options={options.map((option) => ({ ...option }))}
+          {...themedSelectProps(props.theme)}
           focused
           onSelect={(_index, option) => {
             if (option !== null && typeof option.value === "string") {
@@ -1564,6 +1584,7 @@ function ReviewStep(props: ReviewStepProps) {
         <select
           height={Math.min(8, options().length * 2 + 1)}
           options={options()}
+          {...themedSelectProps(props.theme)}
           focused
           onSelect={(_index, option) => {
             if (option === null) {
@@ -1638,6 +1659,7 @@ function SavedStep(props: SavedStepProps) {
         <select
           height={Math.min(5, options.length * 2 + 1)}
           options={options.map((option) => ({ ...option }))}
+          {...themedSelectProps(props.theme)}
           focused
           onSelect={(_index, option) => {
             if (option === null) {
