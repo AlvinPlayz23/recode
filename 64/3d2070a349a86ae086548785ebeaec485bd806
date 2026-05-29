@@ -1,0 +1,20 @@
+src/cli/setup-tui.tsx
+  s_8003e6557a9645::t_2cc0616ec6cc3e 870,926,966,1103,1175,1317,1587,1662
+  s_8003e6557a9645::t_d274a9d19bd847 763-776
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "643d2070a349a86ae086548785ebeaec485bd806",
+  "prompts": {},
+  "sessions": {
+    "s_8003e6557a9645": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e7231-1c97-7471-a58f-97401f094a59",
+        "model": "gpt-5.5"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    }
+  }
+}
