@@ -1,0 +1,229 @@
+desktop-app/web/src/components/Transcript.tsx
+  s_2f66032e14ff79::t_3edb3025ee4d2b 18,267-270,294-311
+desktop-app/web/src/components/Composer.tsx
+  s_bae40642fcf6bd::t_b5665d68a64f4d 75,110-119,121,123-126,134,162-163,165-168,185-186,188-189,211,250,266-267,323,472-476
+  s_d29b60f5731df8::t_7b1454b6523ff8 20,212-219,221-227,230-249,251-265
+  s_784b2957c906d6::t_6adc79b29d73f1 48,55,81,88
+  s_38f6a85b8663eb::t_87e93aa139b138 220,228-229
+  s_62f205e07a1ae0::t_58fe3bf020da85 140-161
+  s_fe4a39aa9e2533::t_6a0dd7abf3eb5e 120,122,187
+  s_67cc26b8d6ee2e::t_8e053b666eae72 95,190-205
+  s_0856e12c16fb00::t_6651d5751d3f13 164
+  s_d021161aeb1150::t_0f33b057936152 70-74
+desktop-app/web/src/types.ts
+  s_4fa217aeaedcfd::t_a660ab0827b92a 35
+desktop-app/web/src/App.tsx
+  s_21bcf160ba447a::t_61699a57922bd1 1074,1083
+  s_226cd2bc9d46ed::t_4b1eb48a81735d 22
+  s_1b7eae7449d494::t_1d54b4709b111f 265-270,597,817,869-875,890-893
+  s_d0fa1ed43b2881::t_f966d08e371528 976-1029
+  s_73251e28bd322a::t_05716d257c60f7 1209-1228
+  s_599356fd82436f::t_e74af74470b681 1539-1586,1600-1644,1646-1878
+  s_1b9ab5beb77c7b::t_0cfc803f764ed4 1587-1599,1645
+  s_96f83a6367dd94::t_0f045075f63e03 54-63
+  s_dfca364fb2907f::t_f12b1c18233945 184
+  s_a064bfeb3abcc0::t_900d6f8c17a6c1 780-810
+  s_df32bf311afea4::t_3ddf981189fc9b 284
+  s_fd3c2351ba5b8e::t_d037b4e745a158 11-21,24,28
+  s_8c4384ea2bf957::t_8e8891af19628b 502-505,511-548
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "9ca698108208d7baa1e070f5bf54f4764f6b611c",
+  "prompts": {},
+  "sessions": {
+    "s_0856e12c16fb00": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PpODMtnsSkKxtyp0TdV",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_1b7eae7449d494": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PpNom1A9FuaeUOpRPc7",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_1b9ab5beb77c7b": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PqWaXMZmGDt3aXRmhMM",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_21bcf160ba447a": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PqNsaY4AhzbHr2vgukL",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_226cd2bc9d46ed": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PqWVg3CL0Dp4hmPxji7",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_2f66032e14ff79": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PqMJiJP6ub0wBDRYA2C",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_38f6a85b8663eb": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PqWLGLGFBJBgzqO1uFE",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_4fa217aeaedcfd": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PqM5noAWxWizixoNGwV",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_599356fd82436f": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PqPH3f4pYfmIMLJvijw",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_62f205e07a1ae0": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PqW9Dq5eCSrnzaLCBP4",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_67cc26b8d6ee2e": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PqW0JuLMZ8VFQZ3C8rE",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_73251e28bd322a": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PqP0tZGnDY37vzSXb5s",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_784b2957c906d6": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PqLRw0LClieuMHYaPvs",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_8c4384ea2bf957": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PqwzuJinmZniZnJuVzz",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_96f83a6367dd94": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PqMoquDOixH85lJjfJz",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_a064bfeb3abcc0": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PqyX5lLBr9yygmEKqma",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_bae40642fcf6bd": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PpMuPMA94FLKievB5v8",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_d021161aeb1150": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PqLG3vxikNpGpk72tI0",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_d0fa1ed43b2881": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PqNQVMO5HOt610HUkzN",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_d29b60f5731df8": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PpnYuqiWDzD7moWuYAY",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_df32bf311afea4": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PqNFlNG6RhLLctPYIke",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_dfca364fb2907f": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PqN0YY4uFfMJEiF0bnj",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_fd3c2351ba5b8e": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PqMbfXE9Z2OLRgnjZyf",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_fe4a39aa9e2533": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PqLf1uwperowMRlxz42",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    }
+  }
+}
