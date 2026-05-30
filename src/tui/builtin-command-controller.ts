@@ -15,6 +15,7 @@ import {
   saveRecodeConfigFile,
   selectConfiguredMinimalMode
 } from "../config/recode-config.ts";
+import { hasAgentsMd } from "../prompt/agents-md.ts";
 import { exportConversationToHtml, exportConversationToMarkdown } from "../history/export-html.ts";
 import type { SavedConversationRecord } from "../history/recode-history.ts";
 import type { SessionEvent } from "../session/session-event.ts";
@@ -285,7 +286,15 @@ function exportCurrentConversationMarkdown(options: BuiltinCommandDispatchOption
 function startNewConversation(options: BuiltinCommandDispatchOptions): void {
   const conversation = createDraftConversation(options.runtimeConfig, options.sessionMode);
   options.setConversation(conversation);
-  options.setEntries([createEntry("status", "status", "Started a new conversation")]);
+  options.setEntries([
+    createEntry(
+      "status",
+      "status",
+      hasAgentsMd(options.runtimeConfig.workspaceRoot)
+        ? "Started a new conversation · AGENTS.md loaded"
+        : "Started a new conversation"
+    )
+  ]);
   options.setPreviousMessages([]);
   options.setSessionEvents?.([]);
   options.setSubagentTasks([]);

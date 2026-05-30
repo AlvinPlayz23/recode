@@ -15,13 +15,18 @@ import { join } from "node:path";
 
 const AGENTS_MD_FILENAME = "AGENTS.md";
 
+/** Return true when `AGENTS.md` exists in the provided workspace root. */
+export function hasAgentsMd(cwd: string): boolean {
+  return existsSync(join(cwd, AGENTS_MD_FILENAME));
+}
+
 /**
  * Read AGENTS.md from `cwd` and return its trimmed contents, or `undefined`
  * if the file does not exist.
  */
 export function loadAgentsMd(cwd: string): string | undefined {
   const agentsMdPath = join(cwd, AGENTS_MD_FILENAME);
-  if (!existsSync(agentsMdPath)) {
+  if (!hasAgentsMd(cwd)) {
     return undefined;
   }
   return readFileSync(agentsMdPath, "utf-8").trim();

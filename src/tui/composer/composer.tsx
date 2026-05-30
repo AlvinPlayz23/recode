@@ -32,6 +32,7 @@ export interface ComposerProps {
   readonly subagentTask: LiveSubagentTask | undefined;
   readonly theme: ThemeColors;
   readonly themeName: ThemeName;
+  readonly agentsMdLoaded: boolean;
   readonly statusTick: number;
   readonly busyPhase: SpinnerPhase;
   readonly providerStatusText: string | undefined;
@@ -402,6 +403,10 @@ function ComposerFooter(props: ComposerProps) {
         <text fg={props.theme.tool}>{props.model}</text>
         <text fg={props.theme.divider} attributes={TextAttributes.DIM}>·</text>
         <text fg={props.theme.hintText} attributes={TextAttributes.DIM}>{props.approvalMode}</text>
+        <Show when={props.agentsMdLoaded}>
+          <text fg={props.theme.divider} attributes={TextAttributes.DIM}>·</text>
+          <text fg={props.theme.brandShimmer} attributes={TextAttributes.BOLD}>AGENTS.md</text>
+        </Show>
         <Show when={props.contextWindowStatus !== undefined}>
           <text fg={props.theme.divider} attributes={TextAttributes.DIM}>·</text>
           <ContextBar snapshot={props.contextWindowStatus!} theme={props.theme} />

@@ -49,6 +49,7 @@ import {
 import { createLanguageModel } from "../models/create-model-client.ts";
 import type { ListedModelGroup } from "../models/list-models.ts";
 import { PLAN_SYSTEM_PROMPT } from "../prompt/plan-system-prompt.ts";
+import { hasAgentsMd } from "../prompt/agents-md.ts";
 import type { RuntimeConfig } from "../runtime/runtime-config.ts";
 import type {
   ApprovalMode,
@@ -385,6 +386,7 @@ export function TuiApp(props: TuiAppProps) {
   const markdownStyle = createMemo(() => createMarkdownSyntaxStyle(t()));
   const sessionLanguageModel = createMemo(() => createLanguageModel(sessionRuntimeConfig()));
   const historyRoot = createMemo(() => resolveHistoryRoot(sessionRuntimeConfig().configPath));
+  const agentsMdLoaded = createMemo(() => hasAgentsMd(sessionRuntimeConfig().workspaceRoot));
   const currentContextWindowStatus = createMemo<ContextWindowStatusSnapshot>(() => buildContextWindowStatusSnapshot(
     sessionRuntimeConfig(),
     contextWindowFallbacks(),
@@ -1616,6 +1618,7 @@ export function TuiApp(props: TuiAppProps) {
       subagentTask={activeSubagentTask()}
       theme={t()}
       themeName={themeName()}
+      agentsMdLoaded={agentsMdLoaded()}
       statusTick={statusTick()}
       busyPhase={busyPhase()}
       providerStatusText={providerStatusText()}

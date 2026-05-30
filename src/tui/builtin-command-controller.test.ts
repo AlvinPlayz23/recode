@@ -2,9 +2,9 @@
  * Tests for built-in slash-command dispatch.
  */
 
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "bun:test";
 import type { AiModel } from "../ai/types.ts";
 import type { ContextTokenEstimate } from "../agent/compact-conversation.ts";
@@ -73,6 +73,19 @@ describe("builtin command controller", () => {
       ["status", "Started a new conversation"]
     ]);
     expect(fixture.state.conversation?.transcript).toEqual([]);
+  });
+
+  it("reports AGENTS.md when starting a new conversation", async () => {
+    const fixture = createDispatchFixture("/new", {
+      transcript: [{ role: "user", content: "old" }],
+      agentsMdLoaded: true
+    });
+
+    await dispatchBuiltinCommand(fixture.options);
+
+    expect(fixture.state.entries.map((entry) => [entry.kind, entry.body])).toEqual([
+      ["status", "Started a new conversation · AGENTS.md loaded"]
+    ]);
   });
 
   it("forks the current conversation into a new saved session", async () => {
@@ -165,6 +178,7 @@ interface FixtureOverrides {
   readonly busy?: boolean;
   readonly transcript?: readonly ConversationMessage[];
   readonly currentConversation?: SavedConversationRecord;
+  readonly agentsMdLoaded?: boolean;
 }
 
 function createDispatchFixture(
@@ -173,6 +187,9 @@ function createDispatchFixture(
 ): { readonly state: FixtureState; readonly options: BuiltinCommandDispatchOptions } {
   const historyRoot = mkdtempSync(join(tmpdir(), "recode-command-history-"));
   const configPath = join(historyRoot, "config.json");
+  if (overrides.agentsMdLoaded) {
+    writeFileSync(join(historyRoot, "AGENTS.md"), "Use bun.");
+  }
   const transcript = overrides.transcript ?? [];
   const state: FixtureState = {
     draftCleared: false,
@@ -296,7 +313,7 @@ function createSavedConversation(
 
 function createRuntimeConfig(configPath: string): RuntimeConfig {
   return {
-    workspaceRoot: "C:\\workspace",
+    workspaceRoot: dirname(configPath),
     configPath,
     provider: "openai-chat",
     providerId: "test-provider",
