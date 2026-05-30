@@ -3,7 +3,7 @@
  */
 
 import type { AiModel } from "../ai/types.ts";
-import type { SubagentTaskRecord } from "../agent/subagent.ts";
+import type { SubagentTaskHandler, SubagentTaskRecord } from "../agent/subagent.ts";
 import {
   compactConversation,
   createCompactionSessionSnapshot,
@@ -21,6 +21,9 @@ import type { SavedConversationRecord } from "../history/recode-history.ts";
 import type { SessionEvent } from "../session/session-event.ts";
 import type { RuntimeConfig } from "../runtime/runtime-config.ts";
 import type { ConversationMessage } from "../transcript/message.ts";
+import {
+  INIT_COMMAND_PROMPT,
+} from "../prompt/init-command-prompt.ts";
 import {
   buildBuiltinConfigBody,
   buildBuiltinHelpBody,
@@ -58,6 +61,21 @@ export type BuiltinCommandDispatchResult =
       readonly kind: "not-command";
       readonly prompt: string;
     };
+
+/**
+ * Minimal state/actions needed to change the current session mode.
+ */
+export interface SessionModeCommandOptions {
+  readonly sessionMode: SessionMode;
+  readonly historyRoot: string;
+  readonly runtimeConfig: RuntimeConfig;
+  readonly transcript: readonly ConversationMessage[];
+  readonly subagentTasks: readonly SubagentTaskRecord[];
+  readonly currentConversation: SavedConversationRecord | undefined;
+  readonly setSessionMode: (value: SessionMode) => void;
+  readonly setConversation: (value: SavedConversationRecord) => void;
+  readonly appendEntry: (entry: UiEntry) => void;
+}
 
 /**
  * Callbacks and state needed to execute built-in TUI commands.
@@ -101,6 +119,7 @@ export interface BuiltinCommandDispatchOptions {
   readonly setStreamingEntryId: (value: string | undefined) => void;
   readonly setBusy: (value: boolean) => void;
   readonly setBusyPhase: (value: SpinnerPhase) => void;
+  readonly runSubagentTask: SubagentTaskHandler;
   readonly appendEntry: (entry: UiEntry) => void;
 }
 
@@ -180,6 +199,9 @@ async function executeBuiltinCommand(
     case "new":
     case "clear":
       startNewConversation(options);
+      return;
+    case "init":
+      await initializeAgentsMd(options);
       return;
     case "fork":
       forkCurrentConversation(options);
@@ -303,6 +325,42 @@ function startNewConversation(options: BuiltinCommandDispatchOptions): void {
   options.setStreamingEntryId(undefined);
 }
 
+async function initializeAgentsMd(options: BuiltinCommandDispatchOptions): Promise<void> {
+  if (hasAgentsMd(options.runtimeConfig.workspaceRoot)) {
+    options.appendEntry(
+      createEntry("status", "status", "AGENTS.md already exists in the project root — /init will not overwrite it.")
+    );
+    return;
+  }
+
+  options.appendEntry(createEntry("status", "status", "Creating AGENTS.md with the init subagent…"));
+  options.setBusyPhase("tool");
+  options.setBusy(true);
+
+  try {
+    await options.runSubagentTask({
+      description: "Create an AGENTS.md file with instructions for Recode",
+      prompt: INIT_COMMAND_PROMPT,
+      subagentType: "general"
+    });
+
+    if (hasAgentsMd(options.runtimeConfig.workspaceRoot)) {
+      options.appendEntry(
+        createEntry("status", "status", "AGENTS.md created. Restart Recode to load it into the system prompt.")
+      );
+      return;
+    }
+
+    options.appendEntry(createEntry("error", "error", "The init subagent finished, but AGENTS.md was not created."));
+  } catch (error) {
+    options.appendEntry(createEntry("error", "error", toErrorMessage(error)));
+  } finally {
+    options.setBusyPhase("thinking");
+    options.setBusy(false);
+    options.focusPrompt();
+  }
+}
+
 function forkCurrentConversation(options: BuiltinCommandDispatchOptions): void {
   if (options.transcript.length === 0) {
     options.appendEntry(createEntry("status", "status", "Nothing to fork yet."));
@@ -389,9 +447,13 @@ async function compactCurrentConversation(options: BuiltinCommandDispatchOptions
   }
 }
 
+export function toggleSessionMode(options: SessionModeCommandOptions): void {
+  switchSessionMode(options.sessionMode === "plan" ? "build" : "plan", options);
+}
+
 function switchSessionMode(
   nextMode: SessionMode,
-  options: BuiltinCommandDispatchOptions
+  options: SessionModeCommandOptions
 ): void {
   if (options.sessionMode === nextMode) {
     options.appendEntry(createEntry("status", "status", `Already in ${getSessionModeLabel(nextMode)} mode`));

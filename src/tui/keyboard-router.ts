@@ -205,6 +205,24 @@ export function handlePlanReviewKey(options: {
 }
 
 /**
+ * Handle the global Shift+Tab session-mode toggle shortcut.
+ */
+export function handleSessionModeToggleKey(options: {
+  readonly key: TuiKeyEvent;
+  readonly enabled: boolean;
+  readonly toggle: () => void;
+}): boolean {
+  if (!options.enabled || !options.key.shift || options.key.name !== "tab") {
+    return false;
+  }
+
+  options.key.preventDefault();
+  options.key.stopPropagation();
+  options.toggle();
+  return true;
+}
+
+/**
  * Handle a simple up/down/enter picker.
  */
 export function handleLinearPickerKey(options: {

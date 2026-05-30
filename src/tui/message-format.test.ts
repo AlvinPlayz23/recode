@@ -37,6 +37,7 @@ describe("tui message format", () => {
     expect(parseBuiltinCommand("/export")).toEqual({ name: "export", raw: "/export" });
     expect(parseBuiltinCommand("/history")).toEqual({ name: "history", raw: "/history" });
     expect(parseBuiltinCommand("/new")).toEqual({ name: "new", raw: "/new" });
+    expect(parseBuiltinCommand("/init")).toEqual({ name: "init", raw: "/init" });
     expect(parseBuiltinCommand("/fork")).toEqual({ name: "fork", raw: "/fork" });
     expect(parseBuiltinCommand("/compact")).toEqual({ name: "compact", raw: "/compact" });
     expect(parseBuiltinCommand("/plan")).toEqual({ name: "plan", raw: "/plan" });
@@ -63,6 +64,7 @@ describe("tui message format", () => {
       { name: "export-md", command: "/export-md", description: "Export the current conversation to Markdown" },
       { name: "history", command: "/history", description: "Open the conversation history" },
       { name: "new", command: "/new", description: "Start a new conversation" },
+      { name: "init", command: "/init", description: "Create an AGENTS.md file with instructions for Recode" },
       { name: "fork", command: "/fork", description: "Fork the current conversation into a new session" },
       { name: "compact", command: "/compact", description: "Compact older conversation history into a continuation summary" },
       { name: "plan", command: "/plan", description: "Switch to read-only planning mode" },
@@ -91,6 +93,7 @@ describe("tui message format", () => {
       "/export-md",
       "/history",
       "/new",
+      "/init",
       "/fork",
       "/compact",
       "/plan",

@@ -8,7 +8,7 @@
  * Built-in TUI command names.
  */
 export type BuiltinCommandName =
-  "help" | "clear" | "status" | "config" | "models" | "provider" | "theme" | "customize" | "todos" | "context-window" | "approval-mode" | "export" | "export-md" | "history" | "new" | "fork" | "compact" | "plan" | "build" | "layout" | "minimal" | "exit" | "quit";
+  "help" | "clear" | "status" | "config" | "models" | "provider" | "theme" | "customize" | "todos" | "context-window" | "approval-mode" | "export" | "export-md" | "history" | "new" | "init" | "fork" | "compact" | "plan" | "build" | "layout" | "minimal" | "exit" | "quit";
 
 /**
  * Built-in TUI command definition.
@@ -43,6 +43,7 @@ const BUILTIN_COMMANDS: readonly BuiltinCommandDefinition[] = [
   { name: "export-md", command: "/export-md", description: "Export the current conversation to Markdown" },
   { name: "history", command: "/history", description: "Open the conversation history" },
   { name: "new", command: "/new", description: "Start a new conversation" },
+  { name: "init", command: "/init", description: "Create an AGENTS.md file with instructions for Recode" },
   { name: "fork", command: "/fork", description: "Fork the current conversation into a new session" },
   { name: "compact", command: "/compact", description: "Compact older conversation history into a continuation summary" },
   { name: "plan", command: "/plan", description: "Switch to read-only planning mode" },
@@ -69,6 +70,7 @@ const BUILTIN_COMMAND_ALIASES: Readonly<Record<string, BuiltinCommandName>> = {
   "/export-md": "export-md",
   "/history": "history",
   "/new": "new",
+  "/init": "init",
   "/fork": "fork",
   "/compact": "compact",
   "/plan": "plan",

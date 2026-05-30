@@ -8,6 +8,7 @@ import {
   handleFileSuggestionPanelKey,
   handlePlanReviewKey,
   handleQuestionRequestKey,
+  handleSessionModeToggleKey,
   handleLinearPickerKey,
   handleProviderPickerKey,
   type TuiKeyEvent
@@ -223,13 +224,50 @@ describe("keyboard router helpers", () => {
     expect(key.stopped).toBe(true);
     expect(decision).toBe("revise");
   });
+
+  it("toggles session mode with Shift+Tab when enabled", () => {
+    const key = createKey("tab", { shift: true });
+    let toggled = false;
+
+    const handled = handleSessionModeToggleKey({
+      key,
+      enabled: true,
+      toggle() {
+        toggled = true;
+      }
+    });
+
+    expect(handled).toBe(true);
+    expect(key.prevented).toBe(true);
+    expect(key.stopped).toBe(true);
+    expect(toggled).toBe(true);
+  });
+
+  it("ignores plain tab for session mode toggling", () => {
+    const key = createKey("tab");
+    let toggled = false;
+
+    const handled = handleSessionModeToggleKey({
+      key,
+      enabled: true,
+      toggle() {
+        toggled = true;
+      }
+    });
+
+    expect(handled).toBe(false);
+    expect(toggled).toBe(false);
+  });
 });
 
-function createKey(name: string): TuiKeyEvent & { prevented: boolean; stopped: boolean } {
+function createKey(
+  name: string,
+  overrides: Partial<Pick<TuiKeyEvent, "ctrl" | "shift">> = {}
+): TuiKeyEvent & { prevented: boolean; stopped: boolean } {
   return {
     name,
-    ctrl: false,
-    shift: false,
+    ctrl: overrides.ctrl ?? false,
+    shift: overrides.shift ?? false,
     prevented: false,
     stopped: false,
     preventDefault() {

@@ -15,6 +15,7 @@ import {
   handleLinearPickerKey,
   handlePlanReviewKey,
   handleProviderPickerKey,
+  handleSessionModeToggleKey,
   handleToolApprovalKey,
   type CommandPanelState,
   type TuiKeyEvent
@@ -111,6 +112,7 @@ export interface InputRouterOptions {
   readonly handleCycleChatView: (key: KeyEvent) => void;
   readonly handleGoToSubagentView: (key: KeyEvent) => void;
   readonly handleGoToParentView: (key: KeyEvent) => void;
+  readonly handleToggleSessionMode: () => void;
   readonly handleQuestionKey: (key: KeyEvent) => boolean;
   readonly activePlanReviewRequest: () => ActivePlanReviewRequest | undefined;
   readonly resolvePlanReviewRequest: (decision: PlanReviewDecision) => void;
@@ -309,6 +311,14 @@ export function registerTuiInputHandlers(options: InputRouterOptions): void {
     }
 
     if (key.name === "escape" && handleCommandKey(key, commandPanel, options)) {
+      return;
+    }
+
+    if (handleSessionModeToggleKey({
+      key,
+      enabled: !options.isBusy() && !options.todoDropupOpen() && filePanel === undefined && commandPanel === undefined,
+      toggle: options.handleToggleSessionMode
+    })) {
       return;
     }
 

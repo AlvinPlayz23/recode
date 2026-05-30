@@ -228,7 +228,7 @@ import type {
   ActiveQuestionRequest,
   ActiveToast
 } from "./tui-app-types.ts";
-import { dispatchBuiltinCommand } from "./builtin-command-controller.ts";
+import { dispatchBuiltinCommand, toggleSessionMode } from "./builtin-command-controller.ts";
 import {
   estimateConversationFlowHeight,
   estimateHeaderHeight
@@ -845,6 +845,26 @@ export function TuiApp(props: TuiAppProps) {
         inputRef?.focus();
       }
     },
+    handleToggleSessionMode() {
+      if (modalOpen() || busy()) {
+        return;
+      }
+
+      toggleSessionMode({
+        sessionMode: sessionMode(),
+        historyRoot: historyRoot(),
+        runtimeConfig: sessionRuntimeConfig(),
+        transcript: previousMessages(),
+        subagentTasks: subagentTasks(),
+        currentConversation: currentConversation(),
+        setSessionMode,
+        setConversation: setCurrentConversation,
+        appendEntry(entry) {
+          appendEntry(setEntries, entry);
+        }
+      });
+      inputRef?.focus();
+    },
     handleQuestionKey(key) {
       return handleQuestionRequestKey({
         key,
@@ -1358,6 +1378,7 @@ export function TuiApp(props: TuiAppProps) {
       setStreamingEntryId,
       setBusy,
       setBusyPhase,
+      runSubagentTask: runTuiSubagentTask,
       appendEntry(entry) {
         appendEntry(setEntries, entry);
       }
