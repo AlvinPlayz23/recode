@@ -8,12 +8,24 @@
  */
 
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { MotionConfig } from 'motion/react'
+import {
+  CheckCircle2,
+  Circle,
+  Download,
+  FileCode2,
+  FileText,
+  HelpCircle,
+  ListChecks,
+  Settings2,
+  X,
+} from 'lucide-react'
+import { motion, MotionConfig } from 'motion/react'
 import { ChatHeader } from './components/ChatHeader'
-import { Composer } from './components/Composer'
+import { Composer, type SlashCommandOption } from './components/Composer'
 import { ProjectThreadPicker } from './components/ProjectThreadPicker'
 import type { CommandPaletteItem } from './components/CommandPalette'
 import { DotmSquare18 } from './components/ui/dotm-square-18'
+import { cn } from './lib/cn'
 import { initialProjects, initialThreads, type PickerEntry } from './mock-data'
 import {
   createDesktopBridge,
@@ -39,6 +51,16 @@ import type {
 
 const THEME_STORAGE_KEY = 'recode-theme'
 const GPU_ACCELERATION_DISABLED_STORAGE_KEY = 'recode-gpu-acceleration-disabled'
+const SLASH_COMMANDS: SlashCommandOption[] = [
+  { command: '/help', name: 'Help', description: 'Open desktop help' },
+  { command: '/status', name: 'Status', description: 'Show workspace and thread status' },
+  { command: '/config', name: 'Config', description: 'Show active configuration' },
+  { command: '/todo', name: 'Todo', description: 'Show the current task plan' },
+  { command: '/export', name: 'Export', description: 'Export this thread as HTML or Markdown' },
+  { command: '/compact', name: 'Compact', description: 'Add a compacted context marker' },
+]
+
+type SlashPanel = 'help' | 'status' | 'config' | 'todo' | 'export'
 
 const ProjectModal = lazy(() =>
   import('./components/ProjectModal').then((module) => ({
@@ -159,6 +181,7 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [slashPanel, setSlashPanel] = useState<SlashPanel | null>(null)
   const [composerFocusKey, setComposerFocusKey] = useState(0)
 
   useEffect(() => {
@@ -239,6 +262,12 @@ export function App() {
         return
       }
 
+      if (event.key === 'Tab' && event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault()
+        handleToggleMode()
+        return
+      }
+
       // `?` opens the keyboard shortcut cheatsheet — only when the user isn't
       // typing into a text field.
       if (!editable && !event.metaKey && !event.ctrlKey && !event.altKey && event.key === '?') {
@@ -252,6 +281,7 @@ export function App() {
         setShortcutsOpen(false)
         setSettingsOpen(false)
         setModalOpen(false)
+        setSlashPanel(null)
         setWorkspaceError(null)
       }
     }
@@ -469,13 +499,53 @@ export function App() {
 
   /**
    * Used by the hero workspace picker. If the current thread is an empty
-   * untitled scratch, just move it to the chosen project (avoids leaving
-   * orphan empty threads behind). Otherwise spin up a fresh one there.
+   * untitled scratch, keep the "move" behavior for local mock threads. In the
+   * desktop runtime, a thread is backed by a workspace-bound session, so we
+   * must create a real session in the newly selected workspace instead of only
+   * changing the UI project id.
    */
   function switchHeroProject(projectId: string) {
     const current = activeThread
     const currentMessages = current ? messages[current.id] : undefined
     if (current && currentMessages !== undefined && currentMessages.length === 0) {
+      if (bridge) {
+        const project = projects.find((item) => item.id === projectId)
+        if (!project) return
+        void bridge.rpc.request
+          .createSession({
+            workspacePath: project.path,
+            title: 'Untitled',
+            mode,
+            ...(model.includes('/') ? { model } : {}),
+          })
+          .then((created) => {
+            void bridge.rpc.request.closeSession({ threadId: current.id })
+            setProjects((prev) =>
+              prev.some((item) => item.id === created.project.id)
+                ? prev
+                : [...prev, created.project],
+            )
+            setThreads((prev) => [
+              created.thread,
+              ...prev.filter((thread) => thread.id !== current.id && thread.id !== created.thread.id),
+            ])
+            setMessages((prev) => {
+              const next = { ...prev, [created.thread.id]: [] }
+              delete next[current.id]
+              return next
+            })
+            setActiveThreadId(created.thread.id)
+            configOptionsByThread.current.delete(current.id)
+            configOptionsByThread.current.set(created.thread.id, created.configOptions)
+            setConfigOptions(created.configOptions)
+            setModel(created.thread.model)
+            setMode(created.thread.mode ?? 'build')
+            expandProject(created.project.id)
+          })
+          .catch((error: unknown) => showWorkspaceError(error))
+        return
+      }
+
       setThreads((prev) =>
         prev.map((t) => (t.id === current.id ? { ...t, projectId } : t)),
       )
@@ -524,6 +594,7 @@ export function App() {
       projectId,
       title: 'Untitled',
       model,
+      mode,
       age: 'now',
     }
     setThreads((prev) => [t, ...prev])
@@ -706,12 +777,44 @@ export function App() {
         setModalOpen(true)
         return
       }
+      if (bridge) {
+        void bridge.rpc.request
+          .createSession({
+            workspacePath: targetProject.path,
+            title: text.slice(0, 60),
+            mode,
+            ...(model.includes('/') ? { model } : {}),
+          })
+          .then((created) => {
+            setProjects((prev) =>
+              prev.some((item) => item.id === created.project.id)
+                ? prev
+                : [...prev, created.project],
+            )
+            setThreads((prev) => [
+              { ...created.thread, status: 'running' },
+              ...prev.filter((thread) => thread.id !== created.thread.id),
+            ])
+            setMessages((prev) => ({ ...prev, [created.thread.id]: [] }))
+            setActiveThreadId(created.thread.id)
+            configOptionsByThread.current.set(created.thread.id, created.configOptions)
+            setConfigOptions(created.configOptions)
+            setModel(created.thread.model)
+            setMode(created.thread.mode ?? 'build')
+            expandProject(created.project.id)
+            void bridge.rpc.request.sendPrompt({ threadId: created.thread.id, text })
+          })
+          .catch((error: unknown) => showWorkspaceError(error))
+        return
+      }
+
       const id = `thread-${Date.now()}`
       const newThread: Thread = {
         id,
         projectId: targetProject.id,
         title: text.slice(0, 60),
         model,
+        mode,
         age: 'now',
       }
       setThreads((prev) => [newThread, ...prev])
@@ -763,6 +866,13 @@ export function App() {
 
   function handleChangeMode(nextMode: SessionMode) {
     setMode(nextMode)
+    if (activeThread) {
+      setThreads((prev) =>
+        prev.map((thread) =>
+          thread.id === activeThread.id ? { ...thread, mode: nextMode } : thread,
+        ),
+      )
+    }
     if (bridge && activeThread) {
       void bridge.rpc.request
         .setConfigOption({
@@ -775,6 +885,10 @@ export function App() {
           setConfigOptions(result.configOptions)
         })
     }
+  }
+
+  function handleToggleMode() {
+    handleChangeMode(mode === 'plan' ? 'build' : 'plan')
   }
 
   function handleChangeRuntimeMode(nextMode: RecodeRuntimeMode) {
@@ -859,6 +973,60 @@ export function App() {
     })
   }
 
+  function handleSlashCommand(command: string) {
+    switch (command) {
+      case '/help':
+        setSlashPanel('help')
+        return
+      case '/status':
+        setSlashPanel('status')
+        return
+      case '/config':
+        setSlashPanel('config')
+        return
+      case '/todo':
+        setSlashPanel('todo')
+        return
+      case '/export':
+        setSlashPanel('export')
+        return
+      case '/compact':
+        handleCompactThread()
+        return
+    }
+  }
+
+  function handleCompactThread() {
+    if (!activeThread) return
+    const compactMessage: ChatMessage = {
+      id: `compact-${Date.now()}`,
+      role: 'system',
+      uiKind: 'compact',
+      body: 'Earlier context was compacted into a focused summary marker for this desktop thread.',
+    }
+    setMessages((prev) => ({
+      ...prev,
+      [activeThread.id]: [...(prev[activeThread.id] ?? []), compactMessage],
+    }))
+  }
+
+  function exportThread(format: 'html' | 'md') {
+    if (!activeThread) return
+    const threadMessages = messages[activeThread.id] ?? []
+    const filenameBase = activeThread.title.replace(/[^a-z0-9-_]+/gi, '-').replace(/^-|-$/g, '') || 'recode-thread'
+    const content = format === 'html'
+      ? renderThreadHtml(activeThread.title, threadMessages)
+      : renderThreadMarkdown(activeThread.title, threadMessages)
+    const blob = new Blob([content], { type: format === 'html' ? 'text/html' : 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `${filenameBase}.${format === 'html' ? 'html' : 'md'}`
+    anchor.click()
+    URL.revokeObjectURL(url)
+    setSlashPanel(null)
+  }
+
   return (
     <MotionConfig reducedMotion={gpuAccelerationDisabled ? 'always' : 'never'}>
     <div className="h-screen flex bg-rc-bg overflow-hidden">
@@ -903,6 +1071,7 @@ export function App() {
                   mode={mode}
                   reasoning={reasoning}
                   modelOptions={configOptions.find((item) => item.id === 'model')?.options}
+                  slashCommands={SLASH_COMMANDS}
                   modelMenuEmptyLabel={
                     configOptionsLoading
                       ? 'Loading models...'
@@ -911,6 +1080,7 @@ export function App() {
                   onChangeModel={handleChangeModel}
                   onChangeMode={handleChangeMode}
                   onChangeReasoning={setReasoning}
+                  onSlashCommand={handleSlashCommand}
                   onSubmit={handleSubmit}
                   onCancel={handleCancelGeneration}
                   focusKey={composerFocusKey}
@@ -1035,6 +1205,26 @@ export function App() {
           </>
         )}
       </Suspense>
+
+      {slashPanel && (
+        <SlashCommandPanel
+          panel={slashPanel}
+          activeProject={activeProject}
+          activeThread={activeThread}
+          messages={activeThread ? (messages[activeThread.id] ?? []) : []}
+          model={model}
+          mode={mode}
+          reasoning={reasoning}
+          runtimeMode={runtimeMode}
+          theme={theme}
+          recodeRepoRoot={recodeRepoRoot}
+          detectedRepoRoot={detectedRepoRoot}
+          gpuAccelerationDisabled={gpuAccelerationDisabled}
+          configOptions={configOptions}
+          onClose={() => setSlashPanel(null)}
+          onExport={exportThread}
+        />
+      )}
 
       {permissionRequest && (
         <div
@@ -1345,4 +1535,344 @@ function QuestionPromptModal({
       </div>
     </div>
   )
+}
+
+function SlashCommandPanel({
+  panel,
+  activeProject,
+  activeThread,
+  messages,
+  model,
+  mode,
+  reasoning,
+  runtimeMode,
+  theme,
+  recodeRepoRoot,
+  detectedRepoRoot,
+  gpuAccelerationDisabled,
+  configOptions,
+  onClose,
+  onExport,
+}: {
+  panel: SlashPanel
+  activeProject: Project | null
+  activeThread: Thread | null
+  messages: ChatMessage[]
+  model: string
+  mode: SessionMode
+  reasoning: ReasoningLevel
+  runtimeMode: RecodeRuntimeMode
+  theme: ThemeMode
+  recodeRepoRoot?: string
+  detectedRepoRoot?: string
+  gpuAccelerationDisabled: boolean
+  configOptions: DesktopConfigOption[]
+  onClose: () => void
+  onExport: (format: 'html' | 'md') => void
+}) {
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const title = panelTitle(panel)
+  const Icon = panelIcon(panel)
+  const todos = extractLatestTodos(messages)
+
+  return (
+    <div className="fixed inset-0 z-[135] flex items-start justify-center px-6 pt-[14vh]">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.15 }}
+        className="absolute inset-0 bg-black/45 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: 0.2, ease: [0.32, 0.72, 0, 1] }}
+        className="relative w-full max-w-[620px] overflow-hidden rounded-2xl border border-rc-border bg-rc-elevated/95 shadow-2xl backdrop-blur-xl"
+      >
+        <div className="flex items-center gap-3 border-b border-rc-border-soft px-4 py-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rc-accent-soft text-rc-accent">
+            <Icon className="h-4.5 w-4.5" strokeWidth={1.8} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="display text-[14px] font-semibold text-rc-text">{title}</div>
+            <div className="text-[11.5px] text-rc-muted">/{panel}</div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-rc-muted transition-colors hover:bg-rc-hover hover:text-rc-text focus-ring"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" strokeWidth={1.6} />
+          </button>
+        </div>
+        <div className="max-h-[58vh] overflow-y-auto p-4">
+          {panel === 'help' && <HelpPanel />}
+          {panel === 'status' && (
+            <StatusPanel
+              activeProject={activeProject}
+              activeThread={activeThread}
+              messages={messages}
+              model={model}
+              mode={mode}
+              runtimeMode={runtimeMode}
+            />
+          )}
+          {panel === 'config' && (
+            <ConfigPanel
+              model={model}
+              mode={mode}
+              reasoning={reasoning}
+              runtimeMode={runtimeMode}
+              theme={theme}
+              recodeRepoRoot={recodeRepoRoot}
+              detectedRepoRoot={detectedRepoRoot}
+              gpuAccelerationDisabled={gpuAccelerationDisabled}
+              configOptions={configOptions}
+            />
+          )}
+          {panel === 'todo' && <TodoPanel todos={todos} />}
+          {panel === 'export' && <ExportPanel activeThread={activeThread} onExport={onExport} />}
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
+function HelpPanel() {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {SLASH_COMMANDS.map((command) => (
+        <div key={command.command} className="rounded-xl border border-rc-border-soft bg-rc-card p-3">
+          <div className="font-mono text-[12.5px] font-semibold text-rc-text">{command.command}</div>
+          <div className="mt-1 text-[12px] leading-relaxed text-rc-muted">{command.description}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function StatusPanel({
+  activeProject,
+  activeThread,
+  messages,
+  model,
+  mode,
+  runtimeMode,
+}: {
+  activeProject: Project | null
+  activeThread: Thread | null
+  messages: ChatMessage[]
+  model: string
+  mode: SessionMode
+  runtimeMode: RecodeRuntimeMode
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="rounded-xl border border-rc-border-soft bg-rc-card p-3">
+        <div className="mb-2 flex items-center gap-2 text-[12.5px] font-medium text-rc-text">
+          <Circle className="h-3.5 w-3.5 text-rc-accent" fill="currentColor" strokeWidth={0} />
+          {activeThread?.status ?? 'idle'}
+        </div>
+        <InfoGrid
+          items={[
+            ['Workspace', activeProject?.path ?? 'No workspace selected'],
+            ['Thread', activeThread?.title ?? 'No thread selected'],
+            ['Mode', mode],
+            ['Model', model],
+            ['Runtime', runtimeMode],
+            ['Messages', String(messages.length)],
+          ]}
+        />
+      </div>
+    </div>
+  )
+}
+
+function ConfigPanel({
+  model,
+  mode,
+  reasoning,
+  runtimeMode,
+  theme,
+  recodeRepoRoot,
+  detectedRepoRoot,
+  gpuAccelerationDisabled,
+  configOptions,
+}: {
+  model: string
+  mode: SessionMode
+  reasoning: ReasoningLevel
+  runtimeMode: RecodeRuntimeMode
+  theme: ThemeMode
+  recodeRepoRoot?: string
+  detectedRepoRoot?: string
+  gpuAccelerationDisabled: boolean
+  configOptions: DesktopConfigOption[]
+}) {
+  return (
+    <div className="space-y-3">
+      <InfoGrid
+        items={[
+          ['Mode', mode],
+          ['Model', model],
+          ['Reasoning', reasoning],
+          ['Runtime', runtimeMode],
+          ['Theme', theme],
+          ['Animations', gpuAccelerationDisabled ? 'paused' : 'running'],
+          ['Recode repo', recodeRepoRoot ?? detectedRepoRoot ?? 'Not selected'],
+          ['Config options', `${configOptions.length} loaded`],
+        ]}
+      />
+    </div>
+  )
+}
+
+function TodoPanel({ todos }: { todos: { content: string; status: string; priority?: string }[] }) {
+  const completed = todos.filter((todo) => todo.status === 'completed').length
+  const active = todos.filter((todo) => todo.status === 'in_progress').length
+  const pending = todos.filter((todo) => todo.status === 'pending').length
+  const progress = todos.length === 0 ? 0 : Math.round((completed / todos.length) * 100)
+
+  if (todos.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-xl border border-rc-border-soft bg-rc-card py-10 text-center">
+        <ListChecks className="mb-3 h-7 w-7 text-rc-faint" strokeWidth={1.6} />
+        <div className="display text-[13px] font-medium text-rc-text">No task plan yet</div>
+        <div className="mt-1 text-[12px] text-rc-muted">Todo updates will appear here once a task plan exists.</div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="tool-artifact tool-artifact-todo">
+      <div className="tool-artifact-header">
+        <div className="min-w-0 flex items-center gap-2">
+          <span className="tool-artifact-icon tool-artifact-icon--todo" aria-hidden="true">
+            <ListChecks className="h-3.5 w-3.5" strokeWidth={1.8} />
+          </span>
+          <span className="font-medium text-rc-text text-[12.5px]">Task plan</span>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5 text-[10.5px]">
+          <span className="tool-artifact-count">
+            <span className="tool-artifact-count-value">{completed}</span>
+            <span className="tool-artifact-count-divider">/</span>
+            <span className="tool-artifact-count-total">{todos.length}</span>
+          </span>
+          {active > 0 && <span className="tool-artifact-pill tool-artifact-pill--active">{active} active</span>}
+          {pending > 0 && <span className="tool-artifact-pill tool-artifact-pill--pending">{pending} pending</span>}
+        </div>
+      </div>
+      <div className="tool-artifact-progress" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
+        <div className="tool-artifact-progress-fill" style={{ width: `${progress}%` }} />
+      </div>
+      <div className="space-y-2">
+        {todos.map((todo, index) => (
+          <div key={`${todo.content}-${index}`} className="flex items-start gap-2.5">
+            <div className="mt-[1px]">{todo.status === 'completed' ? <CheckCircle2 className="h-3.5 w-3.5 text-[var(--success)]" /> : <Circle className="h-3.5 w-3.5 text-rc-faint" />}</div>
+            <div className="min-w-0 leading-snug">
+              <div className={cn('text-[12.5px]', todo.status === 'completed' ? 'text-rc-muted line-through decoration-rc-faint' : 'text-rc-text')}>
+                {todo.content}
+              </div>
+              <div className="text-[11px] text-rc-faint">{todo.status}{todo.priority ? ` · ${todo.priority}` : ''}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ExportPanel({ activeThread, onExport }: { activeThread: Thread | null; onExport: (format: 'html' | 'md') => void }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <ExportChoice icon={FileCode2} title="HTML" description="Export a styled browser-readable transcript." disabled={!activeThread} onClick={() => onExport('html')} />
+      <ExportChoice icon={FileText} title="Markdown" description="Export a portable plain-text transcript." disabled={!activeThread} onClick={() => onExport('md')} />
+    </div>
+  )
+}
+
+function ExportChoice({ icon: Icon, title, description, disabled, onClick }: { icon: typeof FileText; title: string; description: string; disabled: boolean; onClick: () => void }) {
+  return (
+    <button type="button" disabled={disabled} onClick={onClick} className="group rounded-xl border border-rc-border-soft bg-rc-card p-4 text-left transition-colors hover:bg-rc-hover disabled:cursor-not-allowed disabled:opacity-50 focus-ring">
+      <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-rc-accent-soft text-rc-accent">
+        <Icon className="h-4.5 w-4.5" strokeWidth={1.7} />
+      </div>
+      <div className="display text-[13px] font-semibold text-rc-text">{title}</div>
+      <div className="mt-1 text-[12px] leading-relaxed text-rc-muted">{description}</div>
+      <div className="mt-3 inline-flex items-center gap-1.5 text-[11px] text-rc-muted group-hover:text-rc-text">
+        <Download className="h-3.5 w-3.5" strokeWidth={1.7} /> Export
+      </div>
+    </button>
+  )
+}
+
+function InfoGrid({ items }: { items: [string, string][] }) {
+  return (
+    <div className="grid gap-2">
+      {items.map(([label, value]) => (
+        <div key={label} className="flex items-start justify-between gap-4 rounded-xl border border-rc-border-soft bg-rc-card px-3 py-2">
+          <span className="text-[11.5px] text-rc-muted">{label}</span>
+          <span className="max-w-[70%] break-words text-right text-[12px] font-medium text-rc-text">{value}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function panelTitle(panel: SlashPanel): string {
+  switch (panel) {
+    case 'help': return 'Help'
+    case 'status': return 'Status'
+    case 'config': return 'Config'
+    case 'todo': return 'Todo'
+    case 'export': return 'Export'
+  }
+}
+
+function panelIcon(panel: SlashPanel) {
+  switch (panel) {
+    case 'help': return HelpCircle
+    case 'status': return Circle
+    case 'config': return Settings2
+    case 'todo': return ListChecks
+    case 'export': return Download
+  }
+}
+
+function extractLatestTodos(messages: ChatMessage[]): { content: string; status: string; priority?: string }[] {
+  for (const message of [...messages].reverse()) {
+    if (message.toolKind !== 'TodoWrite' || !Array.isArray(message.toolInput?.todos)) continue
+    return message.toolInput.todos.filter(isRecord).map((todo) => ({
+      content: typeof todo.content === 'string' ? todo.content : '',
+      status: typeof todo.status === 'string' ? todo.status : 'pending',
+      priority: typeof todo.priority === 'string' ? todo.priority : undefined,
+    })).filter((todo) => todo.content.length > 0)
+  }
+  return []
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function renderThreadMarkdown(title: string, messages: ChatMessage[]): string {
+  return [`# ${title}`, '', ...messages.map((message) => `## ${message.role}\n\n${message.body}`)].join('\n\n')
+}
+
+function renderThreadHtml(title: string, messages: ChatMessage[]): string {
+  const body = messages.map((message) => `<section><h2>${escapeHtml(message.role)}</h2><pre>${escapeHtml(message.body)}</pre></section>`).join('\n')
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{font-family:system-ui,sans-serif;max-width:860px;margin:40px auto;padding:0 24px;line-height:1.5}section{border-top:1px solid #ddd;padding:16px 0}pre{white-space:pre-wrap;font-family:ui-monospace,monospace}</style></head><body><h1>${escapeHtml(title)}</h1>${body}</body></html>`
+}
+
+function escapeHtml(value: string): string {
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
 }

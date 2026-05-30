@@ -15,6 +15,7 @@ import {
   Copy,
   FileText,
   HelpCircle,
+  Minimize2,
   ListChecks,
   Loader2,
   Terminal,
@@ -263,6 +264,10 @@ function TranscriptMessage({ message }: { message: ChatMessage }) {
   }
 
   if (message.role === 'system') {
+    if (message.uiKind === 'compact') {
+      return <CompactSystemCard body={message.body} />
+    }
+
     return (
       <div className="border border-rc-border-soft bg-rc-sidebar rounded-lg px-3 py-2 text-[12px] text-rc-muted mono whitespace-pre-wrap">
         {message.body}
@@ -281,6 +286,24 @@ function TranscriptMessage({ message }: { message: ChatMessage }) {
       </div>
       <div className="absolute left-0 top-full mt-1 z-10 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-150 pointer-events-none group-hover:pointer-events-auto focus-within:pointer-events-auto">
         <MessageCopyButton value={message.body} />
+      </div>
+    </div>
+  )
+}
+
+function CompactSystemCard({ body }: { body: string }) {
+  return (
+    <div className="tool-artifact">
+      <div className="tool-artifact-header">
+        <div className="min-w-0 flex items-center gap-2">
+          <span className="tool-artifact-icon" aria-hidden="true">
+            <Minimize2 className="h-3.5 w-3.5" strokeWidth={1.8} />
+          </span>
+          <span className="font-medium text-rc-text text-[12.5px]">Conversation compacted</span>
+        </div>
+      </div>
+      <div className="text-[12.5px] leading-relaxed text-rc-muted">
+        {body}
       </div>
     </div>
   )

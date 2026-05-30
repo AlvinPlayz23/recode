@@ -17,6 +17,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   ArrowUp,
+  ChevronRight,
   ChevronDown,
   Mic,
   Plus,
@@ -44,12 +45,14 @@ interface ComposerProps {
   mode: SessionMode
   reasoning: ReasoningLevel
   modelOptions?: DesktopConfigOptionValue[]
+  slashCommands: SlashCommandOption[]
   modelMenuEmptyLabel?: string
   isGenerating?: boolean
   focusKey?: number
   onChangeModel: (model: string) => void
   onChangeMode: (mode: SessionMode) => void
   onChangeReasoning: (level: ReasoningLevel) => void
+  onSlashCommand: (command: string) => void
   onSubmit: (text: string) => void
   onCancel: () => void
 }
@@ -64,23 +67,32 @@ const REASONING: { value: ReasoningLevel; name: string }[] = [
   { value: 'Low', name: 'Low' },
 ]
 
+export interface SlashCommandOption {
+  command: string
+  name: string
+  description: string
+}
+
 export function Composer({
   model,
   mode,
   reasoning,
   modelOptions,
+  slashCommands,
   modelMenuEmptyLabel = 'Select a workspace to load models',
   isGenerating = false,
   focusKey = 0,
   onChangeModel,
   onChangeMode,
   onChangeReasoning,
+  onSlashCommand,
   onSubmit,
   onCancel,
 }: ComposerProps) {
   const [text, setText] = useState('')
   const [modelQuery, setModelQuery] = useState('')
   const [isFocused, setIsFocused] = useState(false)
+  const [selectedSlashIndex, setSelectedSlashIndex] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const modelSearchRef = useRef<HTMLInputElement>(null)
 
@@ -95,6 +107,23 @@ export function Composer({
     textareaRef.current?.focus()
   }, [focusKey])
 
+  function switchMode(nextMode: SessionMode) {
+    onChangeMode(nextMode)
+    textareaRef.current?.focus()
+  }
+
+  function toggleMode() {
+    switchMode(mode === 'plan' ? 'build' : 'plan')
+  }
+
+  function runSlashCommand(commandText: string): boolean {
+    const command = slashCommands.find((item) => item.command === commandText)
+    if (!command) return false
+    onSlashCommand(command.command)
+    setText('')
+    return true
+  }
+
   function handleSubmit() {
     if (isGenerating) {
       onCancel()
@@ -102,11 +131,41 @@ export function Composer({
     }
     const trimmed = text.trim()
     if (!trimmed) return
+    if (runSlashCommand(trimmed)) return
     onSubmit(trimmed)
     setText('')
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (showSlashCommands && filteredSlashCommands.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSelectedSlashIndex((index) => (index + 1) % filteredSlashCommands.length)
+        return
+      }
+
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSelectedSlashIndex((index) =>
+          (index - 1 + filteredSlashCommands.length) % filteredSlashCommands.length,
+        )
+        return
+      }
+
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        selectSlashCommand(selectedSlashIndex)
+        return
+      }
+    }
+
+    if (e.key === 'Tab' && e.shiftKey) {
+      e.preventDefault()
+      e.stopPropagation()
+      toggleMode()
+      return
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSubmit()
@@ -123,11 +182,89 @@ export function Composer({
   )
 
   const canSubmit = isGenerating || text.trim().length > 0
+  const slashQuery = text.trimStart()
+  const showSlashCommands = slashQuery.startsWith('/') && !slashQuery.includes(' ')
+  const filteredSlashCommands = slashCommands.filter((item) =>
+    item.command.startsWith(slashQuery.toLowerCase()),
+  )
+
+  useEffect(() => {
+    setSelectedSlashIndex(0)
+  }, [slashQuery])
+
+  useEffect(() => {
+    setSelectedSlashIndex((index) =>
+      Math.min(index, Math.max(0, filteredSlashCommands.length - 1)),
+    )
+  }, [filteredSlashCommands.length])
+
+  function selectSlashCommand(index: number) {
+    const command = filteredSlashCommands[index]
+    if (!command) return
+    runSlashCommand(command.command)
+  }
 
   return (
     <div className="px-6 pb-5 pt-2">
       <div className="mx-auto max-w-[760px]">
         <div className="relative">
+          {showSlashCommands && filteredSlashCommands.length > 0 && (
+            <div
+              className={cn(
+                'absolute bottom-full left-3 z-20 mb-2 w-[300px] overflow-hidden',
+                'rounded-2xl border border-rc-border bg-rc-elevated/95 backdrop-blur-xl',
+                'shadow-[0_24px_60px_-18px_rgba(0,0,0,0.45)]',
+              )}
+            >
+              <div className="p-1.5">
+                {filteredSlashCommands.map((item, index) => (
+                  <button
+                    key={item.command}
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => runSlashCommand(item.command)}
+                    className={cn(
+                      'group flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-colors',
+                      'hover:bg-rc-hover/70 focus-visible:bg-rc-hover/70 focus-visible:outline-none',
+                      index === selectedSlashIndex && 'bg-rc-hover/55',
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
+                        'bg-rc-hover text-rc-muted transition-colors',
+                        'group-hover:bg-rc-accent-soft group-hover:text-rc-accent',
+                      )}
+                    >
+                      <span className="mono text-[12px] font-semibold">
+                        {item.command.slice(1, 2).toUpperCase()}
+                      </span>
+                    </div>
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-mono text-[12.5px] font-semibold text-rc-text">
+                        {item.command}
+                      </span>
+                      <span className="block truncate text-[11.5px] text-rc-muted">
+                        {item.description}
+                      </span>
+                    </span>
+                    <ChevronRight
+                      className="h-3.5 w-3.5 shrink-0 -translate-x-1 text-rc-faint opacity-60 transition-all group-hover:translate-x-0 group-hover:text-rc-muted group-hover:opacity-100"
+                      strokeWidth={1.8}
+                    />
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between border-t border-rc-border-soft bg-rc-sidebar/60 px-3 py-2">
+                <span className="text-[11px] text-rc-muted">Mode commands</span>
+                <span className="flex items-center gap-1.5 text-[11px] text-rc-muted">
+                  <Kbd>↵</Kbd>
+                  Select
+                </span>
+              </div>
+            </div>
+          )}
           {/* The big, soft prompt-box frame — exactly the ref-src silhouette. */}
           <div
             className={cn(
@@ -183,7 +320,7 @@ export function Composer({
                         {MODES.map((item) => (
                           <MenuItem
                             key={item.value}
-                            onClick={() => onChangeMode(item.value)}
+                            onClick={() => switchMode(item.value)}
                             className={cn(
                               'flex-col items-start gap-0.5 py-1.5',
                               item.value === mode && 'bg-accent/60',
@@ -332,6 +469,11 @@ export function Composer({
           <span>+</span>
           <Kbd>↵</Kbd>
           <span>for new line</span>
+          <span className="mx-1">·</span>
+          <Kbd>shift</Kbd>
+          <span>+</span>
+          <Kbd>tab</Kbd>
+          <span>switches mode</span>
         </div>
       </div>
     </div>

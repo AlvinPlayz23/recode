@@ -32,6 +32,7 @@ export interface ChatMessage {
   id: string
   role: 'user' | 'assistant' | 'tool' | 'system'
   body: string
+  uiKind?: 'compact'
   toolCallId?: string
   toolKind?: string
   toolStatus?: 'pending' | 'in_progress' | 'completed' | 'failed'
