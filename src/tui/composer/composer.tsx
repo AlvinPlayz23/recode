@@ -36,6 +36,7 @@ export interface ComposerProps {
   readonly busyPhase: SpinnerPhase;
   readonly providerStatusText: string | undefined;
   readonly busy: boolean;
+  readonly aborting: boolean;
   readonly modelPickerBusy: boolean;
   readonly historyPickerBusy: boolean;
   readonly modalOpen: boolean;
@@ -83,6 +84,7 @@ export function Composer(props: ComposerProps) {
           busyPhase={props.busyPhase}
           providerStatusText={props.providerStatusText}
           modalOpen={props.modalOpen}
+          aborting={props.aborting}
         />
         <PromptInputRow {...props} />
         <ComposerFooter {...props} />
@@ -127,7 +129,7 @@ export function SubagentComposer(props: SubagentComposerProps) {
             <text fg={props.theme.divider} attributes={TextAttributes.DIM}>·</text>
             <text fg={props.theme.text}>{props.task.description}</text>
           </box>
-          <text fg={props.theme.hintText} attributes={TextAttributes.DIM}>Ctrl+G switch</text>
+          <text fg={props.theme.hintText} attributes={TextAttributes.DIM}>Ctrl+G cycle · Ctrl+X view · Ctrl+B parent</text>
         </box>
         <box flexDirection="row" justifyContent="space-between" alignItems="center">
           <text fg={props.theme.hintText} attributes={TextAttributes.DIM}>{`Viewing subagent · ${props.task.providerName} · ${props.task.model}`}</text>
@@ -164,6 +166,7 @@ export function SubagentBreadcrumb(props: SubagentBreadcrumbProps) {
           <text fg={task().status === "failed" ? props.theme.error : task().status === "running" ? props.theme.brandShimmer : props.theme.success}>
             {task().status}
           </text>
+          <text fg={props.theme.hintText} attributes={TextAttributes.DIM}>(Ctrl+X to view)</text>
         </box>
       )}
     </Show>
@@ -283,6 +286,7 @@ function BusyRow(props: {
   readonly busyPhase: SpinnerPhase;
   readonly providerStatusText: string | undefined;
   readonly modalOpen: boolean;
+  readonly aborting: boolean;
 }) {
   return (
     <Show when={props.visible}>
@@ -302,7 +306,9 @@ function BusyRow(props: {
               {(segment) => <text fg={segment.color}>{segment.text}</text>}
             </For>
           </box>
-          <text fg={props.theme.hintText}>{props.providerStatusText ?? getSpinnerPhaseLabel(props.busyPhase)}</text>
+          <text fg={props.aborting ? props.theme.warning : props.theme.hintText}>
+            {props.aborting ? "Aborting\u2026" : (props.providerStatusText ?? getSpinnerPhaseLabel(props.busyPhase))}
+          </text>
         </box>
         <text fg={props.theme.hintText} attributes={TextAttributes.DIM}>
           {props.modalOpen ? "esc close" : "⌃C cancel · esc abort"}

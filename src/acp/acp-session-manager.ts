@@ -16,6 +16,7 @@ import {
   type SavedConversationRecord
 } from "../history/recode-history.ts";
 import { createLanguageModel } from "../models/create-model-client.ts";
+import { buildSystemPrompt } from "../prompt/agents-md.ts";
 import { PLAN_SYSTEM_PROMPT } from "../prompt/plan-system-prompt.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "../prompt/system-prompt.ts";
 import {
@@ -233,7 +234,7 @@ export class AcpSessionManager {
 
     try {
       const result = await runAgentLoop({
-        systemPrompt: session.mode === "plan" ? PLAN_SYSTEM_PROMPT : DEFAULT_SYSTEM_PROMPT,
+        systemPrompt: buildSystemPrompt(session.mode === "plan" ? PLAN_SYSTEM_PROMPT : DEFAULT_SYSTEM_PROMPT, session.runtimeConfig.workspaceRoot),
         initialUserPrompt,
         previousMessages: session.transcript,
         languageModel: createLanguageModel(session.runtimeConfig),
@@ -445,7 +446,7 @@ export class AcpSessionManager {
       runSubagentTask: async (request) => await runSubagentTask({
         request,
         parentRuntimeConfig: session.runtimeConfig,
-        parentSystemPrompt: session.mode === "plan" ? PLAN_SYSTEM_PROMPT : DEFAULT_SYSTEM_PROMPT,
+        parentSystemPrompt: buildSystemPrompt(session.mode === "plan" ? PLAN_SYSTEM_PROMPT : DEFAULT_SYSTEM_PROMPT, session.runtimeConfig.workspaceRoot),
         parentToolRegistry: new ToolRegistry(filterToolsForSessionMode(createTools(), session.mode)),
         parentToolContext: this.#createToolContext(session, request.abortSignal ?? abortSignal),
         requestAffinityKey: session.sessionId,

@@ -488,65 +488,7 @@ html[data-animations='paused'] *::after {
   100% { content: ''; }
 }
 
-/* ===========================================================================
- * Todo circle (TodoWrite tool)
- * ========================================================================= */
-.todo-circle {
-  position: relative;
-  width: 14px;
-  height: 14px;
-  border-radius: 999px;
-  border: 1.5px solid var(--rc-text-faint);
-  background: transparent;
-  flex-shrink: 0;
-  transition: all 160ms ease;
-}
-.todo-circle.is-active {
-  border-color: var(--info);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 18%, transparent);
-  animation: todoActivePulse 1.6s ease-in-out infinite;
-}
-.todo-circle.is-active::after {
-  content: '';
-  position: absolute;
-  inset: 3px;
-  border-radius: 999px;
-  background: var(--info);
-}
-.todo-circle.is-done {
-  border-color: var(--success);
-  background: var(--success);
-}
-.todo-circle.is-done::after {
-  content: '';
-  position: absolute;
-  left: 3px;
-  top: 6px;
-  width: 4px;
-  height: 7px;
-  border: solid var(--background);
-  border-width: 0 1.6px 1.6px 0;
-  transform: rotate(45deg);
-}
-.todo-circle.is-cancelled {
-  border-color: var(--rc-text-faint);
-  opacity: 0.6;
-}
-.todo-circle.is-cancelled::after {
-  content: '';
-  position: absolute;
-  left: 2px;
-  right: 2px;
-  top: 50%;
-  height: 1.5px;
-  background: var(--rc-text-faint);
-  transform: translateY(-50%);
-}
 
-@keyframes todoActivePulse {
-  0%, 100% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--info) 16%, transparent); }
-  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--info) 18%, transparent); }
-}
 
 /* ===========================================================================
  * Tool artifacts (todo list / question / edit preview / file / bash)

@@ -144,6 +144,7 @@ import {
 import type { SessionMode } from "./session/session-mode.ts";
 import {
   cycleChatView,
+  goToFirstSubagentView,
   type ChatView,
   type LiveSubagentTask
 } from "./subagent-view.ts";
@@ -294,6 +295,7 @@ export function TuiApp(props: TuiAppProps) {
   const [toolMarkerName, setToolMarkerName] = createSignal<ToolMarkerName>(initialConfig.toolMarkerName ?? DEFAULT_TOOL_MARKER_NAME);
   const [entries, setEntries] = createSignal<readonly UiEntry[]>([]);
   const [busy, setBusy] = createSignal(false);
+  const [aborting, setAborting] = createSignal(false);
   const [draft, setDraft] = createSignal("");
   const [pendingPastes, setPendingPastes] = createSignal<readonly PendingPaste[]>([]);
   const [previousMessages, setPreviousMessages] = createSignal<readonly ConversationMessage[]>([]);
@@ -632,6 +634,7 @@ export function TuiApp(props: TuiAppProps) {
       return;
     }
 
+    setAborting(true);
     activeAbortController?.abort();
   };
   const exitController = createExitController({
@@ -820,6 +823,24 @@ export function TuiApp(props: TuiAppProps) {
         if (nextView.kind === "parent") {
           inputRef?.focus();
         }
+      }
+    },
+    handleGoToSubagentView(key) {
+      key.preventDefault();
+      key.stopPropagation();
+      if (!modalOpen()) {
+        const view = goToFirstSubagentView(liveSubagentTasks());
+        if (view !== undefined) {
+          setActiveChatView(view);
+        }
+      }
+    },
+    handleGoToParentView(key) {
+      key.preventDefault();
+      key.stopPropagation();
+      if (!modalOpen()) {
+        setActiveChatView({ kind: "parent" });
+        inputRef?.focus();
       }
     },
     handleQuestionKey(key) {
@@ -1490,6 +1511,7 @@ export function TuiApp(props: TuiAppProps) {
       setStreamingEntryId(undefined);
       setBusyPhase("thinking");
       setProviderStatusText(undefined);
+      setAborting(false);
       setBusy(false);
       inputRef?.focus();
     }
@@ -1598,6 +1620,7 @@ export function TuiApp(props: TuiAppProps) {
       busyPhase={busyPhase()}
       providerStatusText={providerStatusText()}
       busy={busy()}
+      aborting={aborting()}
       modelPickerBusy={modelPickerBusy()}
       historyPickerBusy={historyPickerBusy()}
       modalOpen={modalOpen()}

@@ -24,6 +24,7 @@ import {
   saveConversation
 } from "./history/recode-history.ts";
 import { createLanguageModel } from "./models/create-model-client.ts";
+import { buildSystemPrompt } from "./prompt/agents-md.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "./prompt/system-prompt.ts";
 import {
   loadRuntimeConfig,
@@ -108,6 +109,7 @@ Options:
 
   const prompt = cliArgs.prompt;
   const runtimeConfig = applyCliRuntimeOverrides(loadRuntimeConfig(workspaceRoot), cliArgs);
+  const systemPrompt = buildSystemPrompt(DEFAULT_SYSTEM_PROMPT, workspaceRoot);
 
   if (cliArgs.command === "doctor") {
     process.exit(await runDoctor(runtimeConfig));
@@ -120,7 +122,7 @@ Options:
   if (cliArgs.command === "tui") {
     const { runTui } = await import("./tui/run-tui.tsx");
     await runTui({
-      systemPrompt: DEFAULT_SYSTEM_PROMPT,
+      systemPrompt: systemPrompt,
       runtimeConfig,
       languageModel,
       toolRegistry,
@@ -158,7 +160,7 @@ Options:
     process.on("SIGINT", handleSigint);
     try {
       const result = await runAgentLoop({
-        systemPrompt: DEFAULT_SYSTEM_PROMPT,
+        systemPrompt: systemPrompt,
         initialUserPrompt: prompt,
         languageModel,
         toolRegistry,
@@ -175,7 +177,7 @@ Options:
           runSubagentTask: async (request) => await runSubagentTask({
             request,
             parentRuntimeConfig: runtimeConfig,
-            parentSystemPrompt: DEFAULT_SYSTEM_PROMPT,
+            parentSystemPrompt: systemPrompt,
             parentToolRegistry: toolRegistry,
             parentToolContext: {
               workspaceRoot: runtimeConfig.workspaceRoot,

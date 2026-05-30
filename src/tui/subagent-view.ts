@@ -271,6 +271,19 @@ export function cycleChatView(current: ChatView, tasks: readonly LiveSubagentTas
     : { kind: "subagent", taskId: nextTask.id };
 }
 
+/**
+ * Return the chat view for the first running subagent, or the first
+ * subagent if none is running. Returns undefined when there are no tasks.
+ */
+export function goToFirstSubagentView(tasks: readonly LiveSubagentTask[]): ChatView | undefined {
+  if (tasks.length === 0) {
+    return undefined;
+  }
+  const running = tasks.find((task) => task.status === "running");
+  const target = running ?? tasks[0]!;
+  return { kind: "subagent", taskId: target.id };
+}
+
 function updateEntriesBody(entries: readonly UiEntry[], entryId: string, body: string): readonly UiEntry[] {
   return entries.map((entry) => entry.id === entryId
     ? { ...entry, body }

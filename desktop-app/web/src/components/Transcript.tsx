@@ -8,12 +8,15 @@ import remarkGfm from 'remark-gfm'
 import {
   ArrowDown,
   Check,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Circle,
   Copy,
   FileText,
   HelpCircle,
   ListChecks,
+  Loader2,
   Terminal,
   XCircle,
 } from 'lucide-react'
@@ -1003,6 +1006,19 @@ function TaskBody({
   )
 }
 
+function TodoStatusIcon({ status }: { status: string }) {
+  if (status === 'completed') {
+    return <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-[var(--success)]" strokeWidth={1.8} aria-hidden="true" />
+  }
+  if (status === 'in_progress') {
+    return <Loader2 className="h-3.5 w-3.5 shrink-0 text-[var(--info)]" strokeWidth={1.8} aria-hidden="true" />
+  }
+  if (status === 'cancelled') {
+    return <XCircle className="h-3.5 w-3.5 shrink-0 opacity-40" strokeWidth={1.8} aria-hidden="true" />
+  }
+  return <Circle className="h-3.5 w-3.5 shrink-0 text-rc-faint" strokeWidth={1.8} aria-hidden="true" />
+}
+
 function TodoList({
   todos,
 }: {
@@ -1014,14 +1030,11 @@ function TodoList({
         const done = todo.status === 'completed'
         const active = todo.status === 'in_progress'
         const cancelled = todo.status === 'cancelled'
-        const className =
-          'todo-circle' +
-          (done ? ' is-done' : '') +
-          (active ? ' is-active' : '') +
-          (cancelled ? ' is-cancelled' : '')
         return (
           <div key={`${todo.content}-${index}`} className="flex items-start gap-2.5">
-            <span className={className} aria-hidden="true" />
+            <div className="mt-[1px]">
+              <TodoStatusIcon status={todo.status} />
+            </div>
             <div className="min-w-0 leading-snug">
               <div
                 className={

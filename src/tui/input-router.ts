@@ -109,6 +109,8 @@ export interface InputRouterOptions {
   readonly handleCtrlC: (key: KeyEvent) => void;
   readonly handleToggleTodos: (key: KeyEvent) => void;
   readonly handleCycleChatView: (key: KeyEvent) => void;
+  readonly handleGoToSubagentView: (key: KeyEvent) => void;
+  readonly handleGoToParentView: (key: KeyEvent) => void;
   readonly handleQuestionKey: (key: KeyEvent) => boolean;
   readonly activePlanReviewRequest: () => ActivePlanReviewRequest | undefined;
   readonly resolvePlanReviewRequest: (decision: PlanReviewDecision) => void;
@@ -194,6 +196,16 @@ export function registerTuiInputHandlers(options: InputRouterOptions): void {
 
     if (key.ctrl && key.name === "g") {
       options.handleCycleChatView(key);
+      return;
+    }
+
+    if (key.ctrl && key.name === "x") {
+      options.handleGoToSubagentView(key);
+      return;
+    }
+
+    if (key.ctrl && key.name === "b") {
+      options.handleGoToParentView(key);
       return;
     }
 
