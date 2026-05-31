@@ -36,6 +36,7 @@ const STICK_TO_BOTTOM_THRESHOLD = 96
 interface TranscriptProps {
   thread: Thread | null
   messages: ChatMessage[]
+  isGenerating?: boolean
 }
 
 /**
@@ -56,7 +57,7 @@ function getMessageStreamingSize(message: ChatMessage | undefined): number {
   return message.body.length + (message.toolContent?.length ?? 0)
 }
 
-export function Transcript({ thread, messages }: TranscriptProps) {
+export function Transcript({ thread, messages, isGenerating = false }: TranscriptProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [showJumpToBottom, setShowJumpToBottom] = useState(false)
 
@@ -125,23 +126,25 @@ export function Transcript({ thread, messages }: TranscriptProps) {
     if (!stickToBottom.current) return
     if (!justAddedMessage && !lastIdChanged && !lastBodyGrew) return
 
-    // For streaming token-by-token updates use 'auto' to avoid janky animation
-    // queueing; for fresh assistant messages, animate softly.
     el.scrollTo({
       top: el.scrollHeight,
-      behavior: justAddedMessage || lastIdChanged ? 'smooth' : 'auto',
+      behavior: 'smooth',
     })
   }, [messages])
 
   // The virtualizer re-measures rows as they mount and as their content grows
   // (streaming tokens, expanded tool output, image loads, etc.). Whenever the
-  // resulting total content size changes and the user is pinned, snap the
-  // viewport back to the bottom so streaming output stays visible.
+  // resulting total content size changes and the user is pinned, glide the
+  // viewport back to the bottom so streaming output stays visible without the
+  // abrupt token-by-token snapping.
   useLayoutEffect(() => {
     if (!stickToBottom.current) return
     const el = scrollRef.current
     if (!el) return
-    el.scrollTop = el.scrollHeight
+    const frame = window.requestAnimationFrame(() => {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    })
+    return () => window.cancelAnimationFrame(frame)
   }, [totalSize])
 
   if (!thread) {
@@ -215,7 +218,7 @@ export function Transcript({ thread, messages }: TranscriptProps) {
                   }}
                 >
                   <div className={getTranscriptSpacing(msg, messages[virtualRow.index - 1])}>
-                    <TranscriptMessage message={msg} />
+                    <TranscriptMessage message={msg} isGenerating={isGenerating} />
                   </div>
                 </div>
               )
@@ -241,7 +244,13 @@ export function Transcript({ thread, messages }: TranscriptProps) {
   )
 }
 
-function TranscriptMessage({ message }: { message: ChatMessage }) {
+function TranscriptMessage({
+  message,
+  isGenerating,
+}: {
+  message: ChatMessage
+  isGenerating: boolean
+}) {
   if (message.role === 'user') {
     // The copy button is absolutely positioned just below the bubble so its
     // hover-only appearance doesn't permanently push surrounding messages
@@ -252,9 +261,11 @@ function TranscriptMessage({ message }: { message: ChatMessage }) {
         <div className="bg-rc-bubble text-rc-text rounded-2xl px-4 py-2.5 text-[13.5px] max-w-[85%] leading-relaxed whitespace-pre-wrap">
           {message.body}
         </div>
-        <div className="absolute right-0 top-full mt-1 z-10 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-150 pointer-events-none group-hover:pointer-events-auto focus-within:pointer-events-auto">
-          <MessageCopyButton value={message.body} />
-        </div>
+        {!isGenerating && (
+          <div className="absolute right-0 top-full mt-1 z-10 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-150 pointer-events-none group-hover:pointer-events-auto focus-within:pointer-events-auto">
+            <MessageCopyButton value={message.body} />
+          </div>
+        )}
       </div>
     )
   }
@@ -284,9 +295,11 @@ function TranscriptMessage({ message }: { message: ChatMessage }) {
           </ReactMarkdown>
         </div>
       </div>
-      <div className="absolute left-0 top-full mt-1 z-10 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-150 pointer-events-none group-hover:pointer-events-auto focus-within:pointer-events-auto">
-        <MessageCopyButton value={message.body} />
-      </div>
+      {!isGenerating && (
+        <div className="absolute left-0 top-full mt-1 z-10 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-150 pointer-events-none group-hover:pointer-events-auto focus-within:pointer-events-auto">
+          <MessageCopyButton value={message.body} />
+        </div>
+      )}
     </div>
   )
 }

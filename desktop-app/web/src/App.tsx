@@ -1144,7 +1144,11 @@ export function App() {
                       <TranscriptLoading />
                     ) : (
                       <Suspense fallback={<TranscriptLoading />}>
-                        <Transcript thread={activeThread} messages={threadMessages} />
+                        <Transcript
+                          thread={activeThread}
+                          messages={threadMessages}
+                          isGenerating={isAgentWorking}
+                        />
                       </Suspense>
                     )}
                     <div key="docked" className="composer-fade-in">{composer}</div>

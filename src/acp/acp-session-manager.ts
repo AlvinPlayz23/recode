@@ -266,6 +266,9 @@ export class AcpSessionManager {
       this.#emitStateChange(session.sessionId, "idle", "end_turn");
     } catch (error) {
       if (error instanceof OperationAbortedError || abortController.signal.aborted) {
+        session.transcript = appendUserPromptIfMissing(session.transcript, initialUserPrompt);
+        session.sessionEvents = nextEvents;
+        this.#persistSession(session);
         this.#emitStateChange(session.sessionId, "idle", "cancelled");
         return;
       }
@@ -714,6 +717,18 @@ function promptBlocksToText(blocks: readonly AcpContentBlock[]): string {
         return `Resource link: ${block.uri}`;
     }
   }).join("\n\n").trim();
+}
+
+function appendUserPromptIfMissing(
+  transcript: readonly ConversationMessage[],
+  prompt: string
+): readonly ConversationMessage[] {
+  if (prompt.trim() === "") return transcript;
+  const lastMessage = transcript[transcript.length - 1];
+  if (lastMessage?.role === "user" && lastMessage.content === prompt) {
+    return transcript;
+  }
+  return [...transcript, { role: "user", content: prompt }];
 }
 
 function parseCwdParams(params: unknown): { readonly cwd: string } {
