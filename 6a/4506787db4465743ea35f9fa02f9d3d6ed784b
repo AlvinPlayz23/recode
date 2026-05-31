@@ -1,0 +1,48 @@
+desktop-app/web/src/components/Transcript.tsx
+  s_37743766419dd3::t_c74ad1bed586c8 39,60,131,137-139,144-147,221,247-253,264-268,298-302
+desktop-app/web/src/App.tsx
+  s_e85185a25f6786::t_255f0074bebf89 1147-1151
+src/acp/acp-session-manager.ts
+  s_7a0215fd97377f::t_36719c0cdbf9fc 722-733
+  s_43c6635021a375::t_61d2d01c76c936 269-271
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "6a4506787db4465743ea35f9fa02f9d3d6ed784b",
+  "prompts": {},
+  "sessions": {
+    "s_37743766419dd3": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PrIzinsVndNlwCiW0jz",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_43c6635021a375": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033Prbg8OSJh3tgN0WdaDH",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_7a0215fd97377f": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033Q7COhkVYOCoDEGRSKOs",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    },
+    "s_e85185a25f6786": {
+      "agent_id": {
+        "tool": "amp",
+        "id": "TU-033PrJDwzzTPwbIHGhXzYV",
+        "model": "unknown"
+      },
+      "human_author": "AlvinPlayz23 <alvinbiji152@gmail.com>"
+    }
+  }
+}
