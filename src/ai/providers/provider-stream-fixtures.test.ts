@@ -17,6 +17,8 @@ afterEach(() => {
 describe("provider stream fixtures", () => {
   it("parses OpenAI Responses text, tool calls, and finish usage", async () => {
     stubSseFetch([
+      sse({ type: "response.reasoning_summary_text.delta", delta: "Considering. " }),
+      sse({ type: "response.reasoning_text.delta", delta: "Need a file." }),
       sse({ type: "response.output_text.delta", delta: "Hello" }),
       sse({
         type: "response.output_item.done",
@@ -50,6 +52,8 @@ describe("provider stream fixtures", () => {
     ));
 
     expect(parts).toEqual([
+      { type: "reasoning-delta", text: "Considering. " },
+      { type: "reasoning-delta", text: "Need a file." },
       { type: "text-delta", text: "Hello" },
       {
         type: "tool-call",
@@ -87,7 +91,7 @@ describe("provider stream fixtures", () => {
       sse({
         choices: [
           {
-            delta: { reasoning_content: "Still thinking." },
+            delta: { reasoning: "Still thinking." },
             finish_reason: null
           }
         ]
@@ -159,6 +163,36 @@ describe("provider stream fixtures", () => {
       {
         type: "finish-step",
         info: { finishReason: "tool_calls" }
+      },
+      { type: "finish" }
+    ]);
+  });
+
+  it("parses OpenAI Chat reasoning_text deltas from compatible providers", async () => {
+    stubSseFetch([
+      sse({
+        choices: [
+          {
+            delta: { reasoning_text: "Planning." },
+            finish_reason: null
+          }
+        ]
+      }),
+      "data: [DONE]\n\n"
+    ]);
+
+    const parts = await collectParts(streamOpenAiChat(
+      openAiChatModel(),
+      "",
+      [],
+      []
+    ));
+
+    expect(parts).toEqual([
+      { type: "reasoning-delta", text: "Planning." },
+      {
+        type: "finish-step",
+        info: {}
       },
       { type: "finish" }
     ]);
@@ -367,6 +401,132 @@ describe("provider stream fixtures", () => {
     expect(requestBody?.usage).toEqual({ include: true });
     expect(requestBody?.provider).toEqual({ sort: "latency" });
     expect(requestBody?.prompt_cache_key).toBe("conversation-1");
+  });
+
+  it("enables DeepSeek thinking mode for OpenAI Chat-compatible requests", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    globalThis.fetch = (async (_input, init) => {
+      requestBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        status: 200,
+        headers: { "content-type": "text/event-stream" }
+      });
+    }) as typeof fetch;
+
+    await collectParts(streamOpenAiChat(
+      {
+        ...openAiChatModel(),
+        providerId: "deepseek",
+        providerName: "DeepSeek",
+        modelId: "deepseek-v4-pro",
+        baseUrl: "https://api.deepseek.com/v1"
+      },
+      "",
+      [],
+      []
+    ));
+
+    expect(requestBody?.thinking).toEqual({ type: "enabled" });
+  });
+
+  it("maps chat reasoningEffort for DeepSeek, OpenRouter, Qwen, and native OpenAI", async () => {
+    const requestBodies: Record<string, unknown>[] = [];
+    globalThis.fetch = (async (_input, init) => {
+      requestBodies.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+      return new Response("data: [DONE]\n\n", {
+        status: 200,
+        headers: { "content-type": "text/event-stream" }
+      });
+    }) as typeof fetch;
+
+    await collectParts(streamOpenAiChat(
+      {
+        ...openAiChatModel(),
+        providerId: "deepseek",
+        providerName: "DeepSeek",
+        modelId: "deepseek-v4-pro",
+        baseUrl: "https://api.deepseek.com/v1",
+        providerOptions: { reasoningEffort: "high" }
+      },
+      "",
+      [],
+      []
+    ));
+    await collectParts(streamOpenAiChat(
+      {
+        ...openAiChatModel(),
+        providerId: "openrouter",
+        providerName: "OpenRouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        providerOptions: { reasoningEffort: "medium" }
+      },
+      "",
+      [],
+      []
+    ));
+    await collectParts(streamOpenAiChat(
+      {
+        ...openAiChatModel(),
+        providerId: "qwen",
+        providerName: "Qwen",
+        modelId: "qwen3.5-plus",
+        baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        providerOptions: { reasoningEffort: "none" }
+      },
+      "",
+      [],
+      []
+    ));
+    await collectParts(streamOpenAiChat(
+      {
+        ...openAiChatModel(),
+        baseUrl: "https://api.openai.com/v1",
+        modelId: "gpt-5-mini",
+        providerOptions: { reasoningEffort: "low" }
+      },
+      "",
+      [],
+      []
+    ));
+
+    expect(requestBodies[0]?.thinking).toEqual({ type: "enabled" });
+    expect(requestBodies[0]?.reasoning_effort).toBe("high");
+    expect(requestBodies[0]?.reasoningEffort).toBeUndefined();
+    expect(requestBodies[1]?.reasoning).toEqual({ effort: "medium" });
+    expect(requestBodies[1]?.reasoningEffort).toBeUndefined();
+    expect(requestBodies[2]?.enable_thinking).toBe(false);
+    expect(requestBodies[2]?.reasoningEffort).toBeUndefined();
+    expect(requestBodies[3]?.reasoning_effort).toBe("low");
+    expect(requestBodies[3]?.reasoningEffort).toBeUndefined();
+  });
+
+  it("lets chat reasoningEffort disable DeepSeek thinking mode", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    globalThis.fetch = (async (_input, init) => {
+      requestBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        status: 200,
+        headers: { "content-type": "text/event-stream" }
+      });
+    }) as typeof fetch;
+
+    await collectParts(streamOpenAiChat(
+      {
+        ...openAiChatModel(),
+        providerId: "deepseek",
+        providerName: "DeepSeek",
+        modelId: "deepseek-v4-pro",
+        baseUrl: "https://api.deepseek.com/v1",
+        providerOptions: { reasoningEffort: "none" }
+      },
+      "",
+      [],
+      []
+    ));
+
+    expect(requestBody?.thinking).toEqual({ type: "disabled" });
+    expect(requestBody?.reasoning_effort).toBeUndefined();
+    expect(requestBody?.reasoningEffort).toBeUndefined();
   });
 
   it("uses OpenAI Chat max_completion_tokens and SDK request controls by default", async () => {

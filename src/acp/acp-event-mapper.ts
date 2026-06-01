@@ -16,6 +16,7 @@ import type {
 import type { JsonRpcObject } from "./json-rpc.ts";
 
 const TEXT_LIMIT = 4_000;
+const REASONING_TOOL_PREFIX = "reasoning";
 
 /** Map one normalized Recode event to zero or more ACP notifications. */
 export function mapSessionEventToAcpNotifications(
@@ -37,6 +38,33 @@ export function mapSessionEventToAcpNotifications(
           messageId: event.stepId
         }
       }];
+    case "assistant.reasoning.delta": {
+      if (event.delta.length === 0) {
+        return [];
+      }
+      const toolCallId = reasoningToolCallId(event.stepId);
+      return [
+        {
+          sessionId,
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId,
+            title: "Thinking",
+            kind: "think",
+            status: "in_progress"
+          }
+        },
+        {
+          sessionId,
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId,
+            status: "in_progress",
+            content: [{ type: "content", content: { type: "text", text: limitText(event.delta) } }]
+          }
+        }
+      ];
+    }
     case "tool.started":
       return [mapToolStarted(event.toolCall, sessionId)];
     case "tool.metadata.updated": {
@@ -74,6 +102,11 @@ export function mapSessionEventToAcpNotifications(
     default:
       return [];
   }
+}
+
+/** Build the synthetic ACP tool call id used for streamed reasoning. */
+export function reasoningToolCallId(stepId: string): string {
+  return `${REASONING_TOOL_PREFIX}:${stepId}`;
 }
 
 function mapToolStarted(toolCall: ToolCall, sessionId: string): AcpSessionNotification {

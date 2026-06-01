@@ -107,6 +107,14 @@ export async function* streamOpenAiResponses(
           }
           break;
         }
+        case "response.reasoning_text.delta":
+        case "response.reasoning_summary_text.delta": {
+          const delta = readString(event, "delta");
+          if (delta !== "") {
+            yield { type: "reasoning-delta", text: delta };
+          }
+          break;
+        }
         case "response.function_call_arguments.delta": {
           if (pendingFunctionCall !== undefined) {
             pendingFunctionCall.argumentsJson += readString(event, "delta");

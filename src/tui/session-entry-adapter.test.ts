@@ -22,8 +22,14 @@ describe("session entry adapter", () => {
         stepId: "step_1"
       },
       {
-        type: "assistant.text.delta",
+        type: "assistant.reasoning.delta",
         timestamp: 3,
+        stepId: "step_1",
+        delta: "Need to run the command."
+      },
+      {
+        type: "assistant.text.delta",
+        timestamp: 4,
         stepId: "step_1",
         delta: "I will run tests."
       },
@@ -84,10 +90,11 @@ describe("session entry adapter", () => {
 
     expect(rows.map((row) => [row.kind, row.body, row.toolStatus])).toEqual([
       ["user", "run tests", undefined],
+      ["reasoning", "Need to run the command.", undefined],
       ["assistant", "I will run tests.", undefined],
       ["tool-preview", "Bash · bun test", "completed"]
     ]);
-    expect(rows[2]?.metadata).toEqual({
+    expect(rows[3]?.metadata).toEqual({
       kind: "bash-output",
       command: "bun test",
       output: "1 pass\nexit_code: 0"

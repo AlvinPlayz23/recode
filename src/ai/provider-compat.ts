@@ -11,6 +11,8 @@ import { isJsonObject, type JsonObject } from "../shared/json-value.ts";
 export interface OpenAiChatCompat {
   readonly supportsStore: boolean;
   readonly supportsUsageInStreaming: boolean;
+  readonly supportsReasoningEffort: boolean;
+  readonly thinkingFormat: "none" | "openai" | "deepseek" | "openrouter" | "zai" | "qwen";
   readonly maxTokensField: "max_completion_tokens" | "max_tokens";
   readonly requiresToolResultName: boolean;
   readonly requiresAssistantAfterToolResult: boolean;
@@ -43,6 +45,8 @@ export function getOpenAiChatCompat(model: AiModel): OpenAiChatCompat {
   return {
     supportsStore: readOptionalBoolean(compat, "supportsStore") ?? detected.supportsStore,
     supportsUsageInStreaming: readOptionalBoolean(compat, "supportsUsageInStreaming") ?? detected.supportsUsageInStreaming,
+    supportsReasoningEffort: readOptionalBoolean(compat, "supportsReasoningEffort") ?? detected.supportsReasoningEffort,
+    thinkingFormat: readOptionalThinkingFormat(compat, "thinkingFormat") ?? detected.thinkingFormat,
     maxTokensField: readOptionalMaxTokensField(compat, "maxTokensField") ?? detected.maxTokensField,
     requiresToolResultName: readOptionalBoolean(compat, "requiresToolResultName") ?? detected.requiresToolResultName,
     requiresAssistantAfterToolResult: readOptionalBoolean(compat, "requiresAssistantAfterToolResult") ?? detected.requiresAssistantAfterToolResult,
@@ -83,6 +87,9 @@ function detectOpenAiChatCompat(model: AiModel): OpenAiChatCompat {
     || modelId.includes("deepseek")
     || baseUrl.includes("deepseek.com");
   const isNativeOpenAi = model.provider === "openai-chat" && baseUrl.includes("api.openai.com");
+  const isOpenRouter = provider.includes("openrouter") || baseUrl.includes("openrouter.ai");
+  const isZai = provider === "z-ai" || provider === "z-ai-coding" || baseUrl.includes("api.z.ai");
+  const isQwen = provider.includes("qwen") || providerName.includes("qwen") || modelId.includes("qwen");
   const isNonStandard = provider === "gemini"
     || provider === "groq"
     || isDeepSeekReasoningModel
@@ -99,6 +106,18 @@ function detectOpenAiChatCompat(model: AiModel): OpenAiChatCompat {
   return {
     supportsStore: isNativeOpenAi && !isNonStandard,
     supportsUsageInStreaming: isNativeOpenAi || baseUrl.includes("openrouter.ai"),
+    supportsReasoningEffort: !isZai && !isQwen,
+    thinkingFormat: isDeepSeekReasoningModel
+      ? "deepseek"
+      : isOpenRouter
+        ? "openrouter"
+        : isZai
+          ? "zai"
+          : isQwen
+            ? "qwen"
+            : isNativeOpenAi
+              ? "openai"
+              : "none",
     maxTokensField: baseUrl.includes("chutes.ai")
       ? "max_tokens"
       : "max_completion_tokens",
@@ -106,6 +125,21 @@ function detectOpenAiChatCompat(model: AiModel): OpenAiChatCompat {
     requiresAssistantAfterToolResult: false,
     replaysAssistantReasoningContent: isDeepSeekReasoningModel
   };
+}
+
+function readOptionalThinkingFormat(
+  record: JsonObject,
+  key: string
+): OpenAiChatCompat["thinkingFormat"] | undefined {
+  const value = record[key];
+  return value === "none"
+    || value === "openai"
+    || value === "deepseek"
+    || value === "openrouter"
+    || value === "zai"
+    || value === "qwen"
+    ? value
+    : undefined;
 }
 
 function readCompatObject(model: AiModel): JsonObject {

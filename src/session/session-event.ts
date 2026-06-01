@@ -11,6 +11,7 @@ import type { ToolCall, ToolResultMessage } from "../transcript/message.ts";
 export type SessionEvent =
   | UserSubmittedSessionEvent
   | AssistantStepStartedSessionEvent
+  | AssistantReasoningDeltaSessionEvent
   | AssistantTextDeltaSessionEvent
   | AssistantStepFinishedSessionEvent
   | ToolStartedSessionEvent
@@ -40,6 +41,13 @@ export interface AssistantStepStartedSessionEvent {
 
 export interface AssistantTextDeltaSessionEvent {
   readonly type: "assistant.text.delta";
+  readonly timestamp: number;
+  readonly stepId: string;
+  readonly delta: string;
+}
+
+export interface AssistantReasoningDeltaSessionEvent {
+  readonly type: "assistant.reasoning.delta";
   readonly timestamp: number;
   readonly stepId: string;
   readonly delta: string;

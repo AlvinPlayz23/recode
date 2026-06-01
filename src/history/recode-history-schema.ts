@@ -135,6 +135,7 @@ function parseSessionEvent(value: unknown): SessionEvent | undefined {
         ? value as unknown as SessionEvent
         : undefined;
     case "assistant.step.started":
+    case "assistant.reasoning.delta":
     case "assistant.text.delta":
       return typeof value["stepId"] === "string"
         ? value as unknown as SessionEvent

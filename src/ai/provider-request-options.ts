@@ -28,7 +28,8 @@ const TRANSPORT_OPTION_KEYS = new Set([
 
 const RECODE_OPTION_KEYS = new Set([
   "compat",
-  "cacheRetention"
+  "cacheRetention",
+  "reasoningEffort"
 ]);
 
 /**
@@ -122,6 +123,12 @@ function defaultProviderBodyOptions(
     defaults["store"] = false;
   }
 
+  if (isNativeOpenAiModel(model) && supportsOpenAiReasoningOptions(model.modelId) && configuredOptions["reasoning"] === undefined) {
+    defaults["reasoning"] = {
+      summary: "auto"
+    };
+  }
+
   return defaults;
 }
 
@@ -165,6 +172,13 @@ function isNativeOpenAiModel(model: AiModel): boolean {
   const baseUrl = (model.baseUrl ?? "").toLowerCase();
   return model.provider === "openai"
     && baseUrl.includes("api.openai.com");
+}
+
+function supportsOpenAiReasoningOptions(modelId: string): boolean {
+  const normalized = modelId.toLowerCase();
+  return normalized.startsWith("gpt-5")
+    || /^o[1-9](?:-|$)/.test(normalized)
+    || normalized.startsWith("computer-use-preview");
 }
 
 function readPositiveIntegerOption(options: JsonObject, key: string): number | undefined {

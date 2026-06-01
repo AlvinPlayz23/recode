@@ -151,6 +151,20 @@ export function renderEntry(
         </Show>
       );
 
+    case "reasoning":
+      return (
+        <Show when={entry.body.trim() !== ""}>
+          <box width="100%" flexDirection="row" marginTop={compact() ? 0 : 1} marginBottom={0} paddingLeft={4}>
+            <text fg={t().hintText} attributes={TextAttributes.DIM | TextAttributes.ITALIC}>thinking </text>
+            <box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0} paddingRight={1}>
+              <For each={toDisplayLines(entry.body)}>
+                {(line) => <text fg={t().hintText} attributes={TextAttributes.DIM | TextAttributes.ITALIC}>{line}</text>}
+              </For>
+            </box>
+          </box>
+        </Show>
+      );
+
     case "tool": {
       const { badge, detail } = parseToolBadge(entry.body);
       return (

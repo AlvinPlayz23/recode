@@ -20,7 +20,7 @@ import {
  */
 export interface UiEntry {
   readonly id: string;
-  readonly kind: "user" | "assistant" | "tool" | "tool-preview" | "tool-group" | "error" | "status";
+  readonly kind: "user" | "assistant" | "reasoning" | "tool" | "tool-preview" | "tool-group" | "error" | "status";
   readonly title: string;
   readonly body: string;
   /** Unix ms timestamp set when the entry is created live. Absent for rehydrated history entries. */
@@ -54,6 +54,14 @@ export function uiEntriesFromSessionEntries(sessionEntries: readonly SessionEntr
         });
         break;
       case "assistant":
+        if (sessionEntry.reasoningContent.trim() !== "") {
+          entries.push({
+            id: `${sessionEntry.id}:reasoning`,
+            kind: "reasoning",
+            title: "thinking",
+            body: sessionEntry.reasoningContent
+          });
+        }
         if (sessionEntry.content.trim() !== "") {
           entries.push({
             id: sessionEntry.id,
@@ -293,6 +301,7 @@ export function sessionStateFromTranscript(transcript: readonly ConversationMess
           timestamp: index,
           stepId,
           content: message.content,
+          reasoningContent: message.providerMetadata?.reasoningContent ?? "",
           completed: true,
           ...(message.stepStats === undefined ? {} : { stepStats: message.stepStats })
         });
@@ -322,6 +331,7 @@ export function sessionStateFromTranscript(transcript: readonly ConversationMess
           timestamp: index,
           stepId: `history:summary:${index}`,
           content: formatContinuationSummaryForDisplay(message.content),
+          reasoningContent: "",
           completed: true
         });
         break;

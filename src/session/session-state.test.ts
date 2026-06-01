@@ -21,14 +21,20 @@ describe("session state projector", () => {
       stepId: "step_1"
     });
     state = applySessionEvent(state, {
-      type: "assistant.text.delta",
+      type: "assistant.reasoning.delta",
       timestamp: 3,
+      stepId: "step_1",
+      delta: "Need to inspect. "
+    });
+    state = applySessionEvent(state, {
+      type: "assistant.text.delta",
+      timestamp: 4,
       stepId: "step_1",
       delta: "I will "
     });
     state = applySessionEvent(state, {
       type: "assistant.text.delta",
-      timestamp: 4,
+      timestamp: 5,
       stepId: "step_1",
       delta: "check."
     });
@@ -87,6 +93,7 @@ describe("session state projector", () => {
     expect(state.entries.map((entry) => entry.kind)).toEqual(["user", "assistant", "tool"]);
     expect(state.entries[1]).toMatchObject({
       kind: "assistant",
+      reasoningContent: "Need to inspect. ",
       content: "I will check.",
       completed: true
     });

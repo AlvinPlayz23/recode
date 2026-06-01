@@ -42,6 +42,7 @@ describe("provider request options", () => {
       providerOptions: {
         timeoutMs: 1000,
         maxRetries: 4,
+        reasoningEffort: "high",
         provider: { sort: "price" }
       }
     }, undefined);

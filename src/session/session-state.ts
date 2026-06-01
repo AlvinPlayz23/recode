@@ -29,6 +29,7 @@ export interface AssistantSessionEntry {
   readonly timestamp: number;
   readonly stepId: string;
   readonly content: string;
+  readonly reasoningContent: string;
   readonly completed: boolean;
   readonly stepStats?: StepStats;
 }
@@ -83,8 +84,15 @@ export function applySessionEvent(state: SessionState, event: SessionEvent): Ses
         timestamp: event.timestamp,
         stepId: event.stepId,
         content: "",
+        reasoningContent: "",
         completed: false
       });
+    case "assistant.reasoning.delta":
+      return updateSessionEntries(state, (entry) =>
+        entry.kind === "assistant" && entry.stepId === event.stepId
+          ? { ...entry, reasoningContent: entry.reasoningContent + event.delta }
+          : entry
+      );
     case "assistant.text.delta":
       return updateSessionEntries(state, (entry) =>
         entry.kind === "assistant" && entry.stepId === event.stepId

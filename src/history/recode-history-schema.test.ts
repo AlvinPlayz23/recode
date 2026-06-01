@@ -366,8 +366,14 @@ describe("recode history schema", () => {
           modelContent: "Hello"
         },
         {
-          type: "assistant.text.delta",
+          type: "assistant.reasoning.delta",
           timestamp: 2,
+          stepId: "step-1",
+          delta: "Thinking"
+        },
+        {
+          type: "assistant.text.delta",
+          timestamp: 3,
           stepId: "step-1",
           delta: "Hi"
         },
@@ -386,8 +392,14 @@ describe("recode history schema", () => {
         modelContent: "Hello"
       },
       {
-        type: "assistant.text.delta",
+        type: "assistant.reasoning.delta",
         timestamp: 2,
+        stepId: "step-1",
+        delta: "Thinking"
+      },
+      {
+        type: "assistant.text.delta",
+        timestamp: 3,
         stepId: "step-1",
         delta: "Hi"
       }

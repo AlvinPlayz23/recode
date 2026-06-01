@@ -233,12 +233,18 @@ describe("runAgentLoop", () => {
       ...finishParts()
     ]));
 
+    const reasoningEvents: string[] = [];
     const result = await runAgentLoop({
       systemPrompt: "test",
       initialUserPrompt: "reason",
       languageModel: {} as never,
       toolRegistry: new ToolRegistry([createEchoTool()]),
-      toolContext: { workspaceRoot: "/tmp/recode", approvalMode: "yolo" }
+      toolContext: { workspaceRoot: "/tmp/recode", approvalMode: "yolo" },
+      onSessionEvent(event) {
+        if (event.type === "assistant.reasoning.delta") {
+          reasoningEvents.push(event.delta);
+        }
+      }
     });
 
     const assistantMessage = result.transcript.find((message) => message.role === "assistant");
@@ -248,6 +254,7 @@ describe("runAgentLoop", () => {
         reasoningContent: "Need an answer. Replying now."
       }
     });
+    expect(reasoningEvents).toEqual(["Need an answer. ", "Replying now."]);
   });
 
   it("forwards provider status events through onProviderStatus", async () => {

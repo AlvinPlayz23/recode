@@ -40,7 +40,7 @@ import { createPermissionRule } from "../tools/permission-rules.ts";
 import { ToolRegistry } from "../tools/tool-registry.ts";
 import type { ConversationMessage, ToolCall, ToolResultMessage } from "../transcript/message.ts";
 import { filterToolsForSessionMode, type SessionMode } from "../tui/session/session-mode.ts";
-import { mapSessionEventToAcpNotifications, mapToolKind, todoMetadataToPlanEntries } from "./acp-event-mapper.ts";
+import { mapSessionEventToAcpNotifications, mapToolKind, reasoningToolCallId, todoMetadataToPlanEntries } from "./acp-event-mapper.ts";
 import type {
   AcpContentBlock,
   AcpSessionConfigOption,
@@ -231,6 +231,7 @@ export class AcpSessionManager {
   ): Promise<void> {
     const nextEvents: SessionEvent[] = [...session.sessionEvents];
     const initialUserPrompt = promptBlocksToText(prompt);
+    const acpReasoningContent = new Map<string, string>();
 
     try {
       const result = await runAgentLoop({
@@ -244,6 +245,48 @@ export class AcpSessionManager {
         requestAffinityKey: session.sessionId,
         onSessionEvent: (event) => {
           nextEvents.push(event);
+          if (event.type === "assistant.reasoning.delta") {
+            const toolCallId = reasoningToolCallId(event.stepId);
+            const previous = acpReasoningContent.get(event.stepId);
+            const content = `${previous ?? ""}${event.delta}`;
+            acpReasoningContent.set(event.stepId, content);
+            if (previous === undefined) {
+              this.#transport.sendSessionUpdate({
+                sessionId: session.sessionId,
+                update: {
+                  sessionUpdate: "tool_call",
+                  toolCallId,
+                  title: "Thinking",
+                  kind: "think",
+                  status: "in_progress"
+                }
+              });
+            }
+            this.#transport.sendSessionUpdate({
+              sessionId: session.sessionId,
+              update: {
+                sessionUpdate: "tool_call_update",
+                toolCallId,
+                status: "in_progress",
+                content: [{ type: "content", content: { type: "text", text: content } }]
+              }
+            });
+            return;
+          }
+          if (event.type === "assistant.step.finished") {
+            const content = acpReasoningContent.get(event.stepId);
+            if (content !== undefined) {
+              this.#transport.sendSessionUpdate({
+                sessionId: session.sessionId,
+                update: {
+                  sessionUpdate: "tool_call_update",
+                  toolCallId: reasoningToolCallId(event.stepId),
+                  status: "completed",
+                  content: [{ type: "content", content: { type: "text", text: content } }]
+                }
+              });
+            }
+          }
           for (const notification of mapSessionEventToAcpNotifications(event, session.sessionId)) {
             this.#transport.sendSessionUpdate(notification);
           }
@@ -642,6 +685,28 @@ function transcriptToReplayNotifications(
         });
         break;
       case "assistant":
+        if (message.providerMetadata?.reasoningContent !== undefined) {
+          const toolCallId = reasoningToolCallId(crypto.randomUUID());
+          notifications.push({
+            sessionId,
+            update: {
+              sessionUpdate: "tool_call",
+              toolCallId,
+              title: "Thinking",
+              kind: "think",
+              status: "completed"
+            }
+          });
+          notifications.push({
+            sessionId,
+            update: {
+              sessionUpdate: "tool_call_update",
+              toolCallId,
+              status: "completed",
+              content: [{ type: "content", content: { type: "text", text: message.providerMetadata.reasoningContent } }]
+            }
+          });
+        }
         if (message.content.length > 0) {
           notifications.push({
             sessionId,

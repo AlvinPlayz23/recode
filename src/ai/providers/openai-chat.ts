@@ -105,7 +105,7 @@ export async function* streamOpenAiChat(
 
       const delta = readOptionalRecord(choiceRecord, "delta");
       if (delta !== undefined) {
-        const reasoningContent = readOptionalString(delta, "reasoning_content");
+        const reasoningContent = readFirstOptionalString(delta, ["reasoning_content", "reasoning", "reasoning_text"]);
         if (reasoningContent !== undefined && reasoningContent !== "") {
           yield { type: "reasoning-delta", text: reasoningContent };
         }
@@ -221,9 +221,52 @@ function buildChatCompletionsRequestBody(
     body[compat.maxTokensField] = model.maxOutputTokens;
   }
 
+  Object.assign(body, buildChatReasoningOptions(model, compat));
+
   return mergeRequestBodyOptions({
     ...body
   }, buildProviderBodyOptions(model, requestAffinityKey));
+}
+
+function buildChatReasoningOptions(
+  model: AiModel,
+  compat: OpenAiChatCompat
+): Record<string, unknown> {
+  const configuredOptions = model.providerOptions ?? {};
+  const reasoningEffort = readReasoningEffort(configuredOptions["reasoningEffort"]);
+
+  switch (compat.thinkingFormat) {
+    case "deepseek":
+      return {
+        ...(configuredOptions["thinking"] === undefined
+          ? { thinking: { type: reasoningEffort === "none" ? "disabled" : "enabled" } }
+          : {}),
+        ...(reasoningEffort !== undefined
+          && reasoningEffort !== "none"
+          && compat.supportsReasoningEffort
+          && configuredOptions["reasoning_effort"] === undefined
+          ? { reasoning_effort: reasoningEffort }
+          : {})
+      };
+    case "openrouter":
+      return reasoningEffort !== undefined && configuredOptions["reasoning"] === undefined
+        ? { reasoning: { effort: reasoningEffort } }
+        : {};
+    case "zai":
+    case "qwen":
+      return reasoningEffort !== undefined && configuredOptions["enable_thinking"] === undefined
+        ? { enable_thinking: reasoningEffort !== "none" }
+        : {};
+    case "openai":
+      return reasoningEffort !== undefined
+        && reasoningEffort !== "none"
+        && compat.supportsReasoningEffort
+        && configuredOptions["reasoning_effort"] === undefined
+        ? { reasoning_effort: reasoningEffort }
+        : {};
+    case "none":
+      return {};
+  }
 }
 
 function resolveChatToolCallIndex(
@@ -245,6 +288,33 @@ function resolveChatToolCallIndex(
   }
 
   return arrayIndex;
+}
+
+function readReasoningEffort(
+  value: unknown
+): "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined {
+  return value === "none"
+    || value === "minimal"
+    || value === "low"
+    || value === "medium"
+    || value === "high"
+    || value === "xhigh"
+    ? value
+    : undefined;
+}
+
+function readFirstOptionalString(
+  record: Record<string, unknown>,
+  keys: readonly string[]
+): string | undefined {
+  for (const key of keys) {
+    const value = readOptionalString(record, key);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+
+  return undefined;
 }
 
 function messagesToChatMessages(

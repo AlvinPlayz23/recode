@@ -27,6 +27,37 @@ describe("mapSessionEventToAcpNotifications", () => {
     }]);
   });
 
+  test("maps assistant reasoning deltas to think tool updates", () => {
+    const event: SessionEvent = {
+      type: "assistant.reasoning.delta",
+      timestamp: 1,
+      stepId: "step-1",
+      delta: "Checking context."
+    };
+
+    expect(mapSessionEventToAcpNotifications(event, "sess-1")).toEqual([
+      {
+        sessionId: "sess-1",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "reasoning:step-1",
+          title: "Thinking",
+          kind: "think",
+          status: "in_progress"
+        }
+      },
+      {
+        sessionId: "sess-1",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "reasoning:step-1",
+          status: "in_progress",
+          content: [{ type: "content", content: { type: "text", text: "Checking context." } }]
+        }
+      }
+    ]);
+  });
+
   test("maps tool starts with kind, raw input, and locations", () => {
     const event: SessionEvent = {
       type: "tool.started",

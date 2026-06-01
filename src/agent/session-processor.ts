@@ -184,6 +184,12 @@ export async function processAgentSessionStep(
         break;
       case "reasoning-delta":
         accumulatedReasoningContent += part.text;
+        options.onSessionEvent?.({
+          type: "assistant.reasoning.delta",
+          timestamp: Date.now(),
+          stepId: options.stepId,
+          delta: part.text
+        });
         break;
       case "error":
         throw new ModelResponseError(
