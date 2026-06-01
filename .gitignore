@@ -6,6 +6,7 @@ node_modules/
 dist/
 .recode/
 refs/
+fn/
 desktop-app/electrobun-docs/
 desktop-app/ref-src
 desktop-app/build/
