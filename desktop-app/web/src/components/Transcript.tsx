@@ -25,6 +25,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { ChatMessage, Thread } from '../types'
 import { TextShimmer } from './TextShimmer'
+import { ThinkingRow } from './ThinkingRow'
 
 /**
  * If the user is within this many pixels of the bottom of the transcript, we
@@ -357,6 +358,17 @@ function getTranscriptSpacing(message: ChatMessage, previous: ChatMessage | unde
 }
 
 function ToolCallRow({ message }: { message: ChatMessage }) {
+  if (message.toolKind === 'think') {
+    const running = message.toolStatus === 'pending' || message.toolStatus === 'in_progress'
+    const content = message.toolContent ?? (message.body === 'Thinking' ? '' : message.body)
+    return (
+      <ThinkingRow
+        content={content}
+        isStreaming={running}
+      />
+    )
+  }
+
   const toolName = getToolName(message)
   const running = message.toolStatus === 'pending' || message.toolStatus === 'in_progress'
   const failed = message.toolStatus === 'failed'

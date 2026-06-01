@@ -7,6 +7,7 @@ dist/
 .recode/
 refs/
 fn/
+pi-ref/
 desktop-app/electrobun-docs/
 desktop-app/ref-src
 desktop-app/build/

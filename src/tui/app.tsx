@@ -66,7 +66,8 @@ import { ToolRegistry } from "../tools/tool-registry.ts";
 import {
   findBuiltinCommands,
   moveBuiltinCommandSelectionIndex,
-  normalizeBuiltinCommandSelectionIndex
+  normalizeBuiltinCommandSelectionIndex,
+  parseBuiltinCommand
 } from "./message-format.ts";
 import {
   buildContextWindowStatusSnapshot,
@@ -100,11 +101,14 @@ import {
   closeLayoutPicker,
   closeThemePicker,
   cycleCustomizeSetting,
+  getApprovalModeLabel,
+  getNextApprovalMode,
   openApprovalModePicker,
   openCustomizePicker,
   openLayoutPicker,
   openThemePicker,
   persistSelectedApprovalAllowlist,
+  persistSelectedApprovalMode,
   submitSelectedApprovalModePickerItem,
   submitSelectedLayoutPickerItem,
   submitSelectedThemePickerItem
@@ -277,6 +281,29 @@ const PROMPT_TEXTAREA_KEY_BINDINGS: TextareaKeyBinding[] = [
   { name: "return", action: "submit" },
   { name: "return", ctrl: true, action: "newline" }
 ];
+
+/** Time window for the two-step `/clear` confirmation. */
+const CLEAR_CONFIRMATION_WINDOW_MS = 10000;
+
+/**
+ * Rewrite shortcut prompts (currently just bare `?` → `/help`) before dispatch.
+ *
+ * Keeps the shortcut layer separate from the slash-command dispatcher so the
+ * dispatcher stays purely about command names.
+ */
+function normalizePromptShortcuts(value: string): string {
+  if (value.trim() === "?") {
+    return "/help";
+  }
+  return value;
+}
+
+/**
+ * Check whether a submitted prompt is the `/clear` command (and not `/new`).
+ */
+function isClearCommand(value: string): boolean {
+  return parseBuiltinCommand(value)?.name === "clear";
+}
 
 export interface TuiAppProps {
   readonly systemPrompt: string;
@@ -553,10 +580,34 @@ export function TuiApp(props: TuiAppProps) {
     plainTextPasteFallback.dispose();
     toastController.dispose();
     exitController.dispose();
+    if (clearConfirmationTimer !== undefined) {
+      clearTimeout(clearConfirmationTimer);
+      clearConfirmationTimer = undefined;
+    }
   });
 
   const toastController = createToastController(setActiveToast);
   const showToast = toastController.showToast;
+
+  // Two-step `/clear` confirmation. The first `/clear` arms the timer and shows
+  // a toast; the second within the window proceeds to wipe the session.
+  let clearConfirmationTimer: ReturnType<typeof setTimeout> | undefined;
+  const armClearConfirmation = () => {
+    if (clearConfirmationTimer !== undefined) {
+      clearTimeout(clearConfirmationTimer);
+    }
+    clearConfirmationTimer = setTimeout(() => {
+      clearConfirmationTimer = undefined;
+    }, CLEAR_CONFIRMATION_WINDOW_MS);
+  };
+  const consumeClearConfirmation = (): boolean => {
+    if (clearConfirmationTimer === undefined) {
+      return false;
+    }
+    clearTimeout(clearConfirmationTimer);
+    clearConfirmationTimer = undefined;
+    return true;
+  };
 
   const setTranscriptMessages = (value: readonly ConversationMessage[]) => {
     setPreviousMessages(value);
@@ -864,6 +915,22 @@ export function TuiApp(props: TuiAppProps) {
         }
       });
       inputRef?.focus();
+    },
+    handleCycleApprovalMode(key) {
+      key.preventDefault();
+      key.stopPropagation();
+      if (modalOpen()) {
+        return;
+      }
+
+      const nextMode = getNextApprovalMode(approvalMode());
+      try {
+        persistSelectedApprovalMode(sessionRuntimeConfig().configPath, nextMode);
+      } catch {
+        // Non-critical: the mode still takes effect for the current session.
+      }
+      updateApprovalSettings(nextMode, approvalAllowlist());
+      showToast(`Approval: ${getApprovalModeLabel(nextMode)}  ⌃Y to cycle`);
     },
     handleQuestionKey(key) {
       return handleQuestionRequestKey({
@@ -1273,8 +1340,17 @@ export function TuiApp(props: TuiAppProps) {
   }
 
   const submitPrompt = async (value: string) => {
+    const normalizedValue = normalizePromptShortcuts(value);
+    if (!busy() && isClearCommand(normalizedValue) && !consumeClearConfirmation()) {
+      armClearConfirmation();
+      showToast("Press /clear again within 10s to confirm");
+      clearDraft(inputRef, setDraft);
+      inputRef?.focus();
+      return;
+    }
+
     const commandResult = await dispatchBuiltinCommand({
-      value,
+      value: normalizedValue,
       busy: busy(),
       runtimeConfig: sessionRuntimeConfig(),
       languageModel: sessionLanguageModel(),

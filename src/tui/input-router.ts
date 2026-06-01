@@ -113,6 +113,7 @@ export interface InputRouterOptions {
   readonly handleGoToSubagentView: (key: KeyEvent) => void;
   readonly handleGoToParentView: (key: KeyEvent) => void;
   readonly handleToggleSessionMode: () => void;
+  readonly handleCycleApprovalMode: (key: KeyEvent) => void;
   readonly handleQuestionKey: (key: KeyEvent) => boolean;
   readonly activePlanReviewRequest: () => ActivePlanReviewRequest | undefined;
   readonly resolvePlanReviewRequest: (decision: PlanReviewDecision) => void;
@@ -213,6 +214,11 @@ export function registerTuiInputHandlers(options: InputRouterOptions): void {
 
     if (key.ctrl && key.name === "k") {
       options.handleToggleToolPreviews(key);
+      return;
+    }
+
+    if (key.ctrl && key.name === "y") {
+      options.handleCycleApprovalMode(key);
       return;
     }
 

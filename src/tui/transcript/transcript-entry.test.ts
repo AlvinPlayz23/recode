@@ -155,6 +155,24 @@ describe("transcript entry helpers", () => {
     ]);
   });
 
+  it("rehydrates assistant reasoning as a completed thinking entry", () => {
+    const entries = rehydrateEntriesFromTranscript([
+      {
+        role: "assistant",
+        content: "Done.",
+        providerMetadata: {
+          reasoningContent: "Need to inspect first."
+        },
+        toolCalls: []
+      }
+    ]);
+
+    expect(entries.map((entry) => [entry.kind, entry.body, entry.reasoningStatus])).toEqual([
+      ["reasoning", "Need to inspect first.", "completed"],
+      ["assistant", "Done.", undefined]
+    ]);
+  });
+
   it("rehydrates TodoWrite tool calls as preview entries", () => {
     const entries = rehydrateEntriesFromTranscript([
       {

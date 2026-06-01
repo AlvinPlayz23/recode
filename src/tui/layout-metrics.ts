@@ -60,8 +60,11 @@ export function estimateEntryHeight(entry: UiEntry, width: number): number {
     case "user":
       return estimateWrappedTextHeight(entry.body, contentWidth) + 2;
     case "assistant":
-    case "reasoning":
       return estimateWrappedTextHeight(entry.body, contentWidth) + 1;
+    case "reasoning":
+      return entry.reasoningStatus === "completed"
+        ? 1
+        : estimateWrappedTextHeight(entry.body, contentWidth) + 1;
     case "tool":
     case "tool-group":
     case "status":

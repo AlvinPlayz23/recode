@@ -31,6 +31,8 @@ describe("layout metrics", () => {
   it("estimates transcript entry heights by entry kind", () => {
     expect(estimateEntryHeight(createEntry("user", "You", "hello"), 80)).toBe(3);
     expect(estimateEntryHeight(createEntry("assistant", "Recode", "hello"), 80)).toBe(2);
+    expect(estimateEntryHeight(createEntry("reasoning", "thinking", "hello"), 80)).toBe(2);
+    expect(estimateEntryHeight({ ...createEntry("reasoning", "thinking", "hello"), reasoningStatus: "completed" }, 80)).toBe(1);
     expect(estimateEntryHeight(createEntry("tool", "tool", "Read"), 80)).toBe(2);
     expect(estimateEntryHeight(createEntry("error", "error", "boom"), 80)).toBe(3);
   });

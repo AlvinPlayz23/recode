@@ -459,10 +459,41 @@ function persistSelectedTheme(configPath: string, themeName: ThemeName): void {
   saveRecodeConfigFile(configPath, nextConfig);
 }
 
-function persistSelectedApprovalMode(configPath: string, approvalMode: ApprovalMode): void {
+export function persistSelectedApprovalMode(configPath: string, approvalMode: ApprovalMode): void {
   const config = loadRecodeConfigFile(configPath);
   const nextConfig = selectConfiguredApprovalMode(config, approvalMode);
   saveRecodeConfigFile(configPath, nextConfig);
+}
+
+/**
+ * Cycle order used by the Ctrl+Y approval-mode hotkey.
+ *
+ * Mirrors the order shown in {@link buildApprovalModePickerItems} so the toggle
+ * feels consistent with the picker.
+ */
+const APPROVAL_MODE_CYCLE: readonly ApprovalMode[] = ["approval", "auto-edits", "yolo"];
+
+/**
+ * Return the next approval mode in the Ctrl+Y cycle.
+ */
+export function getNextApprovalMode(currentMode: ApprovalMode): ApprovalMode {
+  const index = APPROVAL_MODE_CYCLE.indexOf(currentMode);
+  const nextIndex = (index === -1 ? 0 : index + 1) % APPROVAL_MODE_CYCLE.length;
+  return APPROVAL_MODE_CYCLE[nextIndex] ?? "approval";
+}
+
+/**
+ * Human-readable label for an approval mode, used by toasts and status rows.
+ */
+export function getApprovalModeLabel(mode: ApprovalMode): string {
+  switch (mode) {
+    case "approval":
+      return "Approval";
+    case "auto-edits":
+      return "Auto-Edits";
+    case "yolo":
+      return "YOLO";
+  }
 }
 
 function persistSelectedToolMarker(configPath: string, toolMarkerName: ToolMarkerName): void {

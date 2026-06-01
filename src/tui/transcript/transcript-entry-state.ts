@@ -25,6 +25,7 @@ export interface UiEntry {
   readonly body: string;
   /** Unix ms timestamp set when the entry is created live. Absent for rehydrated history entries. */
   readonly createdAt?: number;
+  readonly reasoningStatus?: "running" | "completed";
   readonly toolCallId?: string;
   readonly toolStatus?: "running" | "completed" | "error";
   readonly metadata?: ToolResultMetadata;
@@ -59,7 +60,8 @@ export function uiEntriesFromSessionEntries(sessionEntries: readonly SessionEntr
             id: `${sessionEntry.id}:reasoning`,
             kind: "reasoning",
             title: "thinking",
-            body: sessionEntry.reasoningContent
+            body: sessionEntry.reasoningContent,
+            reasoningStatus: sessionEntry.completed ? "completed" : "running"
           });
         }
         if (sessionEntry.content.trim() !== "") {

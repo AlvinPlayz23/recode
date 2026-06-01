@@ -9,7 +9,7 @@ import {
   TextAttributes,
   type SyntaxStyle
 } from "@opentui/core";
-import { For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import type { JSX } from "solid-js";
 import type { EditToolResultMetadata } from "../../tools/tool.ts";
 import { toDisplayLines } from "../message-format.ts";
@@ -153,16 +153,7 @@ export function renderEntry(
 
     case "reasoning":
       return (
-        <Show when={entry.body.trim() !== ""}>
-          <box width="100%" flexDirection="row" marginTop={compact() ? 0 : 1} marginBottom={0} paddingLeft={4}>
-            <text fg={t().hintText} attributes={TextAttributes.DIM | TextAttributes.ITALIC}>thinking </text>
-            <box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0} paddingRight={1}>
-              <For each={toDisplayLines(entry.body)}>
-                {(line) => <text fg={t().hintText} attributes={TextAttributes.DIM | TextAttributes.ITALIC}>{line}</text>}
-              </For>
-            </box>
-          </box>
-        </Show>
+        <ReasoningBlock entry={entry} theme={t} compact={compact()} />
       );
 
     case "tool": {
@@ -243,6 +234,76 @@ export function renderEntry(
         </box>
       );
   }
+}
+
+function ReasoningBlock(props: {
+  readonly entry: UiEntry;
+  readonly theme: () => ReturnType<typeof getTheme>;
+  readonly compact: boolean;
+}): JSX.Element {
+  const running = createMemo(() => props.entry.reasoningStatus !== "completed");
+  const [expanded, setExpanded] = createSignal(running());
+  const lines = createMemo(() => toDisplayLines(props.entry.body));
+  const canToggle = createMemo(() => !running() && lines().length > 0);
+  const detailLabel = createMemo(() => {
+    if (running()) {
+      return "thinking...";
+    }
+    return expanded() ? "collapse" : `thinking · ${lines().length} line${lines().length === 1 ? "" : "s"}`;
+  });
+
+  createEffect(() => {
+    if (running()) {
+      setExpanded(true);
+    } else {
+      setExpanded(false);
+    }
+  });
+
+  return (
+    <Show when={props.entry.body.trim() !== ""}>
+      <box
+        flexDirection="column"
+        marginTop={props.compact ? 0 : 1}
+        marginLeft={4}
+        marginRight={1}
+        paddingLeft={1}
+        paddingRight={0}
+        flexGrow={1}
+        flexShrink={1}
+        minWidth={0}
+        onMouseUp={() => {
+          if (canToggle()) {
+            setExpanded((previous) => !previous);
+          }
+        }}
+      >
+        <box flexDirection="row" alignItems="center" gap={1}>
+          <text fg={props.theme().hintText} attributes={TextAttributes.DIM | TextAttributes.ITALIC}>
+            {expanded() ? "⌄" : "›"}
+          </text>
+          <text fg={props.theme().hintText} attributes={TextAttributes.DIM | TextAttributes.ITALIC}>
+            {detailLabel()}
+          </text>
+        </box>
+        <Show when={expanded()}>
+          <box
+            flexDirection="column"
+            marginTop={0}
+            marginLeft={2}
+            paddingLeft={0}
+            flexGrow={1}
+            flexShrink={1}
+            minWidth={0}
+          >
+            <For each={lines()}>
+              {(line) => <text fg={props.theme().hintText} attributes={TextAttributes.DIM | TextAttributes.ITALIC}>{line}</text>}
+            </For>
+          </box>
+        </Show>
+      </box>
+    </Show>
+  );
 }
 
 function ErrorBlock(props: {
