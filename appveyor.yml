@@ -12,7 +12,7 @@ build_script:
   - cmd: cd desktop-app && cd web && bun install && cd .. && bun install && bun run build && bunx electrobun build --env=stable
 
 artifacts:
-  - path: desktop-app\build\stable-win-x64\Recode-Setup.zip
+  - path: desktop-app\build\**\*.zip
     name: windows-release
 
 deploy:
