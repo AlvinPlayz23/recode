@@ -23,9 +23,7 @@ export type SpinnerStyleName =
   | "matcha-ripple"
   | "midnight-blade"
   | "amber-scan"
-  | "frost-stars"
   | "petal-drift"
-  | "solarized-beam"
   | "monochrome-scan"
   | "sunset-pulse"
   | "ocean-wave"
@@ -79,15 +77,6 @@ const SPINNER_THEME_DEFINITIONS: Readonly<Record<ThemeName, SpinnerThemeDefiniti
     trailGlyphs: ["▣", "▪", "▫", "·"],
     inactiveGlyph: "·"
   }),
-  "frost-glass": createScannerDefinition({
-    style: "frost-stars",
-    width: 7,
-    holdStart: 2,
-    holdEnd: 2,
-    headGlyph: "✦",
-    trailGlyphs: ["✧", "·", "·"],
-    inactiveGlyph: "·"
-  }),
   "sakura-bloom": createScannerDefinition({
     style: "petal-drift",
     width: 7,
@@ -95,15 +84,6 @@ const SPINNER_THEME_DEFINITIONS: Readonly<Record<ThemeName, SpinnerThemeDefiniti
     holdEnd: 2,
     headGlyph: "✿",
     trailGlyphs: ["❀", "·", "·"],
-    inactiveGlyph: "·"
-  }),
-  "solarized-light": createScannerDefinition({
-    style: "solarized-beam",
-    width: 8,
-    holdStart: 2,
-    holdEnd: 2,
-    headGlyph: "▣",
-    trailGlyphs: ["▢", "□", "·"],
     inactiveGlyph: "·"
   }),
   "monochrome": createScannerDefinition({

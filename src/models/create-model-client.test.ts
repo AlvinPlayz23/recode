@@ -41,6 +41,25 @@ describe("createLanguageModel", () => {
     expect(model.providerOptions).toEqual({ timeoutMs: 1000 });
   });
 
+  it("maps openai-oauth to the responses adapter without requiring an API key", () => {
+    const model = createLanguageModel({
+      workspaceRoot: "/workspace",
+      configPath: "/workspace/.recode/config.json",
+      provider: "openai-oauth",
+      providerId: "openai-oauth",
+      providerName: "OpenAI Codex OAuth",
+      model: "gpt-5.2-codex",
+      providers: [],
+      approvalMode: "approval",
+      approvalAllowlist: [],
+      permissionRules: [],
+      baseUrl: "https://chatgpt.com/backend-api"
+    });
+
+    expect(model.api).toBe("openai-responses");
+    expect(model.apiKey).toBe("");
+  });
+
   const chatProviders: readonly ProviderKind[] = [
     "openai-chat",
     "gemini",

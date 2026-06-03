@@ -9,6 +9,7 @@
  *
  * openai: OpenAI Responses API (default).
  * openai-chat: OpenAI Chat Completions API for third-party services that do not support Responses.
+ * openai-oauth: ChatGPT/Codex backend through OpenAI OAuth.
  * anthropic: Anthropic Messages API.
  * gemini: Google AI Studio / Gemini through the OpenAI-compatible API.
  * groq: Groq through the OpenAI-compatible API.
@@ -21,6 +22,7 @@
 export type ProviderKind =
   | "openai"
   | "openai-chat"
+  | "openai-oauth"
   | "anthropic"
   | "gemini"
   | "groq"
@@ -60,6 +62,14 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     defaultName: "OpenAI-Compatible Chat",
     defaultBaseUrl: "https://api.openai.com/v1",
     setupHint: "Generic OpenAI-compatible chat endpoint",
+    supportsModelListing: true
+  },
+  {
+    kind: "openai-oauth",
+    label: "OpenAI Codex OAuth",
+    defaultName: "OpenAI Codex OAuth",
+    defaultBaseUrl: "https://chatgpt.com/backend-api",
+    setupHint: "ChatGPT/Codex backend authenticated with OpenAI OAuth",
     supportsModelListing: true
   },
   {
@@ -140,6 +150,7 @@ export function parseProviderKind(value: string | undefined): ProviderKind | und
   switch (normalized) {
     case "openai":
     case "openai-chat":
+    case "openai-oauth":
     case "anthropic":
     case "gemini":
     case "groq":
@@ -153,6 +164,11 @@ export function parseProviderKind(value: string | undefined): ProviderKind | und
     case "openai-completions":
     case "chat-completions":
       return "openai-chat";
+    case "codex":
+    case "openai-codex":
+    case "chatgpt-oauth":
+    case "openai-chatgpt-oauth":
+      return "openai-oauth";
     case "google":
     case "google-ai":
     case "google-ai-studio":

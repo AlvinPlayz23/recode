@@ -42,8 +42,10 @@ export async function runDoctor(runtimeConfig: RuntimeConfig): Promise<number> {
   });
   checks.push({
     label: "API key",
-    ok: runtimeConfig.apiKey !== undefined && runtimeConfig.apiKey.trim() !== "",
-    detail: runtimeConfig.apiKey === undefined || runtimeConfig.apiKey.trim() === ""
+    ok: runtimeConfig.provider === "openai-oauth" || (runtimeConfig.apiKey !== undefined && runtimeConfig.apiKey.trim() !== ""),
+    detail: runtimeConfig.provider === "openai-oauth"
+      ? "Not required for openai-oauth"
+      : runtimeConfig.apiKey === undefined || runtimeConfig.apiKey.trim() === ""
       ? "No API key configured. This is only OK for providers that do not require one."
       : "Configured"
   });

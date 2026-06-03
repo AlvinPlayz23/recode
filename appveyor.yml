@@ -1,0 +1,18 @@
+image: Visual Studio 2022
+
+branches:
+  only:
+    - /^v.*/
+
+install:
+  - npm install -g bun
+  - bun install
+
+build_script:
+  - cmd: cd desktop-app && cd web && bun install && cd .. && bun install && bun run build && bunx electrobun build --env=stable
+
+artifacts:
+  - path: desktop-app\dist\**\*
+    name: windows-release
+
+test: off

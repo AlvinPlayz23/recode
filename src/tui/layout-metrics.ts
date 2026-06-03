@@ -13,6 +13,7 @@ const EDIT_PREVIEW_MAX_LINES = 24;
 export interface LayoutMetricsPanel {
   readonly items?: readonly unknown[];
   readonly commands?: readonly unknown[];
+  readonly visibleCommands?: readonly unknown[];
   readonly hasMore: boolean;
 }
 
@@ -104,7 +105,7 @@ export function estimateComposerHeight(
   draft: string,
   todoPanelLineCount: number = 0
 ): number {
-  const commandCount = commandPanel?.commands?.length ?? 0;
+  const commandCount = commandPanel?.visibleCommands?.length ?? commandPanel?.commands?.length ?? 0;
   const commandPanelHeight = commandPanel === undefined
     ? 0
     : commandCount + (commandPanel.hasMore ? 2 : 1);

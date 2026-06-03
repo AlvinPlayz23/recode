@@ -19,6 +19,9 @@ describe("provider kind presets", () => {
     expect(parseProviderKind("glm/z-ai")).toBe("z-ai");
     expect(parseProviderKind("glm-coding-plan")).toBe("z-ai-coding");
     expect(parseProviderKind("hf")).toBe("huggingface");
+    expect(parseProviderKind("codex")).toBe("openai-oauth");
+    expect(parseProviderKind("openai-codex")).toBe("openai-oauth");
+    expect(parseProviderKind("chatgpt-oauth")).toBe("openai-oauth");
   });
 
   it("returns native default endpoints", () => {
@@ -27,11 +30,13 @@ describe("provider kind presets", () => {
     expect(getDefaultProviderBaseUrl("deepseek")).toBe("https://api.deepseek.com");
     expect(getDefaultProviderBaseUrl("z-ai-coding")).toBe("https://api.z.ai/api/coding/paas/v4");
     expect(getDefaultProviderBaseUrl("huggingface")).toBe("https://router.huggingface.co/v1");
+    expect(getDefaultProviderBaseUrl("openai-oauth")).toBe("https://chatgpt.com/backend-api");
   });
 
   it("keeps Anthropic out of OpenAI-compatible model listing", () => {
     expect(getDefaultProviderName("anthropic")).toBe("Anthropic");
     expect(providerSupportsModelListing("anthropic")).toBe(false);
     expect(providerSupportsModelListing("aihubmix")).toBe(true);
+    expect(providerSupportsModelListing("openai-oauth")).toBe(true);
   });
 });

@@ -24,9 +24,13 @@ export interface TuiKeyEvent {
  */
 export interface CommandPanelState {
   readonly commands: readonly { readonly command: string; readonly description: string }[];
+  readonly visibleCommands: readonly { readonly command: string; readonly description: string }[];
   readonly hasMore: boolean;
+  readonly visibleStartIndex: number;
   readonly selectedIndex: number;
+  readonly visibleSelectedIndex: number;
   readonly selectedCommand: { readonly command: string; readonly description: string } | undefined;
+  readonly totalCount: number;
 }
 
 /**

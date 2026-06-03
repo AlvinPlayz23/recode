@@ -67,7 +67,7 @@ export interface ThemeColors {
 }
 
 /** Named theme identifiers. */
-export type ThemeName = "senren-dusk" | "matcha-night" | "midnight-ink" | "amber-terminal" | "frost-glass" | "sakura-bloom" | "solarized-light" | "monochrome" | "1998" | "ocean-depth" | "neon-noir" | "paper";
+export type ThemeName = "senren-dusk" | "matcha-night" | "midnight-ink" | "amber-terminal" | "sakura-bloom" | "monochrome" | "1998" | "ocean-depth" | "neon-noir" | "paper";
 
 /** Named tool marker identifiers. */
 export type ToolMarkerName = "arrow" | "hook" | "fancy" | "triangle" | "minimal" | "stylized";
@@ -224,37 +224,6 @@ export const AMBER_TERMINAL_THEME: ThemeColors = {
   diffRemoved: "#5c2010",
 };
 
-/** Cool icy blues light theme. */
-export const FROST_GLASS_THEME: ThemeColors = {
-  text: "#1a2a3a",
-  inverseText: "#f0f6ff",
-  brand: "#2196f3",
-  brandShimmer: "#1565c0",
-  inactive: "#5a7a94",
-  subtle: "#7a94a8",
-  success: "#2e7d32",
-  error: "#c62828",
-  warning: "#f57f17",
-  suggestion: "#1976d2",
-  userMessageBackground: "#e3f0fa",
-  userMessageBackgroundHover: "#d4e6f5",
-  messageActionsBackground: "#c8ddf0",
-  promptBorder: "#90b4d055",
-  bashBorder: "#2196f3",
-  bashMessageBackgroundColor: "#edf5fc",
-  selectionBg: "#b3d4f0",
-  statusText: "#1a4060",
-  hintText: "#5a7a94",
-  divider: "#90b4d0",
-  active: "#2196f3",
-  user: "#c06000",
-  assistantLabel: "#1565c0",
-  assistantBody: "#e8f4ff",
-  tool: "#3a7ab0",
-  diffAdded: "#d4edda",
-  diffRemoved: "#f8d7da",
-};
-
 /** Bright vivid sakura pink theme. */
 export const SAKURA_BLOOM_THEME: ThemeColors = {
   text: "#fff0f5",
@@ -284,37 +253,6 @@ export const SAKURA_BLOOM_THEME: ThemeColors = {
   tool: "#f0a0c0",
   diffAdded: "#1a4030",
   diffRemoved: "#5c1a30",
-};
-
-/** High-contrast solarized-inspired light theme. */
-export const SOLARIZED_LIGHT_THEME: ThemeColors = {
-  text: "#073642",
-  inverseText: "#fdf6e3",
-  brand: "#005f87",
-  brandShimmer: "#003b4d",
-  inactive: "#586e75",
-  subtle: "#657b83",
-  success: "#0b6e4f",
-  error: "#b00020",
-  warning: "#9a6700",
-  suggestion: "#005f87",
-  userMessageBackground: "#eee8d5",
-  userMessageBackgroundHover: "#e4dcc7",
-  messageActionsBackground: "#ddd3bb",
-  promptBorder: "#657b8355",
-  bashBorder: "#005f87",
-  bashMessageBackgroundColor: "#f3ecd9",
-  selectionBg: "#c9d8d0",
-  statusText: "#073642",
-  hintText: "#586e75",
-  divider: "#93a1a1",
-  active: "#005f87",
-  user: "#7c3f00",
-  assistantLabel: "#003b4d",
-  assistantBody: "#fdf6e3",
-  tool: "#005f87",
-  diffAdded: "#d9f0d8",
-  diffRemoved: "#f5d7d9",
 };
 
 /** High-contrast monochrome dark theme. */
@@ -502,25 +440,11 @@ const THEMES: readonly ThemeDefinition[] = [
     promptMarker: "▸"
   },
   {
-    name: "frost-glass",
-    label: "Frost Glass",
-    description: "Cool icy blues on a bright frosted background.",
-    colors: FROST_GLASS_THEME,
-    promptMarker: "❖"
-  },
-  {
     name: "sakura-bloom",
     label: "Sakura Bloom",
     description: "Vivid sakura pink with warm golden accents.",
     colors: SAKURA_BLOOM_THEME,
     promptMarker: "✿"
-  },
-  {
-    name: "solarized-light",
-    label: "Solarized Light",
-    description: "High-contrast light mode tuned for bright rooms and glare.",
-    colors: SOLARIZED_LIGHT_THEME,
-    promptMarker: "›"
   },
   {
     name: "monochrome",

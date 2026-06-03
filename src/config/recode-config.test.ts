@@ -187,8 +187,8 @@ describe("recode config", () => {
   });
 
   it("updates the configured theme", () => {
-    const config = selectConfiguredTheme(createEmptyConfig(), "frost-glass");
-    expect(config.themeName).toBe("frost-glass");
+    const config = selectConfiguredTheme(createEmptyConfig(), "sakura-bloom");
+    expect(config.themeName).toBe("sakura-bloom");
   });
 
   it("updates the configured tool marker", () => {
@@ -300,7 +300,7 @@ describe("recode config", () => {
         selectConfiguredLayoutMode(
           selectConfiguredApprovalMode(
             selectConfiguredTodoPanelEnabled(
-              selectConfiguredTheme(createEmptyConfig(), "frost-glass"),
+              selectConfiguredTheme(createEmptyConfig(), "sakura-bloom"),
               false
             ),
             "auto-edits"
@@ -328,7 +328,7 @@ describe("recode config", () => {
       "gpt-4.1-mini"
     );
 
-    expect(nextConfig.themeName).toBe("frost-glass");
+    expect(nextConfig.themeName).toBe("sakura-bloom");
     expect(nextConfig.approvalMode).toBe("auto-edits");
     expect(nextConfig.layoutMode).toBe("comfortable");
     expect(nextConfig.minimalMode).toBe(true);

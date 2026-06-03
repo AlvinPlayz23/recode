@@ -20,7 +20,8 @@ import {
   type ConfiguredProvider,
   type RecodeConfigFile
 } from "../config/recode-config.ts";
-import { fetchOpenAiCompatibleModels } from "../models/list-models.ts";
+import { fetchOpenAiCompatibleModels, fetchOpenAiOAuthModels, getOpenAiOAuthDefaultModels } from "../models/list-models.ts";
+import { authenticateOpenAiOAuth, ensureOpenAiOAuthSession } from "../providers/openai-oauth-auth.ts";
 import {
   getDefaultProviderBaseUrl,
   getDefaultProviderName,
@@ -310,10 +311,7 @@ function SetupApp(props: SetupAppProps) {
     setStatusMessage("Contacting provider for available models...");
 
     try {
-      const remoteModels = await fetchOpenAiCompatibleModels({
-        baseUrl: current.baseUrl.trim(),
-        ...(current.apiKey.trim() === "" ? {} : { apiKey: current.apiKey.trim() })
-      });
+      const remoteModels = await fetchModelsForSetup(current);
 
       if (remoteModels.length === 0) {
         batch(() => {
@@ -338,9 +336,64 @@ function SetupApp(props: SetupAppProps) {
       });
     } catch (error) {
       batch(() => {
+        const fallbackModels = current.kind === "openai-oauth"
+          ? mergeModelsPreservingMetadata(current.models, getOpenAiOAuthDefaultModels())
+          : current.models;
+        setDraft({
+          ...current,
+          models: fallbackModels,
+          defaultModelId: current.defaultModelId !== "" ? current.defaultModelId : fallbackModels[0]?.id ?? ""
+        });
         setErrorMessage(`Unable to fetch models: ${error instanceof Error ? error.message : String(error)}`);
         setStatusMessage(undefined);
         setStep("modelsManual");
+      });
+    }
+  }
+
+  async function fetchModelsForSetup(current: ProviderDraft): Promise<readonly ConfiguredModel[]> {
+    if (current.kind !== "openai-oauth") {
+      return await fetchOpenAiCompatibleModels({
+        baseUrl: current.baseUrl.trim(),
+        ...(current.apiKey.trim() === "" ? {} : { apiKey: current.apiKey.trim() })
+      });
+    }
+
+    try {
+      return await fetchOpenAiOAuthModels({ baseUrl: current.baseUrl.trim() });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.toLowerCase().includes("not authenticated")) {
+        throw error;
+      }
+    }
+
+    setStatusMessage("Opening browser for OpenAI Codex OAuth login...");
+    await authenticateOpenAiOAuth();
+    return await fetchOpenAiOAuthModels({ baseUrl: current.baseUrl.trim() });
+  }
+
+  async function prepareOpenAiOAuthThenContinue(): Promise<void> {
+    setStep("modelsFetching");
+    setStatusMessage("Checking OpenAI Codex OAuth login...");
+    try {
+      try {
+        await ensureOpenAiOAuthSession();
+      } catch {
+        setStatusMessage("Opening browser for OpenAI Codex OAuth login...");
+        await authenticateOpenAiOAuth();
+      }
+
+      batch(() => {
+        setStatusMessage(undefined);
+        setErrorMessage(undefined);
+        setStep("modelsMode");
+      });
+    } catch (error) {
+      batch(() => {
+        setStatusMessage(undefined);
+        setErrorMessage(`OpenAI OAuth login failed: ${error instanceof Error ? error.message : String(error)}`);
+        setStep("identity");
       });
     }
   }
@@ -484,7 +537,13 @@ function SetupApp(props: SetupAppProps) {
                     baseUrl:
                       current.editingExistingId === undefined || current.baseUrl === ""
                         ? getDefaultProviderBaseUrl(kind)
-                        : current.baseUrl
+                        : current.baseUrl,
+                    models: kind === "openai-oauth" && current.models.length === 0
+                      ? getOpenAiOAuthDefaultModels()
+                      : current.models,
+                    defaultModelId: kind === "openai-oauth" && current.defaultModelId === ""
+                      ? getOpenAiOAuthDefaultModels()[0]?.id ?? ""
+                      : current.defaultModelId
                   });
                   setStep("identity");
                 });
@@ -515,6 +574,10 @@ function SetupApp(props: SetupAppProps) {
                 }
                 clearMessages();
                 setDraft({ ...current, id });
+                if (current.kind === "openai-oauth") {
+                  void prepareOpenAiOAuthThenContinue();
+                  return;
+                }
                 setStep(
                   providerSupportsModelListing(current.kind) ? "modelsMode" : "modelsManual"
                 );
@@ -684,11 +747,11 @@ function WizardChrome(props: WizardChromeProps) {
       </box>
       <box flexDirection="row" marginTop={1} alignItems="center">
         <For each={props.stepLabels}>
-          {(label, index) => {
+          {(_label, index) => {
             const active = () => index() === props.stepIndex;
             const done = () => index() < props.stepIndex;
             return (
-              <box flexDirection="row" alignItems="center" marginRight={1}>
+              <box flexDirection="row" alignItems="center">
                 <text
                   fg={
                     active()
@@ -699,10 +762,10 @@ function WizardChrome(props: WizardChromeProps) {
                   }
                   attributes={active() ? TextAttributes.BOLD : TextAttributes.NONE}
                 >
-                  {`${done() ? "✓" : active() ? "●" : "○"} ${label}`}
+                  {done() ? "●" : active() ? "●" : "○"}
                 </text>
                 <Show when={index() < props.stepLabels.length - 1}>
-                  <text fg={props.theme.divider}> · </text>
+                  <text fg={done() || active() ? props.theme.divider : props.theme.hintText}>────</text>
                 </Show>
               </box>
             );

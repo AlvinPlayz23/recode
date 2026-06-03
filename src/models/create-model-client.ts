@@ -11,7 +11,7 @@ import type { RuntimeConfig } from "../runtime/runtime-config.ts";
  * Build the internal AI model descriptor from runtime configuration.
  *
  * - anthropic: Anthropic Messages API
- * - openai: OpenAI Responses API
+ * - openai and openai-oauth: OpenAI Responses API
  * - openai-chat and native compatible providers: OpenAI Chat Completions API
  */
 export function createLanguageModel(config: RuntimeConfig): AiModel {
@@ -46,6 +46,7 @@ function resolveApiKind(provider: RuntimeConfig["provider"]): AiModel["api"] {
     case "huggingface":
       return "openai-chat-completions";
     case "openai":
+    case "openai-oauth":
       return "openai-responses";
   }
 }

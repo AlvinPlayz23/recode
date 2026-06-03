@@ -195,32 +195,34 @@ function CommandSuggestionsPanel(props: {
         <box flexDirection="row" justifyContent="space-between" alignItems="center">
           <text fg={props.theme.brandShimmer} attributes={TextAttributes.BOLD}>commands</text>
           <text fg={props.theme.hintText} attributes={TextAttributes.DIM}>
-            {`${props.panel!.commands.length} match${props.panel!.commands.length === 1 ? "" : "es"}`}
+            {`${props.panel!.totalCount} match${props.panel!.totalCount === 1 ? "" : "es"}`}
           </text>
         </box>
         <Show
-          when={props.panel!.commands.length > 0}
+          when={props.panel!.totalCount > 0}
           fallback={<text fg={props.theme.hintText}>No command found. Use /help to see available commands.</text>}
         >
-          <For each={props.panel!.commands}>
+          <For each={props.panel!.visibleCommands}>
             {(command, index) => (
               <box flexDirection="row" gap={1}>
                 <box width={18} flexShrink={0}>
                   <text
-                    fg={index() === props.panel!.selectedIndex ? props.theme.brandShimmer : props.theme.text}
-                    attributes={index() === props.panel!.selectedIndex ? TextAttributes.BOLD : TextAttributes.NONE}
+                    fg={index() === props.panel!.visibleSelectedIndex ? props.theme.brandShimmer : props.theme.text}
+                    attributes={index() === props.panel!.visibleSelectedIndex ? TextAttributes.BOLD : TextAttributes.NONE}
                   >
-                    {`${index() === props.panel!.selectedIndex ? "›" : " "} ${command.command}`}
+                    {`${index() === props.panel!.visibleSelectedIndex ? "›" : " "} ${command.command}`}
                   </text>
                 </box>
                 <box flexGrow={1} flexShrink={1} minWidth={0}>
-                  <text fg={index() === props.panel!.selectedIndex ? props.theme.brandShimmer : props.theme.hintText}>{command.description}</text>
+                  <text fg={index() === props.panel!.visibleSelectedIndex ? props.theme.brandShimmer : props.theme.hintText}>{command.description}</text>
                 </box>
               </box>
             )}
           </For>
           <Show when={props.panel!.hasMore}>
-            <text fg={props.theme.hintText} attributes={TextAttributes.DIM}>… more commands available</text>
+            <text fg={props.theme.hintText} attributes={TextAttributes.DIM}>
+              {`${props.panel!.visibleStartIndex + 1}-${props.panel!.visibleStartIndex + props.panel!.visibleCommands.length} of ${props.panel!.totalCount}`}
+            </text>
           </Show>
         </Show>
         <box flexDirection="row" justifyContent="space-between" marginTop={1}>

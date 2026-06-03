@@ -118,9 +118,13 @@ describe("keyboard router helpers", () => {
       key,
       panel: {
         commands: [{ command: "/history", description: "Open history" }],
+        visibleCommands: [{ command: "/history", description: "Open history" }],
         hasMore: false,
+        visibleStartIndex: 0,
         selectedIndex: 0,
-        selectedCommand: { command: "/history", description: "Open history" }
+        visibleSelectedIndex: 0,
+        selectedCommand: { command: "/history", description: "Open history" },
+        totalCount: 1
       },
       clearDraft() {
         throw new Error("should not clear");

@@ -19,7 +19,8 @@ import {
   type ConfiguredModel,
   type ConfiguredProvider
 } from "../config/recode-config.ts";
-import { fetchOpenAiCompatibleModels } from "../models/list-models.ts";
+import { fetchOpenAiCompatibleModels, fetchOpenAiOAuthModels, getOpenAiOAuthDefaultModels } from "../models/list-models.ts";
+import { authenticateOpenAiOAuthFromInput, createOpenAiOAuthAuthorizationUrl } from "../providers/openai-oauth-auth.ts";
 import {
   getDefaultProviderBaseUrl,
   getDefaultProviderName,
@@ -136,6 +137,9 @@ async function promptForProvider(
     "Provider request options as JSON (leave blank for defaults)",
     existingProvider?.options
   );
+  if (providerKind === "openai-oauth") {
+    await promptOpenAiOAuthLogin(rl);
+  }
   const shouldFetchModels = !providerSupportsModelListing(providerKind)
     ? false
     : await promptBooleanSelect(rl, "How should models be added?", true, "Fetch from /models", "Enter model IDs manually");
@@ -145,10 +149,12 @@ async function promptForProvider(
 
   if (shouldFetchModels) {
     try {
-      const remoteModels = await fetchOpenAiCompatibleModels({
-        baseUrl,
-        ...(apiKey === undefined || apiKey === "" ? {} : { apiKey })
-      });
+      const remoteModels = providerKind === "openai-oauth"
+        ? await fetchOpenAiOAuthModels({ baseUrl })
+        : await fetchOpenAiCompatibleModels({
+            baseUrl,
+            ...(apiKey === undefined || apiKey === "" ? {} : { apiKey })
+          });
 
       if (remoteModels.length > 0) {
         models = mergeModelsPreservingMetadata(existingProvider?.models ?? [], remoteModels);
@@ -169,6 +175,10 @@ async function promptForProvider(
   }
 
   if (models.length === 0 || defaultModelId === undefined || defaultModelId === "") {
+    if (providerKind === "openai-oauth" && models.length === 0) {
+      models = getOpenAiOAuthDefaultModels();
+      defaultModelId = models[0]?.id;
+    }
     const manualModelIds = await askOptional(
       rl,
       "Comma-separated model IDs to store",
@@ -215,6 +225,17 @@ async function promptForProvider(
     },
     makeActive
   };
+}
+
+async function promptOpenAiOAuthLogin(rl: Interface): Promise<void> {
+  const flow = await createOpenAiOAuthAuthorizationUrl();
+  console.log("");
+  console.log("OpenAI Codex OAuth login");
+  console.log("Open this URL, complete login, then paste the full callback URL or code:");
+  console.log(flow.url);
+  const callbackInput = await askRequired(rl, "OAuth callback URL or code");
+  await authenticateOpenAiOAuthFromInput(callbackInput, flow.verifier);
+  console.log("OAuth token saved.");
 }
 
 async function selectProviderChoice(
