@@ -12,7 +12,17 @@ build_script:
   - cmd: cd desktop-app && cd web && bun install && cd .. && bun install && bun run build && bunx electrobun build --env=stable
 
 artifacts:
-  - path: desktop-app\dist\**\*
+  - path: desktop-app\build\stable-win-x64\Recode-Setup.zip
     name: windows-release
+
+deploy:
+  provider: GitHub
+  auth_token:
+    secure: En2ShShIjO9uMCDnGLU005CVlzpSzctpSeXIPHdsSCaNIQ5LjARsIU+Z8p0tyNiK
+  artifact: windows-release
+  draft: false
+  prerelease: false
+  on:
+    appveyor_repo_tag: true
 
 test: off
