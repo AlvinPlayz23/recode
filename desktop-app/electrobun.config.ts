@@ -1,6 +1,8 @@
 import type { ElectrobunConfig } from "electrobun";
 
 export default {
+  // Added baseUrl pointing to your GitHub Releases for auto-updates/patches
+  baseUrl: "https://github.com/AlvinPlayz23/recode/releases/latest/download/",
   app: {
     name: "Recode",
     identifier: "dev.recode.desktop",

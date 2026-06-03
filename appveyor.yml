@@ -9,10 +9,15 @@ install:
   - bun install
 
 build_script:
-  - cmd: cd desktop-app && cd web && bun install && cd .. && bun install && bun run build && bunx electrobun build --env=stable
+  # 1. Install web frontend dependencies and build the frontend asset bundle first
+  - cmd: cd desktop-app\web && bun install && bun run build
+  # 2. Go back to desktop-app root, install its deps, and run the electrobun build
+  - cmd: cd .. && bun install && bunx electrobun build --env=stable
 
 artifacts:
-  - path: 'desktop-app\build\**\*.zip'
+  # Electrobun explicitly logs "creating artifacts folder... moving artifacts..."
+  # It moves the final zip to the root-level 'artifacts' folder.
+  - path: 'artifacts\*.zip'
     name: windows-release
 
 deploy:
