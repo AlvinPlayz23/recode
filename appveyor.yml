@@ -9,10 +9,14 @@ install:
   - bun install
 
 build_script:
-  # 1. Install web frontend dependencies and build the frontend asset bundle first
-  - cmd: cd desktop-app\web && bun install && bun run build
-  # 2. Go back to desktop-app root, install its deps, and run the electrobun build
-  - cmd: cd .. && bun install && bunx electrobun build --env=stable
+  # 1. First, go into the main desktop app folder and install dependencies so Electrobun is fully available
+  - cmd: cd desktop-app && bun install
+
+  # 2. Next, go into the web folder, install its dependencies, and build the frontend assets
+  - cmd: cd web && bun install && bun run build
+
+  # 3. Finally, drop back to the desktop app folder and execute the final electrobun production build
+  - cmd: cd .. && bunx electrobun build --env=stable
 
 artifacts:
   # Electrobun explicitly logs "creating artifacts folder... moving artifacts..."
