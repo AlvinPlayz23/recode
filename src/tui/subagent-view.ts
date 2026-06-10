@@ -8,6 +8,8 @@ import {
   createEntry,
   createToolCallUiEntry,
   createToolResultUiEntry,
+  pruneBashToolOutputMetadata,
+  pruneBashToolOutputTranscript,
   rehydrateEntriesFromTranscript,
   replaceTaskToolCallEntryWithResult,
   type UiEntry
@@ -51,11 +53,14 @@ export interface CreateLiveSubagentTaskInput {
   readonly model: string;
   readonly status: LiveSubagentTask["status"];
   readonly error?: string;
+  readonly retainBashToolOutput?: boolean;
 }
 
 /** Create one live task from explicit metadata. */
 export function createLiveSubagentTask(input: CreateLiveSubagentTaskInput): LiveSubagentTask {
-  const transcript = input.transcript ?? [];
+  const transcript = input.retainBashToolOutput === false
+    ? pruneBashToolOutputTranscript(input.transcript ?? [])
+    : input.transcript ?? [];
   return {
     id: input.id,
     subagentType: input.subagentType,
@@ -75,10 +80,14 @@ export function createLiveSubagentTask(input: CreateLiveSubagentTaskInput): Live
 }
 
 /** Convert saved subagent records into live-view state. */
-export function createLiveSubagentTasksFromRecords(records: readonly SubagentTaskRecord[]): readonly LiveSubagentTask[] {
+export function createLiveSubagentTasksFromRecords(
+  records: readonly SubagentTaskRecord[],
+  retainBashToolOutput = true
+): readonly LiveSubagentTask[] {
   return records.map((record) => createLiveSubagentTask({
     ...record,
-    status: "completed"
+    status: "completed",
+    retainBashToolOutput
   }));
 }
 
@@ -98,11 +107,13 @@ export function upsertLiveSubagentTask(
 /** Complete a live task from its durable subagent record. */
 export function completeLiveSubagentTask(
   tasks: readonly LiveSubagentTask[],
-  record: SubagentTaskRecord
+  record: SubagentTaskRecord,
+  retainBashToolOutput = true
 ): readonly LiveSubagentTask[] {
   return upsertLiveSubagentTask(tasks, createLiveSubagentTask({
     ...record,
-    status: "completed"
+    status: "completed",
+    retainBashToolOutput
   }));
 }
 
@@ -235,11 +246,12 @@ export function appendLiveSubagentToolResult(
       }
     }
 
+    const metadata = pruneBashToolOutputMetadata(toolResult.metadata);
     const toolResultEntry = createToolResultUiEntry(
       toolResult.toolName,
       toolResult.content,
       toolResult.isError,
-      toolResult.metadata,
+      metadata,
       toolResult.toolCallId
     );
     if (toolResultEntry !== undefined) {

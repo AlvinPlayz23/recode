@@ -10,6 +10,7 @@ import {
   extractLatestTodosFromTranscript,
   formatToolCallEntry,
   markToolCallEntryFinished,
+  pruneBashToolOutputEntries,
   rehydrateEntriesFromTranscript,
   replaceTaskToolCallEntryWithResult,
   renderVisibleEntries,
@@ -405,5 +406,34 @@ describe("transcript entry helpers", () => {
       ["tool-group", "2 tool calls (collapsed)"],
       ["assistant", "done"]
     ]);
+  });
+
+  it("prunes Bash output text from entries while preserving the tool call row", () => {
+    const bashEntry = createToolCallUiEntry({
+      id: "call_bash",
+      name: "Bash",
+      argumentsJson: JSON.stringify({ command: "ls" })
+    });
+    const updated = updateToolCallEntryMetadata(
+      bashEntry === undefined ? [] : [bashEntry],
+      "call_bash",
+      { metadata: { kind: "bash-output", command: "ls", output: "file1\nfile2" } }
+    );
+
+    expect(updated[0]?.metadata).toEqual({ kind: "bash-output", command: "ls", output: "file1\nfile2" });
+
+    const pruned = pruneBashToolOutputEntries(updated);
+
+    expect(pruned).toHaveLength(1);
+    expect(pruned[0]?.kind).toBe("tool-preview");
+    expect(pruned[0]?.metadata).toEqual({ kind: "bash-output", command: "ls", output: "" });
+  });
+
+  it("pruneBashToolOutputEntries does not affect non-Bash entries", () => {
+    const entries = [
+      createEntry("assistant", "Recode", "hello")
+    ];
+    const pruned = pruneBashToolOutputEntries(entries);
+    expect(pruned).toEqual(entries);
   });
 });

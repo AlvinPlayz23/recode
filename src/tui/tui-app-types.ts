@@ -44,7 +44,7 @@ export interface CustomizeRowOption {
  * One row in the customize overlay.
  */
 export interface CustomizeRow {
-  readonly id: "tool-marker" | "theme" | "todo-panel";
+  readonly id: "tool-marker" | "theme" | "todo-panel" | "bash-output";
   readonly label: string;
   readonly option: CustomizeRowOption;
   readonly description: string;

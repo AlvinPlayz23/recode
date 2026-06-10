@@ -207,7 +207,7 @@ function summarizeTranscriptSteps(transcript: readonly ConversationMessage[]): {
     totalToolCalls,
     totalTokens: totalUsage === undefined
       ? 0
-      : totalUsage.input + totalUsage.output + totalUsage.reasoning + totalUsage.cacheRead + totalUsage.cacheWrite,
+      : totalUsage.input + totalUsage.output,
     ...(lastFinishReason === undefined ? {} : { lastFinishReason }),
     ...(lastDurationMs === undefined ? {} : { lastDurationMs })
   };

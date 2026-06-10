@@ -23,6 +23,7 @@ export interface RecodeConfigPatch {
   readonly layoutMode?: LayoutMode;
   readonly minimalMode?: boolean;
   readonly todoPanelEnabled?: boolean;
+  readonly retainBashToolOutput?: boolean;
   readonly agents?: Readonly<Record<string, ConfiguredAgent>>;
   readonly providers?: readonly ConfiguredProvider[];
 }
@@ -43,6 +44,7 @@ export function patchRecodeConfig(
   const layoutMode = patch.layoutMode ?? config.layoutMode;
   const minimalMode = patch.minimalMode ?? config.minimalMode;
   const todoPanelEnabled = patch.todoPanelEnabled ?? config.todoPanelEnabled;
+  const retainBashToolOutput = patch.retainBashToolOutput ?? config.retainBashToolOutput;
   const agents = patch.agents ?? config.agents;
 
   return {
@@ -57,6 +59,7 @@ export function patchRecodeConfig(
     ...(layoutMode === undefined ? {} : { layoutMode }),
     ...(minimalMode === undefined ? {} : { minimalMode }),
     ...(todoPanelEnabled === undefined ? {} : { todoPanelEnabled }),
+    ...(retainBashToolOutput === undefined ? {} : { retainBashToolOutput }),
     ...(agents === undefined ? {} : { agents })
   };
 }

@@ -10,7 +10,7 @@ import {
   type JsonValue
 } from "../shared/json-value.ts";
 
-const DEFAULT_MAX_RETRIES = 2;
+const DEFAULT_MAX_RETRIES = 4;
 const DEFAULT_RETRY_INITIAL_DELAY_MS = 750;
 const DEFAULT_RETRY_MAX_DELAY_MS = 8_000;
 const DEFAULT_TIMEOUT_MS = 120_000;

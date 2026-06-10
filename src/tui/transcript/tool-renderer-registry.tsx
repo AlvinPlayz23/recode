@@ -210,6 +210,10 @@ function BashToolBlock(props: ToolPreviewRendererProps): JSX.Element | undefined
     return undefined;
   }
 
+  if (props.metadata.output.trim() === "") {
+    return undefined;
+  }
+
   return (
     <ExpandableBashToolBlock
       metadata={props.metadata}

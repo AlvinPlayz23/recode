@@ -692,7 +692,7 @@ describe("provider stream fixtures", () => {
         info: {
           finishReason: "tool_use",
           tokenUsage: {
-            input: 5,
+            input: 8,
             output: 9,
             reasoning: 0,
             cacheRead: 2,

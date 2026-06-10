@@ -137,4 +137,56 @@ describe("prompt turn session", () => {
       }
     ]);
   });
+
+  test("compacts high-frequency stream events for persisted session history", () => {
+    let sessionEvents: readonly SessionEvent[] = [];
+    const turn = createPromptTurnSession({
+      baseEntries: [],
+      baseSessionEvents: [],
+      workspaceRoot: "/workspace",
+      setEntries() {},
+      setSessionEvents(value) {
+        sessionEvents = value;
+      },
+      setBusyPhase() {},
+      getBusyPhase() {
+        return "thinking";
+      },
+      setProviderStatusText() {},
+      invalidateWorkspaceFileSuggestions() {},
+      bumpFileSuggestionVersion() {},
+      setTodos() {},
+      closeTodoDropup() {},
+      setTranscriptMessages() {},
+      setLastContextEstimate() {}
+    });
+
+    turn.handleSessionEvent({ type: "assistant.step.started", timestamp: 1, stepId: "step" });
+    turn.handleSessionEvent({ type: "assistant.text.delta", timestamp: 2, stepId: "step", delta: "hel" });
+    turn.handleSessionEvent({ type: "assistant.text.delta", timestamp: 3, stepId: "step", delta: "lo" });
+    turn.handleSessionEvent({
+      type: "tool.metadata.updated",
+      timestamp: 4,
+      toolCallId: "bash",
+      toolName: "Bash",
+      update: { metadata: { kind: "bash-output", command: "cmd", output: "first" } }
+    });
+    turn.handleSessionEvent({
+      type: "tool.metadata.updated",
+      timestamp: 5,
+      toolCallId: "bash",
+      toolName: "Bash",
+      update: { metadata: { kind: "bash-output", command: "cmd", output: "second" } }
+    });
+
+    expect(sessionEvents).toHaveLength(3);
+    expect(sessionEvents[1]).toMatchObject({
+      type: "assistant.text.delta",
+      delta: "hello"
+    });
+    expect(sessionEvents[2]).toMatchObject({
+      type: "tool.metadata.updated",
+      update: { metadata: { kind: "bash-output", output: "second" } }
+    });
+  });
 });

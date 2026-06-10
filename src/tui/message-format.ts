@@ -8,7 +8,7 @@
  * Built-in TUI command names.
  */
 export type BuiltinCommandName =
-  "help" | "clear" | "status" | "config" | "models" | "provider" | "theme" | "customize" | "todos" | "context-window" | "approval-mode" | "export" | "export-md" | "history" | "new" | "init" | "fork" | "compact" | "plan" | "build" | "layout" | "minimal" | "exit" | "quit";
+  "help" | "clear" | "status" | "config" | "models" | "provider" | "theme" | "customize" | "settings" | "todos" | "context-window" | "approval-mode" | "export" | "export-md" | "history" | "new" | "init" | "fork" | "compact" | "plan" | "build" | "layout" | "minimal" | "exit" | "quit";
 
 /**
  * Built-in TUI command definition.
@@ -35,7 +35,8 @@ const BUILTIN_COMMANDS: readonly BuiltinCommandDefinition[] = [
   { name: "models", command: "/models", description: "Open the model selector" },
   { name: "provider", command: "/provider", description: "Select, enable, or disable providers" },
   { name: "theme", command: "/theme", description: "Open the theme selector" },
-  { name: "customize", command: "/customize", description: "Customize theme and tool marker" },
+  { name: "customize", command: "/customize", description: "Customize theme, tool marker, and settings" },
+  { name: "settings", command: "/settings", description: "Open the settings popup" },
   { name: "todos", command: "/todos", description: "Toggle the composer todo panel" },
   { name: "context-window", command: "/context-window", description: "Set the active model context window" },
   { name: "approval-mode", command: "/approval-mode", description: "Open the approval mode selector" },
@@ -63,6 +64,7 @@ const BUILTIN_COMMAND_ALIASES: Readonly<Record<string, BuiltinCommandName>> = {
   "/provider": "provider",
   "/theme": "theme",
   "/customize": "customize",
+  "/settings": "settings",
   "/todos": "todos",
   "/context-window": "context-window",
   "/approval-mode": "approval-mode",

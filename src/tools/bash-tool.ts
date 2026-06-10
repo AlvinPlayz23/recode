@@ -13,6 +13,7 @@ interface BashToolInput {
 }
 
 const MAX_OUTPUT_LENGTH = 12_000;
+const MAX_CAPTURED_STREAM_LENGTH = MAX_OUTPUT_LENGTH * 2;
 const DEFAULT_BASH_TIMEOUT_MS = 30_000;
 
 /**
@@ -74,22 +75,22 @@ export function createBashTool(): ToolDefinition {
           return;
         }
 
-        liveOutput += chunk;
+        liveOutput = appendBoundedText(liveOutput, chunk, MAX_OUTPUT_LENGTH);
         await context.updateToolMetadata?.({
           title: input.command,
           content: liveOutput,
           metadata: {
             kind: "bash-output",
             command: input.command,
-            output: truncateText(liveOutput)
+            output: liveOutput
           }
         });
       };
 
       try {
         const [stdout, stderr, exitCode] = await Promise.all([
-          streamToText(proc.stdout, publishOutput),
-          streamToText(proc.stderr, publishOutput),
+          streamToText(proc.stdout, publishOutput, MAX_CAPTURED_STREAM_LENGTH),
+          streamToText(proc.stderr, publishOutput, MAX_CAPTURED_STREAM_LENGTH),
           proc.exited
         ]);
 
@@ -136,7 +137,8 @@ function parseBashToolInput(arguments_: ToolArguments): BashToolInput {
 
 async function streamToText(
   stream: ReadableStream<Uint8Array> | number | null,
-  onChunk?: (chunk: string) => Promise<void>
+  onChunk?: (chunk: string) => Promise<void>,
+  maxLength = MAX_CAPTURED_STREAM_LENGTH
 ): Promise<string> {
   if (stream === null || typeof stream === "number") {
     return "";
@@ -148,14 +150,23 @@ async function streamToText(
 
   for await (const value of chunks) {
     const chunk = decoder.decode(value, { stream: true });
-    output += chunk;
+    output = appendBoundedText(output, chunk, maxLength);
     await onChunk?.(chunk);
   }
 
   const tail = decoder.decode();
-  output += tail;
+  output = appendBoundedText(output, tail, maxLength);
   await onChunk?.(tail);
   return output;
+}
+
+function appendBoundedText(current: string, chunk: string, maxLength: number): string {
+  const next = `${current}${chunk}`;
+  if (next.length <= maxLength) {
+    return next;
+  }
+
+  return `${next.slice(0, maxLength)}\n\n[truncated]`;
 }
 
 function formatProcessResult(

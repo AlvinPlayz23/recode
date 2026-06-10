@@ -12,6 +12,9 @@ import {
 import type { ConversationMessage } from "../../transcript/message.ts";
 import type { TodoItem } from "../../tools/tool.ts";
 import {
+  pruneBashToolOutputEntries,
+  pruneBashToolOutputSessionEvent,
+  pruneBashToolOutputTranscript,
   uiEntriesFromSessionState,
   type SetUiEntries,
   type UiEntry
@@ -35,6 +38,7 @@ export interface PromptTurnSessionOptions {
   readonly closeTodoDropup: () => void;
   readonly setTranscriptMessages: (value: readonly ConversationMessage[]) => void;
   readonly setLastContextEstimate: (value: ContextTokenEstimate) => void;
+  readonly retainBashToolOutput?: () => boolean;
 }
 
 /** Mutable controller for the current prompt turn. */
@@ -51,11 +55,15 @@ export function createPromptTurnSession(options: PromptTurnSessionOptions): Prom
   let latestTranscript: readonly ConversationMessage[] | undefined;
   let turnSessionEvents: SessionEvent[] = [];
   let turnSessionState: SessionState = createEmptySessionState();
+  const retainBashToolOutput = options.retainBashToolOutput ?? (() => true);
 
   const syncTurnSessionEntries = () => {
-    options.setEntries(() => [
+    const projectedEntries = [
       ...options.baseEntries,
       ...uiEntriesFromSessionState(turnSessionState)
+    ];
+    options.setEntries(() => [
+      ...(retainBashToolOutput() ? projectedEntries : pruneBashToolOutputEntries(projectedEntries))
     ]);
   };
 
@@ -70,12 +78,15 @@ export function createPromptTurnSession(options: PromptTurnSessionOptions): Prom
   };
 
   const handleSessionEvent = (event: SessionEvent) => {
-    turnSessionEvents = [...turnSessionEvents, event];
+    const memoryEvent = retainBashToolOutput()
+      ? event
+      : pruneBashToolOutputSessionEvent(event);
+    turnSessionEvents = appendCompactSessionEvent(turnSessionEvents, memoryEvent);
     options.setSessionEvents([...options.baseSessionEvents, ...turnSessionEvents]);
-    turnSessionState = applySessionEvent(turnSessionState, event);
+    turnSessionState = applySessionEvent(turnSessionState, memoryEvent);
     syncTurnSessionEntries();
 
-    switch (event.type) {
+    switch (memoryEvent.type) {
       case "assistant.text.delta":
         if (options.getBusyPhase() === "retrying") {
           options.setBusyPhase("thinking");
@@ -88,7 +99,7 @@ export function createPromptTurnSession(options: PromptTurnSessionOptions): Prom
         break;
       case "tool.completed":
       case "tool.errored": {
-        const toolResult = event.toolResult;
+        const toolResult = memoryEvent.toolResult;
         options.setBusyPhase("thinking");
         options.setProviderStatusText(undefined);
         options.invalidateWorkspaceFileSuggestions(options.workspaceRoot);
@@ -114,9 +125,11 @@ export function createPromptTurnSession(options: PromptTurnSessionOptions): Prom
     handleSessionEvent,
 
     handleTranscriptUpdate(transcript) {
-      latestTranscript = transcript;
-      options.setTranscriptMessages(transcript);
-      options.setLastContextEstimate(estimateConversationContextTokens(transcript));
+      latestTranscript = retainBashToolOutput()
+        ? transcript
+        : pruneBashToolOutputTranscript(transcript);
+      options.setTranscriptMessages(latestTranscript);
+      options.setLastContextEstimate(estimateConversationContextTokens(latestTranscript));
     },
     buildTranscriptSnapshot() {
       return buildPromptTranscriptSnapshot(latestTranscript, latestProjectedAssistantText());
@@ -128,6 +141,68 @@ export function createPromptTurnSession(options: PromptTurnSessionOptions): Prom
       return [...options.baseSessionEvents, ...turnSessionEvents];
     }
   };
+}
+
+function appendCompactSessionEvent(events: readonly SessionEvent[], event: SessionEvent): SessionEvent[] {
+  const previous = events.at(-1);
+
+  if (
+    previous?.type === "assistant.text.delta"
+    && event.type === "assistant.text.delta"
+    && previous.stepId === event.stepId
+  ) {
+    return [
+      ...events.slice(0, -1),
+      {
+        ...event,
+        timestamp: previous.timestamp,
+        delta: previous.delta + event.delta
+      }
+    ];
+  }
+
+  if (
+    previous?.type === "assistant.reasoning.delta"
+    && event.type === "assistant.reasoning.delta"
+    && previous.stepId === event.stepId
+  ) {
+    return [
+      ...events.slice(0, -1),
+      {
+        ...event,
+        timestamp: previous.timestamp,
+        delta: previous.delta + event.delta
+      }
+    ];
+  }
+
+  if (event.type === "tool.metadata.updated") {
+    const previousMetadataIndex = findLastIndex(events, (item) =>
+      item.type === "tool.metadata.updated"
+      && item.toolCallId === event.toolCallId
+      && item.toolName === event.toolName
+    );
+
+    if (previousMetadataIndex !== -1) {
+      return events.map((item, index) =>
+        index === previousMetadataIndex
+          ? { ...event, timestamp: item.timestamp }
+          : item
+      );
+    }
+  }
+
+  return [...events, event];
+}
+
+function findLastIndex<T>(items: readonly T[], predicate: (item: T) => boolean): number {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (predicate(items[index]!)) {
+      return index;
+    }
+  }
+
+  return -1;
 }
 
 const TOOL_ARG_KEYS = ["command", "path", "file_path", "pattern", "query", "description"] as const;

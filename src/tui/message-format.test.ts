@@ -31,6 +31,7 @@ describe("tui message format", () => {
     expect(parseBuiltinCommand("/provider")).toEqual({ name: "provider", raw: "/provider" });
     expect(parseBuiltinCommand("/theme")).toEqual({ name: "theme", raw: "/theme" });
     expect(parseBuiltinCommand("/customize")).toEqual({ name: "customize", raw: "/customize" });
+    expect(parseBuiltinCommand("/settings")).toEqual({ name: "settings", raw: "/settings" });
     expect(parseBuiltinCommand("/todos")).toEqual({ name: "todos", raw: "/todos" });
     expect(parseBuiltinCommand("/context-window")).toEqual({ name: "context-window", raw: "/context-window" });
     expect(parseBuiltinCommand("/approval-mode")).toEqual({ name: "approval-mode", raw: "/approval-mode" });
@@ -56,7 +57,8 @@ describe("tui message format", () => {
       { name: "models", command: "/models", description: "Open the model selector" },
       { name: "provider", command: "/provider", description: "Select, enable, or disable providers" },
       { name: "theme", command: "/theme", description: "Open the theme selector" },
-      { name: "customize", command: "/customize", description: "Customize theme and tool marker" },
+      { name: "customize", command: "/customize", description: "Customize theme, tool marker, and settings" },
+      { name: "settings", command: "/settings", description: "Open the settings popup" },
       { name: "todos", command: "/todos", description: "Toggle the composer todo panel" },
       { name: "context-window", command: "/context-window", description: "Set the active model context window" },
       { name: "approval-mode", command: "/approval-mode", description: "Open the approval mode selector" },
@@ -86,6 +88,7 @@ describe("tui message format", () => {
       "/provider",
       "/theme",
       "/customize",
+      "/settings",
       "/todos",
       "/context-window",
       "/approval-mode",
@@ -105,6 +108,9 @@ describe("tui message format", () => {
     ]);
     expect(findBuiltinCommands("/st")).toEqual([
       { name: "status", command: "/status", description: "Show the current session status" }
+    ]);
+    expect(findBuiltinCommands("/se")).toEqual([
+      { name: "settings", command: "/settings", description: "Open the settings popup" }
     ]);
     expect(findBuiltinCommands("hello")).toEqual([]);
   });

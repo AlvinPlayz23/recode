@@ -384,7 +384,9 @@ function countContextWindowTokens(tokenUsage: StepTokenUsage | undefined): numbe
     return undefined;
   }
 
-  return tokenUsage.input + tokenUsage.output + tokenUsage.cacheRead + tokenUsage.cacheWrite;
+  // input/output are normalized parent totals. Cache and reasoning fields are
+  // breakdowns, so adding them here would double-count providers like OpenAI.
+  return tokenUsage.input + tokenUsage.output;
 }
 
 async function summarizeCompactionWindow(

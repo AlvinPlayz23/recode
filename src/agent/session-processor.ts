@@ -18,7 +18,7 @@ import { ToolRegistry } from "../tools/tool-registry.ts";
 import type { StepStats } from "./step-stats.ts";
 import { SUBAGENT_TASK_CONCURRENCY_LIMIT } from "./subagent.ts";
 
-const DOOM_LOOP_TURN_LIMIT = 3;
+const DOOM_LOOP_TURN_LIMIT = 15;
 const DEFAULT_PARALLEL_TOOL_LIMIT = 6;
 
 type ToolScheduleMode = "parallel" | "sequential" | "mutation";

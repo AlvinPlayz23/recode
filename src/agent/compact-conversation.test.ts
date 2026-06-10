@@ -183,7 +183,32 @@ describe("compact conversation", () => {
     );
 
     expect(estimate.source).toBe("usage-based");
-    expect(estimate.estimatedTokens).toBeGreaterThan(150);
+    expect(estimate.estimatedTokens).toBe(148);
+  });
+
+  it("does not double-count provider usage breakdown fields", () => {
+    const estimate = estimateConversationContextTokens([
+      {
+        role: "assistant",
+        content: "cached reply",
+        toolCalls: [],
+        stepStats: {
+          finishReason: "stop",
+          durationMs: 10,
+          toolCallCount: 0,
+          tokenUsage: {
+            input: 150_000,
+            output: 2_000,
+            reasoning: 1_000,
+            cacheRead: 100_000,
+            cacheWrite: 0
+          }
+        }
+      }
+    ]);
+
+    expect(estimate.source).toBe("usage-based");
+    expect(estimate.estimatedTokens).toBe(152_000);
   });
 
   it("falls back to rough estimation when no usage metadata exists", () => {

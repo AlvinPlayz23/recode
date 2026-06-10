@@ -173,6 +173,7 @@ async function executeBuiltinCommand(
       options.openThemePicker();
       return;
     case "customize":
+    case "settings":
       options.openCustomizePicker();
       return;
     case "todos":

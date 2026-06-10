@@ -79,6 +79,7 @@ export interface RecodeConfigFile {
   readonly layoutMode?: LayoutMode;
   readonly minimalMode?: boolean;
   readonly todoPanelEnabled?: boolean;
+  readonly retainBashToolOutput?: boolean;
   readonly agents?: Readonly<Record<string, ConfiguredAgent>>;
   readonly providers: readonly ConfiguredProvider[];
 }
@@ -331,6 +332,16 @@ export function selectConfiguredTodoPanelEnabled(
   return patchRecodeConfig(config, { todoPanelEnabled });
 }
 
+/**
+ * Update whether Bash output previews are retained in TUI memory.
+ */
+export function selectConfiguredRetainBashToolOutput(
+  config: RecodeConfigFile,
+  retainBashToolOutput: boolean
+): RecodeConfigFile {
+  return patchRecodeConfig(config, { retainBashToolOutput });
+}
+
 function parseRecodeConfigFile(value: unknown): RecodeConfigFile {
   if (!isRecord(value)) {
     return createEmptyConfig();
@@ -346,6 +357,7 @@ function parseRecodeConfigFile(value: unknown): RecodeConfigFile {
   const layoutMode = readOptionalLayoutMode(value, "layoutMode");
   const minimalMode = readOptionalBoolean(value, "minimalMode");
   const todoPanelEnabled = readOptionalBoolean(value, "todoPanelEnabled");
+  const retainBashToolOutput = readOptionalBoolean(value, "retainBashToolOutput");
   const agents = readOptionalConfiguredAgents(value, "agents");
   const providersValue = value["providers"];
   const providers = Array.isArray(providersValue)
@@ -363,6 +375,7 @@ function parseRecodeConfigFile(value: unknown): RecodeConfigFile {
     ...(layoutMode === undefined ? {} : { layoutMode }),
     ...(minimalMode === undefined ? {} : { minimalMode }),
     ...(todoPanelEnabled === undefined ? {} : { todoPanelEnabled }),
+    ...(retainBashToolOutput === undefined ? {} : { retainBashToolOutput }),
     ...(agents === undefined ? {} : { agents }),
     ...(activeProviderId === undefined ? {} : { activeProviderId })
   };

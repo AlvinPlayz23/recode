@@ -677,19 +677,12 @@ describe("runAgentLoop", () => {
   });
 
   it("stops repeated identical tool-call turns as a doom loop", async () => {
-    fakeStreamAssistantResponse
-      .mockImplementationOnce(() => makeStreamResult([
-        toolCallPart("call_1", "echo_tool", { text: "loop" }),
-        ...finishParts()
-      ]))
-      .mockImplementationOnce(() => makeStreamResult([
-        toolCallPart("call_2", "echo_tool", { text: "loop" }),
-        ...finishParts()
-      ]))
-      .mockImplementationOnce(() => makeStreamResult([
-        toolCallPart("call_3", "echo_tool", { text: "loop" }),
+    for (let index = 1; index <= 15; index += 1) {
+      fakeStreamAssistantResponse.mockImplementationOnce(() => makeStreamResult([
+        toolCallPart(`call_${index}`, "echo_tool", { text: "loop" }),
         ...finishParts()
       ]));
+    }
 
     const registry = new ToolRegistry([createEchoTool()]);
 

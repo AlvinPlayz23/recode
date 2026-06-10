@@ -3,9 +3,9 @@
  */
 
 import type { TodoItem, ToolResultMetadata } from "../../tools/tool.ts";
+import type { SessionEvent } from "../../session/session-event.ts";
 import type { SessionEntry, SessionState, ToolSessionEntry } from "../../session/session-state.ts";
 import { sessionStateFromEvents } from "../../session/session-state.ts";
-import type { SessionEvent } from "../../session/session-event.ts";
 import { parseTaskToolInput } from "../../tools/task-tool.ts";
 import { parseTodoWriteInput } from "../../tools/todo-write-tool.ts";
 import {
@@ -169,6 +169,91 @@ export function createEntry(kind: UiEntry["kind"], title: string, body: string):
     title,
     body,
     createdAt: now
+  };
+}
+
+/**
+ * Drop retained Bash output text from UI entries while keeping the visible tool call row.
+ */
+export function pruneBashToolOutputEntries(entries: readonly UiEntry[]): readonly UiEntry[] {
+  return entries.map((entry) => {
+    const metadata = pruneBashToolOutputMetadata(entry.metadata);
+    if (metadata === entry.metadata) {
+      return entry;
+    }
+
+    return { ...entry, metadata };
+  });
+}
+
+/**
+ * Drop retained Bash output text from a tool metadata object.
+ */
+export function pruneBashToolOutputMetadata<T extends ToolResultMetadata | undefined>(metadata: T): T {
+  if (metadata?.kind !== "bash-output" || metadata.output === "") {
+    return metadata;
+  }
+
+  return {
+    ...metadata,
+    output: ""
+  } as T;
+}
+
+/**
+ * Drop retained Bash output text from transcript messages kept in TUI memory.
+ */
+export function pruneBashToolOutputTranscript(
+  transcript: readonly ConversationMessage[]
+): readonly ConversationMessage[] {
+  return transcript.map((message) => {
+    if (message.role !== "tool") {
+      return message;
+    }
+
+    const metadata = pruneBashToolOutputMetadata(message.metadata);
+    if (metadata === message.metadata) {
+      return message;
+    }
+
+    return { ...message, metadata };
+  });
+}
+
+/**
+ * Drop retained Bash output text from session events kept in TUI memory.
+ */
+export function pruneBashToolOutputSessionEvent(event: SessionEvent): SessionEvent {
+  if (event.type === "tool.metadata.updated") {
+    const metadata = pruneBashToolOutputMetadata(event.update.metadata);
+    if (metadata === event.update.metadata) {
+      return event;
+    }
+
+    return {
+      ...event,
+      update: {
+        ...event.update,
+        metadata
+      }
+    };
+  }
+
+  if (event.type !== "tool.completed" && event.type !== "tool.errored") {
+    return event;
+  }
+
+  const metadata = pruneBashToolOutputMetadata(event.toolResult.metadata);
+  if (metadata === event.toolResult.metadata) {
+    return event;
+  }
+
+  return {
+    ...event,
+    toolResult: {
+      ...event.toolResult,
+      metadata
+    }
   };
 }
 

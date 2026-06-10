@@ -35,6 +35,10 @@ import {
   type ChatView,
   type LiveSubagentTask
 } from "../subagent-view.ts";
+import {
+  pruneBashToolOutputMetadata,
+  pruneBashToolOutputTranscript,
+} from "../transcript/transcript-entry-state.ts";
 
 /** Dependencies for building the TUI subagent controller. */
 export interface TuiSubagentControllerOptions {
@@ -53,6 +57,7 @@ export interface TuiSubagentControllerOptions {
   readonly requestToolApproval: (request: ToolApprovalRequest) => Promise<ToolApprovalDecision>;
   readonly requestQuestionAnswers: (request: QuestionToolRequest) => Promise<QuestionToolDecision>;
   readonly toErrorMessage: (error: unknown) => string;
+  readonly retainBashToolOutput: Accessor<boolean>;
 }
 
 /** Runtime controller exposed to the TUI app shell. */
@@ -65,7 +70,7 @@ export interface TuiSubagentController {
 export function createTuiSubagentController(options: TuiSubagentControllerOptions): TuiSubagentController {
   const restoreSubagentTaskState = (records: readonly SubagentTaskRecord[]) => {
     options.setSubagentTasks(records);
-    options.setLiveSubagentTasks(createLiveSubagentTasksFromRecords(records));
+    options.setLiveSubagentTasks(createLiveSubagentTasksFromRecords(records, options.retainBashToolOutput()));
     options.setActiveChatView({ kind: "parent" });
   };
 
@@ -113,11 +118,21 @@ export function createTuiSubagentController(options: TuiSubagentControllerOption
           return options.getSubagentTasks().find((task) => task.id === taskId);
         },
         saveTask(record) {
+          const memoryRecord = options.retainBashToolOutput()
+            ? record
+            : {
+                ...record,
+                transcript: pruneBashToolOutputTranscript(record.transcript)
+              };
           options.setSubagentTasks((previous) => [
-            ...previous.filter((task) => task.id !== record.id),
-            record
+            ...previous.filter((task) => task.id !== memoryRecord.id),
+            memoryRecord
           ]);
-          options.setLiveSubagentTasks((previous) => completeLiveSubagentTask(previous, record));
+          options.setLiveSubagentTasks((previous) => completeLiveSubagentTask(
+            previous,
+            memoryRecord,
+            options.retainBashToolOutput()
+          ));
         },
         onTextDelta(delta) {
           options.setLiveSubagentTasks((previous) => appendLiveSubagentTextDelta(previous, taskId, delta));
@@ -126,10 +141,19 @@ export function createTuiSubagentController(options: TuiSubagentControllerOption
           options.setLiveSubagentTasks((previous) => appendLiveSubagentToolCall(previous, taskId, toolCall));
         },
         onToolResult(toolResult) {
-          options.setLiveSubagentTasks((previous) => appendLiveSubagentToolResult(previous, taskId, toolResult));
+          const metadata = options.retainBashToolOutput()
+            ? toolResult.metadata
+            : pruneBashToolOutputMetadata(toolResult.metadata);
+          const memoryToolResult = metadata === toolResult.metadata
+            ? toolResult
+            : { ...toolResult, metadata };
+          options.setLiveSubagentTasks((previous) => appendLiveSubagentToolResult(previous, taskId, memoryToolResult));
         },
         onTranscriptUpdate(transcript) {
-          options.setLiveSubagentTasks((previous) => applyLiveSubagentTranscriptUpdate(previous, taskId, transcript));
+          const memoryTranscript = options.retainBashToolOutput()
+            ? transcript
+            : pruneBashToolOutputTranscript(transcript);
+          options.setLiveSubagentTasks((previous) => applyLiveSubagentTranscriptUpdate(previous, taskId, memoryTranscript));
         },
         ...(currentConversationId === undefined ? {} : { requestAffinityKey: currentConversationId })
       });

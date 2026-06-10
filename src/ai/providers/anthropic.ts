@@ -203,7 +203,10 @@ export async function* streamAnthropicMessages(
           ? {
               tokenUsage: {
                 ...createEmptyStepTokenUsage(),
-                input: inputTokens,
+                // Anthropic reports input_tokens as the non-cached portion only.
+                // Normalize to total input so cacheRead/cacheWrite stay breakdowns,
+                // matching OpenAI token-usage semantics.
+                input: inputTokens + cacheReadTokens + cacheWriteTokens,
                 output: outputTokens,
                 cacheRead: cacheReadTokens,
                 cacheWrite: cacheWriteTokens

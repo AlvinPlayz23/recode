@@ -222,6 +222,9 @@ import {
   appendEntry,
   createEntry,
   extractLatestTodosFromTranscript,
+  pruneBashToolOutputEntries,
+  pruneBashToolOutputSessionEvent,
+  pruneBashToolOutputTranscript,
   rehydrateEntriesFromTranscript,
   rehydrateEntriesFromSessionEvents,
   renderVisibleEntries,
@@ -284,6 +287,8 @@ const PROMPT_TEXTAREA_KEY_BINDINGS: TextareaKeyBinding[] = [
 
 /** Time window for the two-step `/clear` confirmation. */
 const CLEAR_CONFIRMATION_WINDOW_MS = 10000;
+const INITIAL_TRANSCRIPT_ENTRY_LIMIT = 40;
+const TRANSCRIPT_ENTRY_LOAD_INCREMENT = 40;
 
 /**
  * Rewrite shortcut prompts (currently just bare `?` → `/help`) before dispatch.
@@ -322,6 +327,7 @@ export function TuiApp(props: TuiAppProps) {
   const [themeName, setThemeName] = createSignal<ThemeName>(initialConfig.themeName ?? DEFAULT_THEME_NAME);
   const [toolMarkerName, setToolMarkerName] = createSignal<ToolMarkerName>(initialConfig.toolMarkerName ?? DEFAULT_TOOL_MARKER_NAME);
   const [entries, setEntries] = createSignal<readonly UiEntry[]>([]);
+  const [loadedTranscriptEntryCount, setLoadedTranscriptEntryCount] = createSignal(INITIAL_TRANSCRIPT_ENTRY_LIMIT);
   const [busy, setBusy] = createSignal(false);
   const [aborting, setAborting] = createSignal(false);
   const [draft, setDraft] = createSignal("");
@@ -419,6 +425,17 @@ export function TuiApp(props: TuiAppProps) {
     contextWindowFallbacks(),
     lastContextEstimate()
   ));
+  const [retainBashToolOutput, setRetainBashToolOutput] = createSignal(initialConfig.retainBashToolOutput ?? false);
+  const pruneBashToolOutput = () => {
+    setEntries((previous) => pruneBashToolOutputEntries(previous));
+    setSessionEvents((previous) => previous.map(pruneBashToolOutputSessionEvent));
+    setPreviousMessages((previous) => pruneBashToolOutputTranscript(previous));
+    setLiveSubagentTasks((previous) => previous.map((task) => ({
+      ...task,
+      transcript: pruneBashToolOutputTranscript(task.transcript),
+      entries: pruneBashToolOutputEntries(task.entries)
+    })));
+  };
   const modalOpen = createMemo(() =>
     modelPickerOpen()
     || providerPickerOpen()
@@ -437,10 +454,33 @@ export function TuiApp(props: TuiAppProps) {
       ? liveSubagentTasks().find((task) => task.id === view.taskId)
       : undefined;
   });
-  const visibleEntries = createMemo(() => activeSubagentTask()?.entries ?? entries());
+  const visibleEntries = createMemo(() => {
+    const raw = activeSubagentTask()?.entries ?? entries();
+    return retainBashToolOutput() ? raw : pruneBashToolOutputEntries(raw);
+  });
   const visibleStreamingEntryId = createMemo(() => activeSubagentTask()?.streamingEntryId ?? streamingEntryId());
   const visibleStreamingBody = createMemo(() => activeSubagentTask()?.streamingBody ?? streamingBody());
   const activeChatIsSubagent = createMemo(() => activeSubagentTask() !== undefined);
+  const renderedTranscriptEntries = createMemo(() => renderVisibleEntries(
+    visibleEntries(),
+    activeChatIsSubagent() ? false : toolsCollapsed(),
+    activeChatIsSubagent() ? false : toolPreviewsCollapsed()
+  ));
+  const hiddenTranscriptEntryCount = createMemo(() => activeChatIsSubagent()
+    ? 0
+    : Math.max(0, renderedTranscriptEntries().length - loadedTranscriptEntryCount())
+  );
+  const visibleTranscriptWindow = createMemo(() => {
+    const renderedEntries = renderedTranscriptEntries();
+    if (activeChatIsSubagent()) {
+      return renderedEntries;
+    }
+
+    const hiddenCount = hiddenTranscriptEntryCount();
+    return hiddenCount === 0
+      ? renderedEntries
+      : renderedEntries.slice(hiddenCount);
+  });
   const subagentController = createTuiSubagentController({
     getCurrentConversation: currentConversation,
     getSubagentTasks: subagentTasks,
@@ -456,7 +496,8 @@ export function TuiApp(props: TuiAppProps) {
     getPermissionRules: permissionRules,
     requestToolApproval,
     requestQuestionAnswers,
-    toErrorMessage
+    toErrorMessage,
+    retainBashToolOutput
   });
   const restoreSubagentTaskState = subagentController.restoreSubagentTaskState;
   const runTuiSubagentTask = subagentController.runTuiSubagentTask;
@@ -512,7 +553,12 @@ export function TuiApp(props: TuiAppProps) {
   ));
   const activeSystemPrompt = createMemo(() => sessionMode() === "plan" ? PLAN_SYSTEM_PROMPT : props.systemPrompt);
   const activeToolRegistry = createMemo(() => createToolRegistryForMode(props.toolRegistry, sessionMode()));
-  const customizeRows = createMemo(() => buildCustomizeRows(themeName(), toolMarkerName(), todoPanelEnabled()));
+  const customizeRows = createMemo(() => buildCustomizeRows(
+    themeName(),
+    toolMarkerName(),
+    todoPanelEnabled(),
+    retainBashToolOutput()
+  ));
   const layoutPickerItems = createMemo(() => buildLayoutPickerItems(layoutMode(), toolsCollapsed()));
   const layoutPickerTotalOptionCount = createMemo(() => layoutPickerItems().length);
   const commandPanel = createMemo(() => buildCommandPanelState(
@@ -542,7 +588,7 @@ export function TuiApp(props: TuiAppProps) {
   const headerHeight = createMemo(() => estimateHeaderHeight(minimalMode(), showSplashLogo(), effectiveSplashDetailsVisible()));
   const availableConversationHeight = createMemo(() => Math.max(1, terminal().height - headerHeight() - 4));
   const composerDocked = createMemo(() => estimateConversationFlowHeight(
-    visibleEntries(),
+    visibleTranscriptWindow(),
     conversationFlowWidth(),
     activeChatIsSubagent() ? undefined : commandPanel(),
     activeChatIsSubagent() ? undefined : fileSuggestionPanel(),
@@ -610,8 +656,11 @@ export function TuiApp(props: TuiAppProps) {
   };
 
   const setTranscriptMessages = (value: readonly ConversationMessage[]) => {
-    setPreviousMessages(value);
-    const nextTodos = extractLatestTodosFromTranscript(value);
+    const memoryTranscript = retainBashToolOutput()
+      ? value
+      : pruneBashToolOutputTranscript(value);
+    setPreviousMessages(memoryTranscript);
+    const nextTodos = extractLatestTodosFromTranscript(memoryTranscript);
     setTodos(nextTodos);
     if (nextTodos.length === 0) {
       setTodoDropupOpen(false);
@@ -1051,7 +1100,10 @@ export function TuiApp(props: TuiAppProps) {
               setToolMarkerName,
               todoPanelEnabled,
               setTodoPanelEnabled,
-              setTodoDropupOpen
+              setTodoDropupOpen,
+              retainBashToolOutput,
+              setRetainBashToolOutput,
+              pruneBashToolOutput
             });
           }
         });
@@ -1124,13 +1176,18 @@ export function TuiApp(props: TuiAppProps) {
           setConversation: setCurrentConversation,
           setEntries,
           setPreviousMessages: setTranscriptMessages,
-          setSessionEvents,
+          setSessionEvents(value) {
+            setSessionEvents(retainBashToolOutput()
+              ? value
+              : value.map(pruneBashToolOutputSessionEvent));
+          },
           setSubagentTasks: restoreSubagentTaskState,
           setLastContextEstimate,
           rehydrateEntries(conversation) {
-            return conversation.sessionEvents === undefined
+            const rehydrated = conversation.sessionEvents === undefined
               ? rehydrateEntriesFromTranscript(conversation.transcript)
               : rehydrateEntriesFromSessionEvents(conversation.sessionEvents);
+            return retainBashToolOutput() ? rehydrated : pruneBashToolOutputEntries(rehydrated);
           },
           close() {
             closeHistoryPicker(
@@ -1512,7 +1569,8 @@ export function TuiApp(props: TuiAppProps) {
         setTodoDropupOpen(false);
       },
       setTranscriptMessages,
-      setLastContextEstimate
+      setLastContextEstimate,
+      retainBashToolOutput
     });
 
     try {
@@ -1749,6 +1807,31 @@ export function TuiApp(props: TuiAppProps) {
     />
   );
 
+  const loadEarlierTranscriptEntries = () => {
+    setLoadedTranscriptEntryCount((count) => count + TRANSCRIPT_ENTRY_LOAD_INCREMENT);
+  };
+
+  const TranscriptEntries = () => (
+    <>
+      <Show when={hiddenTranscriptEntryCount() > 0}>
+        <box
+          flexDirection="row"
+          justifyContent="center"
+          marginTop={1}
+          marginBottom={1}
+          onMouseUp={loadEarlierTranscriptEntries}
+        >
+          <box border borderColor={t().divider} paddingLeft={2} paddingRight={2}>
+            <text fg={t().hintText}>Load earlier messages ({hiddenTranscriptEntryCount()} hidden)</text>
+          </box>
+        </box>
+      </Show>
+      <For each={visibleTranscriptWindow()}>
+        {(entry) => renderEntry(entry, t, markdownStyle, visibleStreamingEntryId, visibleStreamingBody, layoutMode, () => toolMarkerDefinition().symbol)}
+      </For>
+    </>
+  );
+
   return (
     <box width="100%" height="100%" flexDirection="column" paddingX={1} paddingTop={minimalMode() ? 0 : 1} paddingBottom={0}>
       {/* ── Header: Logo + Info ── */}
@@ -1779,9 +1862,7 @@ export function TuiApp(props: TuiAppProps) {
           <box flexDirection="column" flexGrow={1} paddingRight={1}>
             <SubagentBreadcrumb task={activeSubagentTask()} theme={t()} />
             <box flexDirection="column" flexShrink={0}>
-              <For each={renderVisibleEntries(visibleEntries(), activeChatIsSubagent() ? false : toolsCollapsed(), activeChatIsSubagent() ? false : toolPreviewsCollapsed())}>
-                {(entry) => renderEntry(entry, t, markdownStyle, visibleStreamingEntryId, visibleStreamingBody, layoutMode, () => toolMarkerDefinition().symbol)}
-              </For>
+              <TranscriptEntries />
             </box>
             <TuiComposer />
           </box>
@@ -1791,9 +1872,7 @@ export function TuiApp(props: TuiAppProps) {
           <SubagentBreadcrumb task={activeSubagentTask()} theme={t()} />
           <scrollbox flexGrow={1} flexShrink={1} minHeight={0} scrollY stickyScroll stickyStart="bottom">
             <box flexDirection="column" flexShrink={0}>
-              <For each={renderVisibleEntries(visibleEntries(), activeChatIsSubagent() ? false : toolsCollapsed(), activeChatIsSubagent() ? false : toolPreviewsCollapsed())}>
-                {(entry) => renderEntry(entry, t, markdownStyle, visibleStreamingEntryId, visibleStreamingBody, layoutMode, () => toolMarkerDefinition().symbol)}
-              </For>
+              <TranscriptEntries />
             </box>
           </scrollbox>
           <TuiComposer />

@@ -9,6 +9,31 @@ import { join } from "node:path";
 import { createBashTool } from "../bash-tool.ts";
 
 describe("Bash tool", () => {
+  it("bounds captured output from verbose commands", async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "recode-bash-output-"));
+    const tool = createBashTool();
+
+    try {
+      const result = await tool.execute(
+        { command: "bun -e \"process.stdout.write('x'.repeat(50000))\"" },
+        {
+          workspaceRoot,
+          approvalMode: "yolo"
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      expect(result.content.length).toBeLessThanOrEqual(12_020);
+      expect(result.content).toContain("[truncated]");
+      expect(result.metadata?.kind).toBe("bash-output");
+      if (result.metadata?.kind === "bash-output") {
+        expect(result.metadata.output.length).toBeLessThanOrEqual(12_020);
+      }
+    } finally {
+      await rm(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
   it("returns immediately when the request is already aborted", async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), "recode-bash-abort-"));
     const abortController = new AbortController();

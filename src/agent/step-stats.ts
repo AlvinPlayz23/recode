@@ -3,7 +3,8 @@
  */
 
 /**
- * Token usage breakdown for one model step.
+ * Token usage breakdown for one model step. Input and output are parent totals;
+ * reasoning/cache fields are breakdowns and must not be added to those totals.
  */
 export interface StepTokenUsage {
   readonly input: number;

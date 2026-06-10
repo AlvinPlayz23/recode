@@ -8,6 +8,7 @@ import {
   selectConfiguredApprovalAllowlist,
   selectConfiguredApprovalMode,
   selectConfiguredLayoutMode,
+  selectConfiguredRetainBashToolOutput,
   selectConfiguredTheme,
   selectConfiguredTodoPanelEnabled,
   selectConfiguredToolMarker
@@ -226,7 +227,8 @@ export function persistSelectedApprovalAllowlist(
 export function buildCustomizeRows(
   activeThemeName: ThemeName,
   activeToolMarkerName: ToolMarkerName,
-  todoPanelEnabled: boolean
+  todoPanelEnabled: boolean,
+  retainBashToolOutput: boolean
 ): readonly CustomizeRow[] {
   const toolMarker = getToolMarkerDefinition(activeToolMarkerName);
   const theme = getThemeDefinition(activeThemeName);
@@ -249,6 +251,15 @@ export function buildCustomizeRows(
         value: ""
       },
       description: "Shows the live TodoWrite panel above the composer."
+    },
+    {
+      id: "bash-output",
+      label: "Bash Output",
+      option: {
+        label: retainBashToolOutput ? "Retained" : "Freed",
+        value: ""
+      },
+      description: "Keep Bash output previews in TUI memory, or free them after the tool call row is shown."
     },
     {
       id: "theme",
@@ -297,13 +308,16 @@ export interface CycleCustomizeSettingOptions {
   readonly todoPanelEnabled: () => boolean;
   readonly setTodoPanelEnabled: (value: boolean) => void;
   readonly setTodoDropupOpen: (value: boolean) => void;
+  readonly retainBashToolOutput: () => boolean;
+  readonly setRetainBashToolOutput: (value: boolean) => void;
+  readonly pruneBashToolOutput: () => void;
 }
 
 /**
  * Cycle the selected customize setting.
  */
 export function cycleCustomizeSetting(options: CycleCustomizeSettingOptions): void {
-  const rowIds = ["tool-marker", "todo-panel", "theme"] as const;
+  const rowIds = ["tool-marker", "todo-panel", "bash-output", "theme"] as const;
   const rowId = rowIds[(options.rowIndex % rowIds.length + rowIds.length) % rowIds.length] ?? "tool-marker";
 
   if (rowId === "tool-marker") {
@@ -326,6 +340,16 @@ export function cycleCustomizeSetting(options: CycleCustomizeSettingOptions): vo
       options.setTodoDropupOpen(false);
     }
     persistTodoPanelEnabled(options.configPath, nextEnabled);
+    return;
+  }
+
+  if (rowId === "bash-output") {
+    const nextEnabled = !options.retainBashToolOutput();
+    options.setRetainBashToolOutput(nextEnabled);
+    if (!nextEnabled) {
+      options.pruneBashToolOutput();
+    }
+    persistRetainBashToolOutput(options.configPath, nextEnabled);
     return;
   }
 
@@ -505,6 +529,12 @@ function persistSelectedToolMarker(configPath: string, toolMarkerName: ToolMarke
 function persistTodoPanelEnabled(configPath: string, enabled: boolean): void {
   const config = loadRecodeConfigFile(configPath);
   const nextConfig = selectConfiguredTodoPanelEnabled(config, enabled);
+  saveRecodeConfigFile(configPath, nextConfig);
+}
+
+function persistRetainBashToolOutput(configPath: string, enabled: boolean): void {
+  const config = loadRecodeConfigFile(configPath);
+  const nextConfig = selectConfiguredRetainBashToolOutput(config, enabled);
   saveRecodeConfigFile(configPath, nextConfig);
 }
 
